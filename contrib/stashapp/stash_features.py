@@ -75,7 +75,7 @@ def _stash_graphql(payload, query, variables):
 
 def _scene_and_subs_settings(payload, scene_id):
     query = """
-      query JAVBeaconSubtitleScene($id: ID!) {
+      query StashMetadataSubtitleScene($id: ID!) {
         findScene(id: $id) { files { path } }
         configuration { plugins(include: [\"stash-metadata\"]) }
       }
@@ -96,7 +96,7 @@ def _scene_and_subs_settings(payload, scene_id):
 
 def _plugin_settings(payload):
     query = """
-      query JAVBeaconPluginSettings {
+      query StashMetadataPluginSettings {
         configuration { plugins(include: [\"stash-metadata\"]) }
       }
     """

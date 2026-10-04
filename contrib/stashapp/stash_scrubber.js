@@ -15,13 +15,13 @@
   const PLAYER_ATTACH_MAX_ATTEMPTS = 40;
 
   const FIND_SCENE_PREVIEW = gql`
-    query JAVBeaconScenePreview($id: ID!) {
+    query StashMetadataScenePreview($id: ID!) {
       findScene(id: $id) { paths { preview vtt } }
     }
   `;
 
   const FIND_PLUGIN_SETTINGS = gql`
-    query JAVBeaconScrubberSettings {
+    query StashMetadataScrubberSettings {
       configuration {
         plugins(include: ["stash-metadata"])
       }

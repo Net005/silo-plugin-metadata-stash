@@ -3,6 +3,11 @@ from unittest.mock import patch
 import stash_metadata as plugin
 
 class SiloImportTests(unittest.TestCase):
+    def test_source_ignores_missing_entity_names(self):
+        source = plugin._silo_source({"title": "Scene", "people": [{"name": "Actor"}, {"id": "missing-name"}], "genres": [{"name": "Drama"}, {}]})
+        self.assertEqual(source["performers"], ["Actor"])
+        self.assertEqual(source["tags"], ["Drama"])
+
     def test_artwork_id_is_exact(self):
         self.assertEqual(plugin._silo_scene_id({"poster_url":"https://jav.example/api/v1/integrations/silo/stash/scenes/42936/cover?api_key=hidden"}),"42936")
         self.assertIsNone(plugin._silo_scene_id({"poster_url":"https://jav.example/other/42936"}))

@@ -355,7 +355,12 @@ def _silo_unique_scene(payload, item):
 
 def _silo_source(item):
     def names(values):
-        return [str(value.get("name") if isinstance(value, dict) else value).strip() for value in values or [] if value]
+        result = []
+        for value in values or []:
+            name = value.get("name") if isinstance(value, dict) else value
+            if name is not None and str(name).strip():
+                result.append(str(name).strip())
+        return result
     studios = names(item.get("studios"))
     studio = item.get("studio") or (studios[0] if studios else "")
     cast = names(item.get("cast") or item.get("people") or item.get("performers"))

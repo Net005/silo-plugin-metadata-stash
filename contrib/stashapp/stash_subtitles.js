@@ -79,8 +79,8 @@
             headers,
             method: "POST",
             body: JSON.stringify({
-              operationName: "JAVBeaconRealtimeHistorySync",
-              query: "mutation JAVBeaconRealtimeHistorySync($pluginId: ID!, $args: Map) { runPluginOperation(plugin_id: $pluginId, args: $args) }",
+              operationName: "StashMetadataRealtimeHistorySync",
+              query: "mutation StashMetadataRealtimeHistorySync($pluginId: ID!, $args: Map) { runPluginOperation(plugin_id: $pluginId, args: $args) }",
               variables: { pluginId: PLUGIN_ID, args: { mode: "history", scene_id: sceneID } },
             }),
           }).catch(() => {
@@ -95,13 +95,13 @@
   installHistoryMutationBridge();
 
   const REQUEST_SUBTITLES = gql`
-    mutation JAVBeaconRequestSubtitles($pluginId: ID!, $args: Map) {
+    mutation StashMetadataRequestSubtitles($pluginId: ID!, $args: Map) {
       runPluginOperation(plugin_id: $pluginId, args: $args)
     }
   `;
 
   const UPDATE_SCENE_WATCHLIST = gql`
-    mutation JAVBeaconUpdateSceneWatchlist($input: SceneUpdateInput!) {
+    mutation StashMetadataUpdateSceneWatchlist($input: SceneUpdateInput!) {
       sceneUpdate(input: $input) {
         id
         tags {
@@ -113,7 +113,7 @@
   `;
 
   const FIND_SCENE_CAPTIONS = gql`
-    query JAVBeaconSceneCaptions($id: ID!) {
+    query StashMetadataSceneCaptions($id: ID!) {
       findScene(id: $id) {
         id
         details
@@ -130,7 +130,7 @@
   `;
 
   const FIND_PLUGIN_SETTINGS = gql`
-    query JAVBeaconSubtitleSettings {
+    query StashMetadataSubtitleSettings {
       configuration {
         plugins(include: ["stash-metadata"])
       }

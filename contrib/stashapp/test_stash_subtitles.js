@@ -79,7 +79,7 @@ global.window = {
         },
         useQuery(query, options) {
           queryCalls.push({ query, options });
-          return query.includes("JAVBeaconSubtitleSettings")
+          return query.includes("StashMetadataSubtitleSettings")
             ? settingsQueryResult
             : captionQueryResult;
         },
@@ -103,7 +103,7 @@ const pluginSource = fs.readFileSync(
   "utf8"
 );
 assert.match(pluginSource, /mode: "release_link"/);
-assert.match(pluginSource, /JAVBeaconRealtimeHistorySync/);
+assert.match(pluginSource, /StashMetadataRealtimeHistorySync/);
 assert.match(pluginSource, /sceneAddPlay/);
 assert.match(pluginSource, /sceneAddO/);
 assert.match(pluginSource, /sceneSaveActivity/);
@@ -268,7 +268,7 @@ function renderSubtitleAction(actions) {
 }
 
 const captionQueriesBeforeCards = queryCalls.filter((call) =>
-  call.query.includes("JAVBeaconSceneCaptions")
+  call.query.includes("StashMetadataSceneCaptions")
 ).length;
 let cardActions = renderCardActions(cardResult);
 assert.equal(
@@ -281,12 +281,12 @@ assert.equal(leftCluster.props.children[1], renderedPopovers);
 let subtitleAction = renderSubtitleAction(cardActions);
 assert.equal(subtitleAction.props.className, "stash-metadata-subs-card-action");
 assert.equal(
-  queryCalls.find((call) => call.query.includes("JAVBeaconSubtitleSettings"))
+  queryCalls.find((call) => call.query.includes("StashMetadataSubtitleSettings"))
     .options.fetchPolicy,
   "no-cache"
 );
 assert.equal(
-  queryCalls.filter((call) => call.query.includes("JAVBeaconSceneCaptions"))
+  queryCalls.filter((call) => call.query.includes("StashMetadataSceneCaptions"))
     .length,
   captionQueriesBeforeCards
 );
