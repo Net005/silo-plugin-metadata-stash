@@ -1,13 +1,13 @@
-name: Stash.Metadata Companion
-description: Fill missing Stash scene metadata from an exactly linked JAVBeacon release.
-version: 0.2.3
+name: Stash.Silo Companion
+description: Enrich Stash scenes from linked metadata and keep the Silo collection current.
+version: 0.2.4
 ui:
   javascript:
-    - stash_subtitles.js
-    - stash_scrubber.js
+    - stash_silo_subtitles.js
+    - stash_silo_scrubber.js
   css:
-    - stash_subtitles.css
-    - stash_scrubber.css
+    - stash_silo_subtitles.css
+    - stash_silo_scrubber.css
 settings:
   javbeacon_url:
     displayName: JAVBeacon URL
@@ -56,10 +56,6 @@ settings:
   silo_watchlist_collection_id:
     displayName: Silo WatchList collection ID
     description: Optional. Select the existing manual WatchList collection by ID if the library has more than one collection with that name.
-    type: STRING
-  javbeacon_browser_url:
-    displayName: JAVBeacon browser URL
-    description: Optional public URL opened by the scene-page JAVBeacon button, for example https://jav.example.com. Defaults to JAVBeacon URL.
     type: STRING
   webhook_secret:
     displayName: JAVBeacon webhook secret
@@ -135,11 +131,11 @@ settings:
     type: NUMBER
 exec:
   - python3
-  - "{pluginDir}/stash_metadata.py"
+  - "{pluginDir}/stash_silo_companion.py"
 interface: raw
 errLog: debug
 tasks:
-  - name: Test JAVBeacon connection
+  - name: Test metadata backend connection
     description: Verify the realtime webhook and record a trace in Stash and JAVBeacon logs.
     defaultArgs:
       mode: test

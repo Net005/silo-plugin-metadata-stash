@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-import stash_metadata as plugin
+import stash_silo_companion as plugin
 
 
 class PlanTests(unittest.TestCase):

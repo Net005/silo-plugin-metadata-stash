@@ -10,12 +10,12 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-import stash_features as features
+import stash_silo_features as features
 
 
-PLUGIN_ID = "stash-metadata"
+PLUGIN_ID = "stash-silo-companion"
 SCENE_QUERY = """
-query StashMetadataScene($id: ID!) {
+query StashSiloScene($id: ID!) {
   findScene(id: $id) {
     id title code details director date urls
     studio { id name }
@@ -27,19 +27,19 @@ query StashMetadataScene($id: ID!) {
 }
 """
 SCENES_QUERY = """
-query StashMetadataScenes($filter: FindFilterType) {
+query StashSiloScenes($filter: FindFilterType) {
   findScenes(filter: $filter) { count scenes { id } }
 }
 """
 UPDATE_QUERY = """
-mutation StashMetadataUpdate($input: SceneUpdateInput!) {
+mutation StashSiloUpdate($input: SceneUpdateInput!) {
   sceneUpdate(input: $input) { id }
 }
 """
 
 
 def _log(message):
-    print("[Stash.Metadata] " + message, file=sys.stderr, flush=True)
+    print("[Stash.Silo Companion] " + message, file=sys.stderr, flush=True)
 
 
 def _json_response(response):
@@ -81,7 +81,7 @@ def _stash_graphql(payload, query, variables=None):
 
 
 def _settings(payload):
-    query = 'query { configuration { plugins(include: ["stash-metadata"]) } }'
+    query = 'query { configuration { plugins(include: ["stash-silo-companion"]) } }'
     configs = (_stash_graphql(payload, query).get("configuration") or {}).get("plugins") or {}
     return configs.get(PLUGIN_ID) or {}
 
@@ -577,8 +577,6 @@ def main():
         result = features.request_subtitles(payload, args)
     elif mode == "subtitle_status":
         result = features.subtitle_status(payload, args)
-    elif mode == "release_link":
-        result = features.request_release_link(payload, args)
     elif mode in ("test", "history"):
         result = features.request_realtime_sync(payload, args)
     elif mode == "hook":

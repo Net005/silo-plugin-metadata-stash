@@ -19,7 +19,7 @@ let settingsQueryResult = {
   data: {
     configuration: {
       plugins: {
-        "stash-metadata": {
+        "stash-silo-companion": {
           subs_scene_path_filters: "",
           watchlist_tag_id: "9",
         },
@@ -79,7 +79,7 @@ global.window = {
         },
         useQuery(query, options) {
           queryCalls.push({ query, options });
-          return query.includes("StashMetadataSubtitleSettings")
+          return query.includes("StashSiloSubtitleSettings")
             ? settingsQueryResult
             : captionQueryResult;
         },
@@ -96,14 +96,13 @@ global.window = {
   },
 };
 
-require("./stash_subtitles.js");
+require("./stash_silo_subtitles.js");
 
 const pluginSource = fs.readFileSync(
-  require.resolve("./stash_subtitles.js"),
+  require.resolve("./stash_silo_subtitles.js"),
   "utf8"
 );
-assert.match(pluginSource, /mode: "release_link"/);
-assert.match(pluginSource, /StashMetadataRealtimeHistorySync/);
+assert.match(pluginSource, /StashSiloRealtimeHistorySync/);
 assert.match(pluginSource, /sceneAddPlay/);
 assert.match(pluginSource, /sceneAddO/);
 assert.match(pluginSource, /sceneSaveActivity/);
@@ -111,11 +110,6 @@ assert.match(pluginSource, /details\s*\n\s*captions/);
 assert.match(pluginSource, /title: story/);
 assert.match(pluginSource, /"aria-expanded": expanded/);
 assert.match(pluginSource, /setExpanded\(\(value\) => !value\)/);
-assert.ok(
-  pluginSource.indexOf("React.createElement(SubtitleButton") <
-    pluginSource.indexOf("React.createElement(ReleaseLinkButton"),
-  "the + CC action must remain to the left of the JAVBeacon release link"
-);
 assert.ok(
   pluginSource.indexOf("React.createElement(SceneCardWatchlistAction") <
     pluginSource.indexOf("React.createElement(SceneCardSubtitleAction"),
@@ -134,12 +128,12 @@ assert.match(pluginSource, /if \(!status \|\| !status\.sidecar_found\) return "r
 assert.match(pluginSource, /if \(status\.up_to_date === true\) return "green";/);
 assert.match(pluginSource, /statusColor: subtitleStatusColor\(completed, subtitleStatus\)/);
 const cssSource = fs.readFileSync(
-  require.resolve("./stash_subtitles.css"),
+  require.resolve("./stash_silo_subtitles.css"),
   "utf8"
 );
-assert.match(cssSource, /\.stash-metadata-subs-status-green\s*\{/);
-assert.match(cssSource, /\.stash-metadata-subs-status-orange\s*\{/);
-assert.match(cssSource, /\.stash-metadata-subs-status-red\s*\{/);
+assert.match(cssSource, /\.stash-silo-companion-subs-status-green\s*\{/);
+assert.match(cssSource, /\.stash-silo-companion-subs-status-orange\s*\{/);
+assert.match(cssSource, /\.stash-silo-companion-subs-status-red\s*\{/);
 
 (async () => {
 
@@ -172,7 +166,7 @@ settingsQueryResult = {
   data: {
     configuration: {
       plugins: {
-        "stash-metadata": {
+        "stash-silo-companion": {
           subs_scene_path_filters: "/other/path; /collections/jav/",
           watchlist_tag_id: "9",
         },
@@ -186,7 +180,7 @@ assert.notEqual(
   null
 );
 settingsQueryResult.data.configuration.plugins[
-  "stash-metadata"
+  "stash-silo-companion"
 ].subs_scene_path_filters = "/media/other/";
 const filteredPageAction = result.props.children[1].type(
   result.props.children[1].props
@@ -194,7 +188,7 @@ const filteredPageAction = result.props.children[1].type(
 assert.notEqual(filteredPageAction, null);
 assert.equal(filteredPageAction.props.showSubtitles, false);
 settingsQueryResult.data.configuration.plugins[
-  "stash-metadata"
+  "stash-silo-companion"
 ].subs_scene_path_filters = "";
 
 const sceneWithCaptions = {
@@ -244,10 +238,10 @@ function renderCardActions(result) {
   return result.type(result.props);
 }
 // The subtitle/watchlist buttons are merged into the same
-// "stash-metadata-card-actions-row" div (cardActions.props.children[2]) that now
+// "stash-silo-companion-card-actions-row" div (cardActions.props.children[2]) that now
 // also carries Stash's own popovers content - see the merge-row comment
-// above .stash-metadata-card-actions-row for why. Watchlist sits inside the
-// row's first child, a "stash-metadata-card-actions-left" cluster it shares with
+// above .stash-silo-companion-card-actions-row for why. Watchlist sits inside the
+// row's first child, a "stash-silo-companion-card-actions-left" cluster it shares with
 // Stash's popovers (left, index 0 of that cluster); +CC is the row's own
 // second child (right, index 1 of the row).
 function renderCardAction(actions, index) {
@@ -268,32 +262,32 @@ function renderSubtitleAction(actions) {
 }
 
 const captionQueriesBeforeCards = queryCalls.filter((call) =>
-  call.query.includes("StashMetadataSceneCaptions")
+  call.query.includes("StashSiloSceneCaptions")
 ).length;
 let cardActions = renderCardActions(cardResult);
 assert.equal(
   cardActions.props.children[2].props.className,
-  "stash-metadata-card-actions-row"
+  "stash-silo-companion-card-actions-row"
 );
 const leftCluster = cardActions.props.children[2].props.children[0];
-assert.equal(leftCluster.props.className, "stash-metadata-card-actions-left");
+assert.equal(leftCluster.props.className, "stash-silo-companion-card-actions-left");
 assert.equal(leftCluster.props.children[1], renderedPopovers);
 let subtitleAction = renderSubtitleAction(cardActions);
-assert.equal(subtitleAction.props.className, "stash-metadata-subs-card-action");
+assert.equal(subtitleAction.props.className, "stash-silo-companion-subs-card-action");
 assert.equal(
-  queryCalls.find((call) => call.query.includes("StashMetadataSubtitleSettings"))
+  queryCalls.find((call) => call.query.includes("StashSiloSubtitleSettings"))
     .options.fetchPolicy,
   "no-cache"
 );
 assert.equal(
-  queryCalls.filter((call) => call.query.includes("StashMetadataSceneCaptions"))
+  queryCalls.filter((call) => call.query.includes("StashSiloSceneCaptions"))
     .length,
   captionQueriesBeforeCards
 );
 assert.equal(lazyQueryCalls.length, 0);
 const watchlistAction = renderWatchlistAction(cardActions);
 const watchlistButton = watchlistAction.props.children;
-assert.equal(watchlistAction.props.className, "stash-metadata-watchlist-card-action");
+assert.equal(watchlistAction.props.className, "stash-silo-companion-watchlist-card-action");
 assert.equal(watchlistButton.props.children.props.children, "+ Watchlist");
 assert.equal(watchlistButton.props.disabled, false);
 await watchlistButton.props.onClick({ preventDefault() {}, stopPropagation() {} });
@@ -304,18 +298,18 @@ assert.deepEqual(mutationCalls.at(-1).options.variables, {
   input: { id: "39382", tag_ids: ["9"] },
 });
 settingsQueryResult.data.configuration.plugins[
-  "stash-metadata"
+  "stash-silo-companion"
 ].subs_scene_path_filters = "/COLLECTIONS/jav/";
 cardActions = renderCardActions(cardResult);
 assert.notEqual(renderSubtitleAction(cardActions), null);
 settingsQueryResult.data.configuration.plugins[
-  "stash-metadata"
+  "stash-silo-companion"
 ].subs_scene_path_filters = "/media/other/";
 cardActions = renderCardActions(cardResult);
 assert.equal(renderSubtitleAction(cardActions), null);
 assert.notEqual(renderWatchlistAction(cardActions), null);
 settingsQueryResult.data.configuration.plugins[
-  "stash-metadata"
+  "stash-silo-companion"
 ].subs_scene_path_filters = "";
 const knownCompleteCard = afterPatches["SceneCard.Popovers"](
   {
@@ -365,7 +359,7 @@ assert.equal(expandedState, true);
 assert.equal(prevented, true);
 assert.equal(stopped, true);
 const completedCardAction = renderSubtitleAction(cardActions);
-assert.equal(completedCardAction.props.className, "stash-metadata-subs-card-action");
+assert.equal(completedCardAction.props.className, "stash-silo-companion-subs-card-action");
 assert.equal(completedCardAction.props.children.props.completed, true);
 const completedSubtitleButton = completedCardAction.props.children.type(
   completedCardAction.props.children.props

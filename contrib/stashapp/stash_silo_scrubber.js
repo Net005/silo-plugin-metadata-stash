@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  const PLUGIN_ID = "stash-metadata";
+  const PLUGIN_ID = "stash-silo-companion";
   const React = window.PluginApi.React;
   const { gql, useQuery } = window.PluginApi.libraries.Apollo;
 
@@ -15,15 +15,15 @@
   const PLAYER_ATTACH_MAX_ATTEMPTS = 40;
 
   const FIND_SCENE_PREVIEW = gql`
-    query StashMetadataScenePreview($id: ID!) {
+    query StashSiloScenePreview($id: ID!) {
       findScene(id: $id) { paths { preview vtt } }
     }
   `;
 
   const FIND_PLUGIN_SETTINGS = gql`
-    query StashMetadataScrubberSettings {
+    query StashSiloScrubberSettings {
       configuration {
-        plugins(include: ["stash-metadata"])
+        plugins(include: ["stash-silo-companion"])
       }
     }
   `;
@@ -309,7 +309,7 @@
   // Exposed for the Node-based unit test harness only; production code paths
   // never read this. Mirrors how the rest of this plugin is tested by
   // requiring the browser file against a faked `window`.
-  window.__javbeaconScrubberInternals = {
+  window.__stashSiloScrubberInternals = {
     extractPx,
     mirrorBackground,
     parseVttTimestamp,
@@ -354,13 +354,13 @@
   // control bar's functionality.
   function createOverlay(playerEl) {
     const backdrop = document.createElement("div");
-    backdrop.className = "stash-metadata-scrub-overlay";
+    backdrop.className = "stash-silo-companion-scrub-overlay";
     backdrop.setAttribute("aria-hidden", "true");
     const frame = document.createElement("div");
-    frame.className = "stash-metadata-scrub-frame";
+    frame.className = "stash-silo-companion-scrub-frame";
     backdrop.appendChild(frame);
     const video = document.createElement("video");
-    video.className = "stash-metadata-hover-video";
+    video.className = "stash-silo-companion-hover-video";
     video.muted = true;
     video.loop = true;
     video.playsInline = true;
@@ -389,16 +389,16 @@
 
   // Hides the underlying static poster/cover image while the overlay shows
   // a scrubbed frame, via a body-level class the CSS keys off (see
-  // stash_scrubber.css) rather than writing directly to the
+  // stash_silo_scrubber.css) rather than writing directly to the
   // player-owned .vjs-poster element's own style or classList.
   function showOverlay(backdrop) {
     backdrop.classList.add("is-visible");
-    document.body.classList.add("stash-metadata-scrubbing");
+    document.body.classList.add("stash-silo-companion-scrubbing");
   }
 
   function hideOverlay(backdrop) {
     backdrop.classList.remove("is-visible");
-    document.body.classList.remove("stash-metadata-scrubbing");
+    document.body.classList.remove("stash-silo-companion-scrubbing");
   }
 
   // Confirmed live against a running Stash instance: the player root itself
@@ -539,7 +539,7 @@
       poster?.removeEventListener("mouseleave", onPosterLeave);
       progress?.removeEventListener("mousemove", onSeekMove);
       progress?.removeEventListener("mouseleave", onSeekLeave);
-      document.body.classList.remove("stash-metadata-scrubbing");
+      document.body.classList.remove("stash-silo-companion-scrubbing");
       backdrop.remove();
     };
   }
@@ -616,7 +616,7 @@
       null,
       rendered,
       React.createElement(ScenePlayerScrubber, {
-        key: "stash-metadata-scrubber",
+        key: "stash-silo-companion-scrubber",
         scene: props.scene,
       })
     );

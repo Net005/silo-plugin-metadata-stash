@@ -2,7 +2,7 @@ import json
 import unittest
 from unittest import mock
 
-import stash_features as plugin
+import stash_silo_features as plugin
 
 
 class FakeResponse:
@@ -30,7 +30,7 @@ class SubtitleRequestTests(unittest.TestCase):
                     },
                     "configuration": {
                         "plugins": {
-                            "stash-metadata": {
+                            "stash-silo-companion": {
                                 "subs_base_url": "https://subs.example.com"
                             }
                         }
@@ -419,30 +419,6 @@ class SubtitleRequestTests(unittest.TestCase):
                 {"mode": "hook", "hookContext": {"id": "39381"}},
             )
 
-    @mock.patch.object(plugin, "_plugin_settings")
-    @mock.patch.object(plugin.urllib.request, "urlopen")
-    def test_release_link_uses_browser_url_and_authenticated_lookup(self, urlopen, plugin_settings):
-        plugin_settings.return_value = {
-            "javbeacon_url": "http://javbeacon:8080/",
-            "javbeacon_browser_url": "https://jav.example.com/",
-            "webhook_secret": "hook-secret",
-            "timeout_seconds": 9,
-        }
-        urlopen.return_value = FakeResponse({
-            "release_id": 398721,
-            "release_path": "/release/398721",
-            "video_id": "NSPS-605",
-        })
-
-        result = plugin.request_release_link({}, {"scene_id": "39382"})
-
-        request = urlopen.call_args.args[0]
-        self.assertEqual(request.full_url, "http://javbeacon:8080/api/hooks/stash/release-link")
-        self.assertEqual(request.get_header("Authorization"), "Bearer hook-secret")
-        self.assertEqual(json.loads(request.data), {"scene_id": "39382"})
-        self.assertEqual(urlopen.call_args.kwargs["timeout"], 9)
-        self.assertEqual(result["url"], "https://jav.example.com/release/398721")
-        self.assertEqual(result["video_id"], "NSPS-605")
 
 
 if __name__ == "__main__":

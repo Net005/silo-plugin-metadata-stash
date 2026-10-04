@@ -1,5 +1,5 @@
 /* Inserted as an actual child of .video-js itself (see createOverlay() in
-   stash_scrubber.js: playerEl.insertBefore(backdrop, controlBar)), so it
+   stash_silo_scrubber.js: playerEl.insertBefore(backdrop, controlBar)), so it
    shares the player's own stacking context instead of living outside it.
 
    An earlier revision appended this element to document.body instead,
@@ -31,16 +31,16 @@
    pointer-events:none node, added via insertBefore/appendChild only) to
    avoid repeating that.
 
-   Two elements, not one: .stash-metadata-scrub-overlay is an opaque backdrop
+   Two elements, not one: .stash-silo-companion-scrub-overlay is an opaque backdrop
    sized to the full player box (blocks the native <video poster>
    underneath from showing through any letterbox margin), and its child
-   .stash-metadata-scrub-frame is sized to exactly the scaled sprite cell and
+   .stash-silo-companion-scrub-frame is sized to exactly the scaled sprite cell and
    carries the actual crop - confirmed live that a single element sized to
    the full box cannot show a clean crop, because CSS background-position/
    background-size only place and scale the sprite sheet, they don't clip
    it to one cell; any extra viewport space beyond the intended cell reveals
    real pixels from the adjacent sprite row/column instead of empty space. */
-.stash-metadata-scrub-overlay {
+.stash-silo-companion-scrub-overlay {
   background-color: #000;
   opacity: 0;
   pointer-events: none;
@@ -49,16 +49,16 @@
   transition: opacity 120ms ease;
 }
 
-.stash-metadata-scrub-overlay.is-visible {
+.stash-silo-companion-scrub-overlay.is-visible {
   opacity: 1;
 }
 
-.stash-metadata-scrub-frame {
+.stash-silo-companion-scrub-frame {
   background-repeat: no-repeat;
   position: absolute;
 }
 
-.stash-metadata-hover-video {
+.stash-silo-companion-hover-video {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -67,7 +67,7 @@
   background: #000;
 }
 
-.stash-metadata-hover-video[hidden] {
+.stash-silo-companion-hover-video[hidden] {
   display: none;
 }
 
@@ -75,10 +75,10 @@
    cover-area cycling), hide the underlying static poster/cover image so it
    never shows through outside the overlay's letterboxed crop. This is a
    stylesheet rule keyed off a body-level class the plugin toggles itself
-   (see showOverlay/hideOverlay in stash_scrubber.js) rather than an
+   (see showOverlay/hideOverlay in stash_silo_scrubber.js) rather than an
    imperative style/class mutation on the player-owned .vjs-poster element -
    consistent with never writing directly into Stash/video.js-owned nodes. */
-.stash-metadata-scrubbing .vjs-poster {
+.stash-silo-companion-scrubbing .vjs-poster {
   opacity: 0;
 }
 
@@ -86,7 +86,7 @@
    videojs-vtt-thumbnails plugin, confirmed live: the player root itself
    carries a "vjs-vtt-thumbnails" feature-flag class, and the actual preview
    element is "vjs-vtt-thumbnail-display") is mirrored, scaled up, into
-   .stash-metadata-scrub-overlay above, so hide the original small tooltip.
+   .stash-silo-companion-scrub-overlay above, so hide the original small tooltip.
    IMPORTANT: this selector must stay exact. An earlier revision used
    [class*="vtt-thumbnail"] as a "defensive" fallback, which also matches the
    player root's own "vjs-vtt-thumbnails" class ("vtt-thumbnail" is a

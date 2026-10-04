@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  const PLUGIN_ID = "stash-metadata";
+  const PLUGIN_ID = "stash-silo-companion";
   const React = window.PluginApi.React;
   const ReactDOM = window.PluginApi.ReactDOM;
   const { Button, Spinner } = window.PluginApi.libraries.Bootstrap;
@@ -41,10 +41,10 @@
   }
 
   function installHistoryMutationBridge() {
-    if (window.__javbeaconHistoryMutationBridge || typeof window.fetch !== "function") return;
-    window.__javbeaconHistoryMutationBridge = true;
+    if (window.__stashSiloHistoryMutationBridge || typeof window.fetch !== "function") return;
+    window.__stashSiloHistoryMutationBridge = true;
     const originalFetch = window.fetch.bind(window);
-    window.fetch = async function javbeaconHistoryAwareFetch(input, init) {
+    window.fetch = async function stashSiloHistoryAwareFetch(input, init) {
       let payload;
       try {
         const rawBody = typeof init?.body === "string"
@@ -79,8 +79,8 @@
             headers,
             method: "POST",
             body: JSON.stringify({
-              operationName: "StashMetadataRealtimeHistorySync",
-              query: "mutation StashMetadataRealtimeHistorySync($pluginId: ID!, $args: Map) { runPluginOperation(plugin_id: $pluginId, args: $args) }",
+              operationName: "StashSiloRealtimeHistorySync",
+              query: "mutation StashSiloRealtimeHistorySync($pluginId: ID!, $args: Map) { runPluginOperation(plugin_id: $pluginId, args: $args) }",
               variables: { pluginId: PLUGIN_ID, args: { mode: "history", scene_id: sceneID } },
             }),
           }).catch(() => {
@@ -95,13 +95,13 @@
   installHistoryMutationBridge();
 
   const REQUEST_SUBTITLES = gql`
-    mutation StashMetadataRequestSubtitles($pluginId: ID!, $args: Map) {
+    mutation StashSiloRequestSubtitles($pluginId: ID!, $args: Map) {
       runPluginOperation(plugin_id: $pluginId, args: $args)
     }
   `;
 
   const UPDATE_SCENE_WATCHLIST = gql`
-    mutation StashMetadataUpdateSceneWatchlist($input: SceneUpdateInput!) {
+    mutation StashSiloUpdateSceneWatchlist($input: SceneUpdateInput!) {
       sceneUpdate(input: $input) {
         id
         tags {
@@ -113,7 +113,7 @@
   `;
 
   const FIND_SCENE_CAPTIONS = gql`
-    query StashMetadataSceneCaptions($id: ID!) {
+    query StashSiloSceneCaptions($id: ID!) {
       findScene(id: $id) {
         id
         details
@@ -130,9 +130,9 @@
   `;
 
   const FIND_PLUGIN_SETTINGS = gql`
-    query StashMetadataSubtitleSettings {
+    query StashSiloSubtitleSettings {
       configuration {
-        plugins(include: ["stash-metadata"])
+        plugins(include: ["stash-silo-companion"])
       }
     }
   `;
@@ -201,7 +201,7 @@
     if (!status || !status.sidecar_found) {
       return window.confirm(
         "🕰️ Old subtitles\n" +
-          "These predate JAVBeacon-Subs version tracking.\n\n" +
+          "These predate subtitle service version tracking.\n\n" +
           "Replace them with a new result?"
       );
     }
@@ -211,7 +211,7 @@
         "🆕 Newer backend available\n" +
           `Sidecar:   ${backendLabel(status.sidecar_backends)}\n` +
           `Current: ${backendLabel(status.current_backends)}\n\n` +
-          "Replace the existing subtitles with a new JAVBeacon-Subs result?"
+          "Replace the existing subtitles with a new subtitle service result?"
       );
     }
 
@@ -295,7 +295,7 @@
         Toast.success(
           filename
             ? `Subtitle request queued for ${filename}`
-            : "Subtitle request queued in JAVBeacon-Subs"
+            : "Subtitle request queued"
         );
       } catch (error) {
         Toast.error(error instanceof Error ? error.message : String(error));
@@ -309,9 +309,9 @@
       {
         "aria-label": completed
           ? "Request replacement subtitles for this scene"
-          : "Request subtitles from JAVBeacon-Subs",
-        className: `minimal stash-metadata-subs-button${
-          completed ? " stash-metadata-subs-complete" : ""
+          : "Request subtitles",
+        className: `minimal stash-silo-companion-subs-button${
+          completed ? " stash-silo-companion-subs-complete" : ""
         }`,
         disabled: loading,
         onClick,
@@ -320,7 +320,7 @@
           ? "Sending subtitle request…"
           : completed
             ? "Request replacement subtitles (confirmation required)"
-            : "Request subtitles from JAVBeacon-Subs",
+            : "Request subtitles",
         variant: "secondary",
       },
       loading
@@ -332,99 +332,13 @@
         : React.createElement(
             "span",
             {
-              className: `stash-metadata-subs-label${
-                statusColor ? ` stash-metadata-subs-status-${statusColor}` : ""
+              className: `stash-silo-companion-subs-label${
+                statusColor ? ` stash-silo-companion-subs-status-${statusColor}` : ""
               }`,
               "aria-hidden": "true",
             },
             completed ? "✓ CC" : "+ CC"
           )
-    );
-  }
-
-  function BeaconIcon() {
-    return React.createElement(
-      "svg",
-      {
-        "aria-hidden": "true",
-        className: "stash-metadata-release-icon",
-        fill: "none",
-        viewBox: "0 0 24 24",
-      },
-      React.createElement("path", {
-        d: "M12 3v2M4.22 6.22l1.42 1.42M19.78 6.22l-1.42 1.42M2 13h3M19 13h3",
-        stroke: "currentColor",
-        strokeLinecap: "round",
-        strokeWidth: "1.8",
-      }),
-      React.createElement("path", {
-        d: "M8.4 17h7.2l-1.1-6.1A2.54 2.54 0 0 0 12 8.8a2.54 2.54 0 0 0-2.5 2.1L8.4 17Z",
-        stroke: "currentColor",
-        strokeLinejoin: "round",
-        strokeWidth: "1.8",
-      }),
-      React.createElement("path", {
-        d: "M7 20h10M10 17l-.5 3M14 17l.5 3",
-        stroke: "currentColor",
-        strokeLinecap: "round",
-        strokeWidth: "1.8",
-      })
-    );
-  }
-
-  function ReleaseLinkButton({ sceneId }) {
-    const Toast = window.PluginApi.hooks.useToast();
-    const [runPluginOperation] = useMutation(REQUEST_SUBTITLES);
-    const [loading, setLoading] = React.useState(false);
-
-    const onClick = async (event) => {
-      event?.preventDefault();
-      event?.stopPropagation();
-      if (loading) return;
-      // Open synchronously so popup blockers do not discard the destination
-      // while the authenticated server-side scene lookup is in progress.
-      const target = window.open("about:blank", "_blank");
-      if (target) target.opener = null;
-      setLoading(true);
-      try {
-        const response = await runPluginOperation({
-          variables: {
-            pluginId: PLUGIN_ID,
-            args: { mode: "release_link", scene_id: String(sceneId) },
-          },
-        });
-        const url = response.data?.runPluginOperation?.url;
-        if (!url) throw new Error("JAVBeacon did not return a release link");
-        if (target) target.location.replace(url);
-        else window.open(url, "_blank", "noopener");
-      } catch (error) {
-        target?.close();
-        Toast.error(error instanceof Error ? error.message : String(error));
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    return React.createElement(
-      Button,
-      {
-        "aria-label": "Open this release in JAVBeacon",
-        className: "minimal stash-metadata-release-button",
-        disabled: loading,
-        onClick,
-        onMouseDown: (event) => event.stopPropagation(),
-        title: loading
-          ? "Finding JAVBeacon release…"
-          : "Open release in JAVBeacon",
-        variant: "secondary",
-      },
-      loading
-        ? React.createElement(Spinner, {
-            animation: "border",
-            role: "status",
-            size: "sm",
-          })
-        : React.createElement(BeaconIcon)
     );
   }
 
@@ -484,13 +398,13 @@
 
     return React.createElement(
       "div",
-      { className: "stash-metadata-watchlist-card-action" },
+      { className: "stash-silo-companion-watchlist-card-action" },
       React.createElement(
         Button,
         {
           "aria-label": title,
           "aria-pressed": inWatchlist,
-          className: `minimal stash-metadata-watchlist-button${
+          className: `minimal stash-silo-companion-watchlist-button${
             inWatchlist ? " is-watchlisted" : ""
           }`,
           disabled,
@@ -523,7 +437,7 @@
     return React.createElement(
       "div",
       {
-        className: "stash-metadata-subs-card-action",
+        className: "stash-silo-companion-subs-card-action",
       },
       React.createElement(SubtitleButton, {
         completed,
@@ -559,7 +473,7 @@
       if (!section) return undefined;
 
       const mount = document.createElement("div");
-      mount.className = "stash-metadata-scene-story-mount";
+      mount.className = "stash-silo-companion-scene-story-mount";
       const titleContainer = title?.parentElement;
       if (titleContainer?.parentElement === section) {
         section.insertBefore(mount, titleContainer.nextSibling);
@@ -587,7 +501,7 @@
       {
         "aria-expanded": expanded,
         "aria-label": `Scene details: ${story}`,
-        className: `stash-metadata-scene-story${expanded ? " is-expanded" : ""}`,
+        className: `stash-silo-companion-scene-story${expanded ? " is-expanded" : ""}`,
         onClick: toggle,
         onKeyDown,
         onMouseDown: (event) => event.stopPropagation(),
@@ -602,7 +516,7 @@
       React.Fragment,
       null,
       React.createElement("span", {
-        className: "stash-metadata-card-actions-probe",
+        className: "stash-silo-companion-card-actions-probe",
         ref: setProbe,
       }),
       mountNode ? ReactDOM.createPortal(content, mountNode) : null
@@ -701,7 +615,7 @@
       React.Fragment,
       null,
       React.createElement("span", {
-        className: "stash-metadata-card-actions-probe",
+        className: "stash-silo-companion-card-actions-probe",
         ref: setProbe,
       }),
       React.createElement(SceneCardStory, { scene: resolvedScene }),
@@ -716,7 +630,7 @@
       // the same row Stash already draws, just wider.
       React.createElement(
         "div",
-        { className: "stash-metadata-card-actions-row" },
+        { className: "stash-silo-companion-card-actions-row" },
         // Watchlist sits immediately left of Stash's own popovers icons, in
         // one inline cluster - the same left assignment it had back when it
         // was independently position:absolute (left: 0.55rem), now flush
@@ -725,7 +639,7 @@
         // on the row itself.
         React.createElement(
           "div",
-          { className: "stash-metadata-card-actions-left" },
+          { className: "stash-silo-companion-card-actions-left" },
           React.createElement(SceneCardWatchlistAction, {
             scene: resolvedScene,
             settings,
@@ -777,7 +691,7 @@
       if (!actionGroup) return undefined;
 
       const mount = document.createElement("span");
-      mount.className = "stash-metadata-subs-action";
+      mount.className = "stash-silo-companion-subs-action";
       actionGroup.insertBefore(mount, actionGroup.firstChild);
       setMountNode(mount);
 
@@ -788,14 +702,9 @@
 
     if (!mountNode) return null;
     return ReactDOM.createPortal(
-      React.createElement(
-        React.Fragment,
-        null,
-        showSubtitles
-          ? React.createElement(SubtitleButton, { completed, sceneId })
-          : null,
-        React.createElement(ReleaseLinkButton, { sceneId })
-      ),
+      showSubtitles
+        ? React.createElement(SubtitleButton, { completed, sceneId })
+        : null,
       mountNode
     );
   }
@@ -809,7 +718,7 @@
       null,
       rendered,
       React.createElement(ScenePageSubtitleAction, {
-        key: "stash-metadata-subs-portal",
+        key: "stash-silo-companion-subs-portal",
         scene: props.scene,
       })
     );
@@ -825,7 +734,7 @@
     // directly into that same row instead of adding a new one below it. See
     // the merge-row comment inside SceneCardActions for why.
     return React.createElement(SceneCardActions, {
-      key: "stash-metadata-card-actions",
+      key: "stash-silo-companion-card-actions",
       popovers: rendered,
       scene: props.scene,
     });
