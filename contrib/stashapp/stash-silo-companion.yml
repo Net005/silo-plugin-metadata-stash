@@ -1,6 +1,6 @@
 name: Stash.Silo Companion
 description: Enrich Stash scenes from linked metadata and keep the Silo collection current.
-version: 0.2.5
+version: 0.2.6
 ui:
   javascript:
     - stash_silo_subtitles.js
@@ -51,7 +51,7 @@ settings:
     type: BOOLEAN
   silo_library_id:
     displayName: Silo movie library IDs (optional)
-    description: Leave blank to use every enabled Silo movie library, or enter comma-separated IDs to limit migration, targeted refresh and WatchList collection updates. Find each ID in its Silo library settings URL.
+    description: Leave blank to use every enabled Silo movie or mixed library, or enter comma-separated IDs to limit migration, targeted refresh and WatchList collection updates. Find each ID in its Silo library settings URL.
     type: STRING
   silo_watchlist_collection_id:
     displayName: Silo WatchList collection IDs (optional)

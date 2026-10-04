@@ -135,9 +135,10 @@ class MultipleLibraryTests(unittest.TestCase):
             {"id": "16", "type": "movies", "enabled": True},
             {"id": "19", "type": "movies", "enabled": True},
             {"id": "3", "type": "shows", "enabled": True},
+            {"id": "21", "type": "mixed", "enabled": True},
             {"id": "20", "type": "movies", "enabled": False},
         ]}
-        self.assertEqual(plugin._silo_movie_libraries({}), ["16", "19"])
+        self.assertEqual(plugin._silo_movie_libraries({}), ["16", "19", "21"])
 
     @patch.object(plugin, "_enrich_scene", return_value={"state": "preview", "scene_id": "42"})
     @patch.object(plugin, "_silo_get")

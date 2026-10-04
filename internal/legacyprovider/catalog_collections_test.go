@@ -18,8 +18,9 @@ func TestListJAVBeaconMovieLibrariesUsesEnabledProviderChain(t *testing.T) {
 				{"id": "19", "type": "movies", "enabled": true},
 				{"id": "3", "type": "movies", "enabled": true},
 				{"id": "20", "type": "movies", "enabled": false},
+				{"id": "21", "type": "mixed", "enabled": true},
 			}})
-		case "/api/v2/libraries/16/providers", "/api/v2/libraries/19/providers", "/api/v2/libraries/3/providers":
+		case "/api/v2/libraries/16/providers", "/api/v2/libraries/19/providers", "/api/v2/libraries/3/providers", "/api/v2/libraries/21/providers":
 			enabled := r.URL.Path != "/api/v2/libraries/3/providers"
 			_ = json.NewEncoder(w).Encode(map[string]any{"levels": []map[string]any{{"content_level": "movie", "entries": []map[string]any{{"capability_id": "stash", "provider_slug": "stash", "enabled": enabled}}}}})
 		default:
@@ -29,7 +30,7 @@ func TestListJAVBeaconMovieLibrariesUsesEnabledProviderChain(t *testing.T) {
 	}))
 	defer server.Close()
 	libraries, err := NewSiloClient(server.URL, "key").ListJAVBeaconMovieLibraries(context.Background())
-	if err != nil || len(libraries) != 2 || libraries[0].ID != "16" || libraries[1].ID != "19" {
+	if err != nil || len(libraries) != 3 || libraries[0].ID != "16" || libraries[1].ID != "19" || libraries[2].ID != "21" {
 		t.Fatalf("libraries=%+v err=%v", libraries, err)
 	}
 }

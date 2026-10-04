@@ -311,7 +311,7 @@ func (c *SiloClient) ListMovieLibraries(ctx context.Context) ([]MovieLibrary, er
 	}
 	out := make([]MovieLibrary, 0, len(data.Items))
 	for _, item := range data.Items {
-		if item.Type == "movies" && item.ID != "" {
+		if (item.Type == "movies" || item.Type == "mixed") && item.ID != "" {
 			out = append(out, item)
 		}
 	}

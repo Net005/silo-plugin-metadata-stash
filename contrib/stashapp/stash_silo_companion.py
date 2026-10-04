@@ -379,7 +379,7 @@ def _silo_movie_libraries(settings):
         return list(dict.fromkeys(requested))
     libraries = _silo_get(settings, "/api/v2/libraries").get("items") or []
     available = {str(row.get("id")): row for row in libraries
-                 if str(row.get("type") or "").lower() == "movies" and row.get("enabled", True)}
+                 if str(row.get("type") or "").lower() in ("movies", "mixed") and row.get("enabled", True)}
     if not available:
         raise RuntimeError("Silo returned no enabled movie libraries")
     return list(available)
