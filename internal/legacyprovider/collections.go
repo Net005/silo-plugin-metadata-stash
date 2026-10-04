@@ -27,11 +27,12 @@ type CollectionSpec struct {
 
 // CollectionArtwork is a local collection member's existing Silo artwork.
 type CollectionArtwork struct {
-	MediaID     string
-	PosterURL   string
-	BackdropURL string
-	ReleaseDate string
-	AddedAt     string
+	MediaID      string
+	StashSceneID string
+	PosterURL    string
+	BackdropURL  string
+	ReleaseDate  string
+	AddedAt      string
 }
 
 const collectionOwner = "Managed by JAVBeacon metadata plugin."

@@ -21,9 +21,10 @@ import (
 // client can make, not something reserved for in-process code the way
 // Jellyfin's plugin uses ICollectionManager.
 type SiloClient struct {
-	baseURL    string
-	apiKey     string
-	httpClient *http.Client
+	baseURL                   string
+	apiKey                    string
+	httpClient                *http.Client
+	collectionArtworkResolver func(context.Context, CollectionArtwork) (CollectionArtwork, error)
 }
 
 // NewSiloClient builds a client for one Silo host. baseURL should be the
@@ -371,4 +372,9 @@ func (c *SiloClient) ApplyStashMatch(ctx context.Context, contentID, libraryID, 
 	}
 	payload := map[string]any{"provider_ids": map[string]string{"stash": sceneID}, "library_id": libraryID}
 	return c.collectionRequest(ctx, http.MethodPost, "/api/v2/admin/items/"+url.PathEscape(contentID)+"/match/apply", payload, nil)
+}
+
+// SetCollectionArtworkResolver verifies collection artwork against its source scene.
+func (c *SiloClient) SetCollectionArtworkResolver(resolve func(context.Context, CollectionArtwork) (CollectionArtwork, error)) {
+	c.collectionArtworkResolver = resolve
 }

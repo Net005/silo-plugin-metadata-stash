@@ -20,6 +20,7 @@ import (
 const artworkRotation = 6 * time.Hour
 
 type artworkMarker struct {
+	Policy     int    `json:"policy"`
 	Bucket     int64  `json:"bucket"`
 	PosterID   string `json:"poster_media_id"`
 	BackdropID string `json:"backdrop_media_id"`
@@ -36,7 +37,7 @@ func artworkChoice(spec CollectionSpec, now time.Time) (CollectionArtwork, Colle
 	posterCandidates := []CollectionArtwork{}
 	backdropCandidates := []CollectionArtwork{}
 	for _, art := range spec.Artwork {
-		if !members[art.MediaID] {
+		if !members[art.MediaID] || (strings.HasPrefix(art.MediaID, "movie-tmdb-") && art.StashSceneID == "") {
 			continue
 		}
 		if art.PosterURL != "" {
@@ -206,8 +207,26 @@ func (c *SiloClient) syncCollectionArtwork(ctx context.Context, collection siloC
 	for _, id := range spec.MediaIDs {
 		members[id] = true
 	}
-	if previous.Bucket == bucket && (previous.PosterID == "" || members[previous.PosterID]) && (previous.BackdropID == "" || members[previous.BackdropID]) {
+	if previous.Policy == 2 && previous.Bucket == bucket && (previous.PosterID == "" || members[previous.PosterID]) && (previous.BackdropID == "" || members[previous.BackdropID]) {
 		return false, nil
+	}
+	if c.collectionArtworkResolver != nil {
+		if poster.StashSceneID != "" {
+			poster, err = c.collectionArtworkResolver(ctx, poster)
+			if err != nil {
+				return false, err
+			}
+		}
+		if backdrop.StashSceneID != "" {
+			if backdrop.StashSceneID == poster.StashSceneID {
+				backdrop = poster
+			} else {
+				backdrop, err = c.collectionArtworkResolver(ctx, backdrop)
+				if err != nil {
+					return false, err
+				}
+			}
+		}
 	}
 	if poster.PosterURL != "" {
 		if err := c.uploadCollectionArtwork(ctx, collection.ID, "poster", poster.PosterURL); err != nil {
@@ -232,7 +251,7 @@ func (c *SiloClient) syncCollectionArtwork(ctx context.Context, collection siloC
 	if config == nil {
 		config = map[string]json.RawMessage{}
 	}
-	marker, err := json.Marshal(artworkMarker{Bucket: bucket, PosterID: poster.MediaID, BackdropID: backdrop.MediaID})
+	marker, err := json.Marshal(artworkMarker{Policy: 2, Bucket: bucket, PosterID: poster.MediaID, BackdropID: backdrop.MediaID})
 	if err != nil {
 		return false, err
 	}

@@ -36,9 +36,36 @@ func TestArtworkChoiceUsesOnlyMembersAndRotates(t *testing.T) {
 	}
 }
 
+func TestCollectionArtworkRejectsUnverifiedTMDBPoster(t *testing.T) {
+	spec := CollectionSpec{MediaIDs: []string{"movie-tmdb-1403862"}, Artwork: []CollectionArtwork{{MediaID: "movie-tmdb-1403862", PosterURL: "wrong-movie-poster"}}}
+	poster, _ := artworkChoice(spec, time.Now())
+	if poster.PosterURL != "" {
+		t.Fatal("selected legacy TMDB artwork without a Stash source")
+	}
+}
+
+func TestCollectionArtworkResolvesExactStashSource(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/integrations/stash/enrichment/42374" {
+			t.Errorf("wrong scene requested: %s", r.URL.Path)
+		}
+		fmt.Fprint(w, `{"scene_id":"42374","poster_path":"/covers/verified/poster","backdrop_paths":["/screenshots/verified/0"]}`)
+	}))
+	defer server.Close()
+	p := &Provider{client: NewClient(server.URL, "key", server.Client())}
+	art, err := p.ResolveCollectionArtwork(t.Context(), CollectionArtwork{MediaID: "movie-tmdb-1403862", StashSceneID: "42374", PosterURL: "wrong-movie-poster"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if art.PosterURL != server.URL+"/covers/verified/poster?api_key=key" || art.BackdropURL != server.URL+"/screenshots/verified/0?api_key=key" {
+		t.Fatalf("wrong source: %+v", art)
+	}
+}
+
 func TestSyncCollectionArtworkUploadsOncePerWindow(t *testing.T) {
 	uploads := 0
-	marker := map[string]json.RawMessage{}
+	// A legacy marker in the same window must not preserve a wrong poster.
+	marker := map[string]json.RawMessage{"javbeacon_artwork": json.RawMessage(`{"bucket":82900,"poster_media_id":"m1"}`)}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/v2/admin/collections/c1" {
 			w.Header().Set("ETag", `"art-v1"`)
@@ -78,6 +105,7 @@ func TestSyncCollectionArtworkUploadsOncePerWindow(t *testing.T) {
 	client := NewSiloClient(server.URL, "test")
 	spec := CollectionSpec{Kind: "watchlist", LibraryID: "lib", MediaIDs: []string{"m1"}, Artwork: []CollectionArtwork{{MediaID: "m1", PosterURL: "https://art.test/poster", BackdropURL: "https://art.test/backdrop"}}}
 	now := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
+	marker["javbeacon_artwork"], _ = json.Marshal(artworkMarker{Bucket: now.Unix() / int64(artworkRotation.Seconds()), PosterID: "m1"})
 	for i := 0; i < 2; i++ {
 		changed, err := client.syncCollectionArtwork(context.Background(), siloCollection{ID: "c1"}, spec, now)
 		if err != nil || changed != (i == 0) {

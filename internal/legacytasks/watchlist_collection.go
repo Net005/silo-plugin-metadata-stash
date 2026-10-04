@@ -56,6 +56,7 @@ func (s *collectionSyncTaskServer) syncWatchListCollection(ctx context.Context) 
 		return map[string]any{"status": "skipped", "reason": "Stash WatchList source unavailable"}, nil
 	}
 	client := provider.NewSiloClient(p.SiloBaseURL(), p.SiloAPIKey())
+	client.SetCollectionArtworkResolver(p.ResolveCollectionArtwork)
 	libraries, err := client.ListJAVBeaconMovieLibraries(ctx)
 	if err != nil {
 		return nil, err

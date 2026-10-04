@@ -268,6 +268,7 @@ func (s *collectionSyncTaskServer) sync(ctx context.Context, force bool) (map[st
 		return nil, fmt.Errorf("collection-sync: Silo URL is required")
 	}
 	client := provider.NewSiloClient(baseURL, key)
+	client.SetCollectionArtworkResolver(s.runtime.provider.ResolveCollectionArtwork)
 	if releaseSourceReady {
 		snapshot, err = selectedFilterSnapshot(snapshot, javSelection, javPrefix)
 		if err != nil {
@@ -506,7 +507,7 @@ func stashFilterSpecsFromCatalog(filters []provider.StashSavedFilter, catalog []
 			item := byID[id]
 			spec.MediaIDs = append(spec.MediaIDs, id)
 			seen[id] = true
-			spec.Artwork = append(spec.Artwork, provider.CollectionArtwork{MediaID: id, PosterURL: item.PosterURL, BackdropURL: item.BackdropURL, ReleaseDate: item.ReleaseDate, AddedAt: item.AddedAt})
+			spec.Artwork = append(spec.Artwork, provider.CollectionArtwork{MediaID: id, StashSceneID: entry.SceneID, PosterURL: item.PosterURL, BackdropURL: item.BackdropURL, ReleaseDate: item.ReleaseDate, AddedAt: item.AddedAt})
 		}
 		specs = append(specs, spec)
 	}
