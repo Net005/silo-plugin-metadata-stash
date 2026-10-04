@@ -17,9 +17,9 @@ import (
 )
 
 type stashClient struct {
-	base, key, watchlistTag string
-	http                    *http.Client
-	playMu                  sync.Mutex
+	base, key string
+	http      *http.Client
+	playMu    sync.Mutex
 }
 
 type scene struct {
@@ -280,46 +280,4 @@ func absDuration(d time.Duration) time.Duration {
 		return -d
 	}
 	return d
-}
-func (c *stashClient) setWatchlist(ctx context.Context, id string, present bool) (bool, error) {
-	if c.watchlistTag == "" {
-		return false, errors.New("watchlist tag ID not configured")
-	}
-	item, err := c.findScene(ctx, id)
-	if err != nil {
-		return false, err
-	}
-	if item == nil {
-		return false, errors.New("Stash scene missing")
-	}
-	ids := []string{}
-	found := false
-	for _, tag := range item.Tags {
-		if tag.ID == c.watchlistTag {
-			found = true
-			if !present {
-				continue
-			}
-		}
-		ids = append(ids, tag.ID)
-	}
-	if found == present {
-		return false, nil
-	}
-	if present {
-		ids = append(ids, c.watchlistTag)
-	}
-	var out struct {
-		Scene *struct {
-			ID string `json:"id"`
-		} `json:"sceneUpdate"`
-	}
-	err = c.graphql(ctx, `mutation($input:SceneUpdateInput!) { sceneUpdate(input:$input) { id } }`, map[string]any{"input": map[string]any{"id": id, "tag_ids": ids}}, &out)
-	if err != nil {
-		return false, err
-	}
-	if out.Scene == nil || out.Scene.ID != id {
-		return false, errors.New("Stash did not confirm tag update")
-	}
-	return true, nil
 }

@@ -70,10 +70,6 @@ func (s *watchSyncServer) applyOne(ctx context.Context, e *pluginv1.WatchSyncEve
 		}
 	case pluginv1.WatchSyncOperation_WATCH_SYNC_OPERATION_MARK_WATCHED:
 		changed, err = c.addPlayOnce(ctx, id, eventTime(e))
-	case pluginv1.WatchSyncOperation_WATCH_SYNC_OPERATION_ADD_TO_WATCHLIST:
-		changed, err = c.setWatchlist(ctx, id, true)
-	case pluginv1.WatchSyncOperation_WATCH_SYNC_OPERATION_REMOVE_FROM_WATCHLIST:
-		changed, err = c.setWatchlist(ctx, id, false)
 	default:
 		return result
 	}
@@ -99,6 +95,21 @@ func (s *watchSyncServer) ListRemoteState(ctx context.Context, req *pluginv1.Wat
 	if !c.configured() {
 		return &pluginv1.WatchSyncListRemoteStateResponse{Fault: &pluginv1.WatchSyncFault{Code: pluginv1.WatchSyncFaultCode_WATCH_SYNC_FAULT_CODE_INVALID_CREDENTIAL, SafeMessage: "Stash connection not configured"}}, nil
 	}
+	wantWatched := len(req.GetStateKinds()) == 0
+	watchlistRequested := false
+	for _, kind := range req.GetStateKinds() {
+		if kind == pluginv1.WatchSyncRemoteStateKind_WATCH_SYNC_REMOTE_STATE_KIND_WATCHED {
+			wantWatched = true
+		}
+		if kind == pluginv1.WatchSyncRemoteStateKind_WATCH_SYNC_REMOTE_STATE_KIND_WATCHLIST {
+			watchlistRequested = true
+		}
+	}
+	// This provider has no personal Watchlist capability. An explicit legacy request
+	// must never return an authoritative empty snapshot that could clear Silo state.
+	if !wantWatched {
+		return &pluginv1.WatchSyncListRemoteStateResponse{CompleteSnapshot: false}, nil
+	}
 	page := 1
 	if req.GetPageToken() != "" {
 		n, err := strconv.Atoi(req.GetPageToken())
@@ -116,20 +127,11 @@ func (s *watchSyncServer) ListRemoteState(ctx context.Context, req *pluginv1.Wat
 			Scenes []scene `json:"scenes"`
 		} `json:"findScenes"`
 	}
-	err := c.graphql(ctx, `query($filter:FindFilterType) { findScenes(filter:$filter) { scenes { id play_count last_played_at tags { id } } } }`, map[string]any{"filter": map[string]any{"page": page, "per_page": size, "sort": "created_at", "direction": "DESC"}}, &data)
+	err := c.graphql(ctx, `query($filter:FindFilterType) { findScenes(filter:$filter) { scenes { id play_count last_played_at } } }`, map[string]any{"filter": map[string]any{"page": page, "per_page": size, "sort": "created_at", "direction": "DESC"}}, &data)
 	if err != nil {
 		return &pluginv1.WatchSyncListRemoteStateResponse{Fault: &pluginv1.WatchSyncFault{Code: pluginv1.WatchSyncFaultCode_WATCH_SYNC_FAULT_CODE_TEMPORARY, SafeMessage: err.Error()}}, nil
 	}
-	wantWatched, wantWatchlist := len(req.GetStateKinds()) == 0, len(req.GetStateKinds()) == 0
-	for _, kind := range req.GetStateKinds() {
-		if kind == pluginv1.WatchSyncRemoteStateKind_WATCH_SYNC_REMOTE_STATE_KIND_WATCHED {
-			wantWatched = true
-		}
-		if kind == pluginv1.WatchSyncRemoteStateKind_WATCH_SYNC_REMOTE_STATE_KIND_WATCHLIST {
-			wantWatchlist = true
-		}
-	}
-	out := &pluginv1.WatchSyncListRemoteStateResponse{CompleteSnapshot: true}
+	out := &pluginv1.WatchSyncListRemoteStateResponse{CompleteSnapshot: !watchlistRequested}
 	for _, row := range data.Found.Scenes {
 		state := &pluginv1.WatchSyncRemoteState{ProviderItemKey: "stash:" + row.ID, Media: &pluginv1.WatchSyncMedia{MediaType: pluginv1.WatchSyncMediaType_WATCH_SYNC_MEDIA_TYPE_MOVIE, ExternalIds: map[string]string{capabilityID: row.ID}}}
 		if wantWatched && row.PlayCount > 0 {
@@ -139,15 +141,7 @@ func (s *watchSyncServer) ListRemoteState(ctx context.Context, req *pluginv1.Wat
 			}
 			state.Watched = w
 		}
-		if wantWatchlist && c.watchlistTag != "" {
-			for _, tag := range row.Tags {
-				if tag.ID == c.watchlistTag {
-					state.Watchlist = &pluginv1.WatchSyncRemoteListState{}
-					break
-				}
-			}
-		}
-		if state.Watched != nil || state.Watchlist != nil {
+		if state.Watched != nil {
 			out.Items = append(out.Items, state)
 		}
 	}

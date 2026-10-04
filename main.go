@@ -51,7 +51,7 @@ func (s *runtimeServer) Configure(_ context.Context, req *pluginv1.ConfigureRequ
 		if key == "" && s.client != nil {
 			key = s.client.key
 		}
-		s.client = &stashClient{base: strings.TrimRight(text(v["base_url"]), "/"), key: key, watchlistTag: text(v["watchlist_tag_id"])}
+		s.client = &stashClient{base: strings.TrimRight(text(v["base_url"]), "/"), key: key}
 		artKey := text(v["javbeacon_api_key"])
 		if artKey == "" && s.artwork != nil {
 			artKey = s.artwork.key
