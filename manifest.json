@@ -1,12 +1,12 @@
 {
   "plugin_id": "stash.metadata",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "checksum": "__CHECKSUM__",
   "silo_api_version": "v1",
   "presentation": {
     "display_name": "Stash.Metadata",
     "summary": "Use StashApp as Silo's scene metadata and watch provider.",
-    "description_markdown": "Direct StashApp scene metadata, artwork, watch history and Watchlist integration for Silo. JAVBeacon enrichment is handled in StashApp by the companion plugin.",
+    "description_markdown": "Direct StashApp scene metadata, watched state and WatchList integration for Silo. Optional JAVBeacon artwork provides conformed posters and cached screenshot backdrops by exact Stash scene ID.",
     "setup_markdown": "Configure the StashApp URL and API key, then select Stash.Metadata as the Movies library metadata and watch provider.",
     "homepage_url": "https://github.com/Net005/silo-plugin-metadata-stash",
     "source_url": "https://github.com/Net005/silo-plugin-metadata-stash",
@@ -46,7 +46,7 @@
       "type": "image_resolver.v1",
       "id": "stash",
       "display_name": "Stash Images",
-      "description": "Resolve Stash scene screenshots.",
+      "description": "Resolve Stash scene screenshots and optional conformed JAVBeacon artwork.",
       "metadata": {
         "schemes": [
           "stash"
@@ -89,7 +89,7 @@
       "key": "connection",
       "title": "StashApp Connection",
       "description": "Direct StashApp GraphQL connection.",
-      "json_schema": "{\"type\":\"object\",\"properties\":{\"base_url\":{\"type\":\"string\",\"format\":\"uri\",\"minLength\":1},\"api_key\":{\"type\":\"string\",\"minLength\":1},\"watchlist_tag_id\":{\"type\":\"string\"},\"silo_base_url\":{\"type\":\"string\",\"format\":\"uri\"},\"silo_api_key\":{\"type\":\"string\"}},\"required\":[\"base_url\",\"api_key\"],\"additionalProperties\":false}",
+      "json_schema": "{\"type\":\"object\",\"properties\":{\"base_url\":{\"type\":\"string\",\"format\":\"uri\",\"minLength\":1},\"api_key\":{\"type\":\"string\",\"minLength\":1},\"watchlist_tag_id\":{\"type\":\"string\"},\"silo_base_url\":{\"type\":\"string\",\"format\":\"uri\"},\"silo_api_key\":{\"type\":\"string\"},\"javbeacon_url\":{\"type\":\"string\",\"format\":\"uri\"},\"javbeacon_api_key\":{\"type\":\"string\"}},\"required\":[\"base_url\",\"api_key\"],\"additionalProperties\":false}",
       "required": true,
       "admin_form": {
         "fields": [
@@ -105,6 +105,19 @@
             "control": "ADMIN_FORM_CONTROL_PASSWORD",
             "required": true,
             "secret": true
+          },
+          {
+            "key": "javbeacon_url",
+            "label": "JAVBeacon URL for conformed posters and screenshot backdrops",
+            "control": "ADMIN_FORM_CONTROL_TEXT",
+            "required": false
+          },
+          {
+            "key": "javbeacon_api_key",
+            "label": "JAVBeacon API key for artwork",
+            "control": "ADMIN_FORM_CONTROL_PASSWORD",
+            "secret": true,
+            "required": false
           },
           {
             "key": "watchlist_tag_id",

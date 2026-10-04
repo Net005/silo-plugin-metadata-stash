@@ -30,6 +30,7 @@ type runtimeServer struct {
 	manifest *pluginv1.PluginManifest
 	mu       sync.RWMutex
 	client   *stashClient
+	artwork  *artworkClient
 	siloBase string
 	siloKey  string
 	pollOnce sync.Once
@@ -51,6 +52,11 @@ func (s *runtimeServer) Configure(_ context.Context, req *pluginv1.ConfigureRequ
 			key = s.client.key
 		}
 		s.client = &stashClient{base: strings.TrimRight(text(v["base_url"]), "/"), key: key, watchlistTag: text(v["watchlist_tag_id"])}
+		artKey := text(v["javbeacon_api_key"])
+		if artKey == "" && s.artwork != nil {
+			artKey = s.artwork.key
+		}
+		s.artwork = &artworkClient{base: strings.TrimRight(text(v["javbeacon_url"]), "/"), key: artKey}
 		s.siloBase = strings.TrimRight(text(v["silo_base_url"]), "/")
 		siloKey := text(v["silo_api_key"])
 		if siloKey != "" {
@@ -63,6 +69,18 @@ func (s *runtimeServer) Configure(_ context.Context, req *pluginv1.ConfigureRequ
 }
 func text(v any) string                      { s, _ := v.(string); return strings.TrimSpace(s) }
 func (s *runtimeServer) stash() *stashClient { s.mu.RLock(); defer s.mu.RUnlock(); return s.client }
+func (s *runtimeServer) artworkClient() *artworkClient {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.artwork
+}
+func (s *runtimeServer) sceneArtwork(ctx context.Context, id string) *sceneArtwork {
+	art, err := s.artworkClient().fetch(ctx, id)
+	if err != nil {
+		return nil
+	}
+	return art
+}
 
 type metadataServer struct {
 	pluginv1.UnimplementedMetadataProviderServer
@@ -95,7 +113,11 @@ func displayTitle(s scene) string {
 	return s.Code
 }
 func searchResult(s scene) *pluginv1.ProviderSearchResult {
-	return &pluginv1.ProviderSearchResult{ProviderId: "stash:" + s.ID, ItemType: "movie", Title: displayTitle(s), Overview: s.Details, ProviderIds: providerIDs(s.ID), ImageUrl: coverPath(s.ID)}
+	imagePath := ""
+	if s.Paths.Screenshot != "" {
+		imagePath = coverPath(s.ID)
+	}
+	return &pluginv1.ProviderSearchResult{ProviderId: "stash:" + s.ID, ItemType: "movie", Title: displayTitle(s), Overview: s.Details, ProviderIds: providerIDs(s.ID), ImageUrl: imagePath}
 }
 func coverPath(id string) string {
 	if id == "" {
@@ -119,7 +141,11 @@ func (s *metadataServer) Search(ctx context.Context, req *pluginv1.SearchMetadat
 		if row == nil {
 			return &pluginv1.SearchMetadataResponse{}, nil
 		}
-		return &pluginv1.SearchMetadataResponse{Results: []*pluginv1.ProviderSearchResult{searchResult(*row)}}, nil
+		result := searchResult(*row)
+		if art := s.runtime.sceneArtwork(ctx, row.ID); art != nil && art.PosterPath != "" {
+			result.ImageUrl = backendImagePath(art.PosterPath)
+		}
+		return &pluginv1.SearchMetadataResponse{Results: []*pluginv1.ProviderSearchResult{result}}, nil
 	}
 	rows, err := c.search(ctx, req.GetQuery())
 	if err != nil {
@@ -127,7 +153,11 @@ func (s *metadataServer) Search(ctx context.Context, req *pluginv1.SearchMetadat
 	}
 	out := &pluginv1.SearchMetadataResponse{}
 	for _, row := range rows {
-		out.Results = append(out.Results, searchResult(row))
+		result := searchResult(row)
+		if art := s.runtime.sceneArtwork(ctx, row.ID); art != nil && art.PosterPath != "" {
+			result.ImageUrl = backendImagePath(art.PosterPath)
+		}
+		out.Results = append(out.Results, result)
 	}
 	return out, nil
 }
@@ -147,7 +177,16 @@ func (s *metadataServer) GetMetadata(ctx context.Context, req *pluginv1.GetMetad
 	if err != nil || row == nil {
 		return &pluginv1.GetMetadataResponse{}, err
 	}
-	return &pluginv1.GetMetadataResponse{Item: metadataItem(*row)}, nil
+	item := metadataItem(*row)
+	if art := s.runtime.sceneArtwork(ctx, id); art != nil {
+		if art.PosterPath != "" {
+			item.PosterPath = backendImagePath(art.PosterPath)
+		}
+		if len(art.BackdropPaths) > 0 {
+			item.BackdropPath = backendImagePath(art.BackdropPaths[0])
+		}
+	}
+	return &pluginv1.GetMetadataResponse{Item: item}, nil
 }
 func metadataItem(s scene) *pluginv1.MetadataItem {
 	genres := []string{}
@@ -171,7 +210,11 @@ func metadataItem(s scene) *pluginv1.MetadataItem {
 			year = int32(n)
 		}
 	}
-	return &pluginv1.MetadataItem{ProviderId: "stash:" + s.ID, ItemType: "movie", Title: displayTitle(s), OriginalTitle: s.Title, SortTitle: displayTitle(s), Year: year, Overview: s.Details, Runtime: runtimeMinutes(s), Genres: genres, ProviderIds: providerIDs(s.ID), ReleaseDate: s.Date, PosterPath: coverPath(s.ID), BackdropPath: coverPath(s.ID), People: people, Studios: studios}
+	imagePath := ""
+	if s.Paths.Screenshot != "" {
+		imagePath = coverPath(s.ID)
+	}
+	return &pluginv1.MetadataItem{ProviderId: "stash:" + s.ID, ItemType: "movie", Title: displayTitle(s), OriginalTitle: s.Title, SortTitle: displayTitle(s), Year: year, Overview: s.Details, Runtime: runtimeMinutes(s), Genres: genres, ProviderIds: providerIDs(s.ID), ReleaseDate: s.Date, PosterPath: imagePath, BackdropPath: imagePath, People: people, Studios: studios}
 }
 func (s *metadataServer) GetPersonDetail(context.Context, *pluginv1.GetPersonDetailRequest) (*pluginv1.GetPersonDetailResponse, error) {
 	return &pluginv1.GetPersonDetailResponse{}, nil
@@ -198,18 +241,30 @@ func (s *metadataServer) GetImages(ctx context.Context, req *pluginv1.GetImagesR
 	if err != nil || row == nil {
 		return &pluginv1.GetImagesResponse{}, err
 	}
-	if row.Paths.Screenshot == "" {
-		return &pluginv1.GetImagesResponse{}, nil
+	out := &pluginv1.GetImagesResponse{}
+	art := s.runtime.sceneArtwork(ctx, id)
+	if art != nil && art.PosterPath != "" {
+		out.Images = append(out.Images, &pluginv1.ImageRecord{Kind: "poster", Url: backendImagePath(art.PosterPath)})
 	}
-	path := coverPath(id)
-	return &pluginv1.GetImagesResponse{Images: []*pluginv1.ImageRecord{{Kind: "poster", Url: path}, {Kind: "backdrop", Url: path}}}, nil
+	if row.Paths.Screenshot != "" && len(out.Images) == 0 {
+		out.Images = append(out.Images, &pluginv1.ImageRecord{Kind: "poster", Url: coverPath(id)})
+	}
+	if art != nil {
+		for _, path := range art.BackdropPaths {
+			out.Images = append(out.Images, &pluginv1.ImageRecord{Kind: "backdrop", Url: backendImagePath(path)})
+		}
+	}
+	if row.Paths.Screenshot != "" {
+		out.Images = append(out.Images, &pluginv1.ImageRecord{Kind: "backdrop", Url: coverPath(id)})
+	}
+	return out, nil
 }
 func (s *metadataServer) ResolveImageURL(_ context.Context, req *pluginv1.ResolveImageURLRequest) (*pluginv1.ResolveImageURLResponse, error) {
 	c := s.runtime.stash()
 	if c == nil {
 		return nil, fmt.Errorf("Stash connection not configured")
 	}
-	return &pluginv1.ResolveImageURLResponse{Url: c.imageURL(strings.TrimPrefix(req.GetPath(), "stash://"))}, nil
+	return &pluginv1.ResolveImageURLResponse{Url: s.resolveImageURL(c, req.GetPath())}, nil
 }
 func (s *metadataServer) ResolveImageURLs(_ context.Context, req *pluginv1.ResolveImageURLsRequest) (*pluginv1.ResolveImageURLsResponse, error) {
 	c := s.runtime.stash()
@@ -218,9 +273,15 @@ func (s *metadataServer) ResolveImageURLs(_ context.Context, req *pluginv1.Resol
 	}
 	out := map[string]string{}
 	for _, path := range req.GetPaths() {
-		out[path] = c.imageURL(strings.TrimPrefix(path, "stash://"))
+		out[path] = s.resolveImageURL(c, path)
 	}
 	return &pluginv1.ResolveImageURLsResponse{Urls: out}, nil
+}
+func (s *metadataServer) resolveImageURL(stash *stashClient, path string) string {
+	if backendPath, ok := strings.CutPrefix(path, "stash://backend"); ok {
+		return s.runtime.artworkClient().imageURL(backendPath)
+	}
+	return stash.imageURL(strings.TrimPrefix(path, "stash://"))
 }
 func loadManifest() (*pluginv1.PluginManifest, error) {
 	m, err := publicmanifest.Load(manifestJSON)
