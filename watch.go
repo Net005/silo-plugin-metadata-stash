@@ -43,6 +43,14 @@ func (s *watchSyncServer) ApplyEvents(ctx context.Context, req *pluginv1.WatchSy
 }
 func (s *watchSyncServer) applyOne(ctx context.Context, e *pluginv1.WatchSyncEvent) *pluginv1.WatchSyncApplyResult {
 	result := &pluginv1.WatchSyncApplyResult{EventId: e.GetEventId(), Status: pluginv1.WatchSyncApplyStatus_WATCH_SYNC_APPLY_STATUS_NO_CHANGE}
+	switch e.GetOperation() {
+	case pluginv1.WatchSyncOperation_WATCH_SYNC_OPERATION_SCROBBLE_START,
+		pluginv1.WatchSyncOperation_WATCH_SYNC_OPERATION_SCROBBLE_PAUSE,
+		pluginv1.WatchSyncOperation_WATCH_SYNC_OPERATION_SCROBBLE_STOP,
+		pluginv1.WatchSyncOperation_WATCH_SYNC_OPERATION_MARK_WATCHED:
+	default:
+		return result
+	}
 	c := s.runtime.stash()
 	id := ""
 	if e.GetMedia() != nil {
@@ -63,7 +71,22 @@ func (s *watchSyncServer) applyOne(ctx context.Context, e *pluginv1.WatchSyncEve
 	if strings.HasPrefix(id, "javbeacon:") || (releaseID > 0 && e.GetMedia().GetExternalIds()[capabilityID] == "" && !strings.HasPrefix(e.GetProviderItemKey(), "stash:")) {
 		id = ""
 	}
-	id = strings.TrimPrefix(id, "stash:")
+	id = stashPlaybackID(id)
+	if id == "" && releaseID == 0 && e.GetMedia().GetMediaItemId() != "" {
+		s.runtime.mu.RLock()
+		base, key := s.runtime.siloBase, s.runtime.siloKey
+		s.runtime.mu.RUnlock()
+		if base != "" && key != "" && c.configured() {
+			paths, err := provider.NewSiloClient(base, key).ItemFilePaths(ctx, e.GetMedia().GetMediaItemId())
+			if err != nil {
+				return retryResult(e, "Unable to read Silo playback file identity")
+			}
+			id, err = c.sceneIDForExactPaths(ctx, paths)
+			if err != nil {
+				return retryResult(e, "Unable to resolve an unambiguous Stash playback file")
+			}
+		}
+	}
 	if c != nil && c.excludedScenes[id] {
 		return result
 	}
@@ -99,6 +122,19 @@ func (s *watchSyncServer) applyOne(ctx context.Context, e *pluginv1.WatchSyncEve
 		result.Status = pluginv1.WatchSyncApplyStatus_WATCH_SYNC_APPLY_STATUS_APPLIED
 	}
 	return result
+}
+
+func stashPlaybackID(raw string) string {
+	raw = strings.TrimPrefix(strings.TrimSpace(raw), "stash:")
+	if raw == "" {
+		return ""
+	}
+	for _, r := range raw {
+		if r < '0' || r > '9' {
+			return ""
+		}
+	}
+	return raw
 }
 func (s *watchSyncServer) applyViaJAVBeacon(ctx context.Context, e *pluginv1.WatchSyncEvent, sceneID string, releaseID int64) *pluginv1.WatchSyncApplyResult {
 	result := &pluginv1.WatchSyncApplyResult{EventId: e.GetEventId(), Status: pluginv1.WatchSyncApplyStatus_WATCH_SYNC_APPLY_STATUS_NO_CHANGE}
