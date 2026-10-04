@@ -70,9 +70,9 @@ func (s *runtimeServer) Configure(_ context.Context, req *pluginv1.ConfigureRequ
 		}
 		s.siloLibraryID = text(v["silo_library_id"])
 		s.stashFilters = text(v["stash_saved_filter_selection"])
-		s.stashPrefix = text(v["stash_saved_filter_prefix"])
+		s.stashPrefix = literalText(v["stash_saved_filter_prefix"])
 		s.releaseFilters = text(v["saved_filter_selection"])
-		s.releasePrefix = text(v["saved_filter_prefix"])
+		s.releasePrefix = literalText(v["saved_filter_prefix"])
 		s.watchListCollectionID = text(v["silo_watchlist_collection_id"])
 		legacy := s.legacy
 		config := legacytasks.Config{JAVBeaconURL: s.artwork.base, JAVBeaconKey: s.artwork.key, StashURL: s.client.base, StashKey: s.client.key, SiloURL: s.siloBase, SiloKey: s.siloKey, SiloLibraryID: s.siloLibraryID, StashFilters: s.stashFilters, StashPrefix: s.stashPrefix, ReleaseFilters: s.releaseFilters, ReleasePrefix: s.releasePrefix, WatchListCollectionID: s.watchListCollectionID}
@@ -85,7 +85,10 @@ func (s *runtimeServer) Configure(_ context.Context, req *pluginv1.ConfigureRequ
 	}
 	return &pluginv1.ConfigureResponse{}, nil
 }
-func text(v any) string                      { s, _ := v.(string); return strings.TrimSpace(s) }
+func text(v any) string { s, _ := v.(string); return strings.TrimSpace(s) }
+
+// Prefix whitespace is intentional: it separates the prefix from the title.
+func literalText(v any) string               { s, _ := v.(string); return s }
 func (s *runtimeServer) stash() *stashClient { s.mu.RLock(); defer s.mu.RUnlock(); return s.client }
 func (s *runtimeServer) artworkClient() *artworkClient {
 	s.mu.RLock()
