@@ -1,0 +1,144 @@
+name: Stash.Metadata
+description: Fill missing Stash scene metadata from an exactly linked JAVBeacon release.
+version: 0.1.0
+ui:
+  javascript:
+    - javbeacon_subtitles.js
+    - javbeacon_scrubber.js
+  css:
+    - javbeacon_subtitles.css
+    - javbeacon_scrubber.css
+settings:
+  javbeacon_url:
+    displayName: JAVBeacon URL
+    description: Server URL reachable from Stash, for example http://javbeacon:8080.
+    type: STRING
+  javbeacon_api_key:
+    displayName: JAVBeacon API key
+    description: API key used only by the server-side plugin to fetch enrichment and artwork.
+    type: STRING
+  timeout_seconds:
+    displayName: Request timeout (seconds)
+    description: Timeout for JAVBeacon metadata and cover requests. Defaults to 15.
+    type: NUMBER
+  auto_enrich:
+    displayName: Enrich on scene create or update
+    description: Fill empty Stash fields from an exactly linked JAVBeacon release. Defaults to true.
+    type: BOOLEAN
+  create_entities:
+    displayName: Create missing performers, studios and tags
+    description: Off by default. Existing entities are reused by exact name. Enable only if you want new Stash entities created from JAVBeacon names.
+    type: BOOLEAN
+  cover_mode:
+    displayName: Cover handling
+    description: 'Off (default) preserves all Stash covers. Set to missing to add a JAVBeacon poster only when Stash reports no screenshot.'
+    type: STRING
+  max_scenes_per_run:
+    displayName: Maximum scenes per backfill run
+    description: Defaults to 200. Set to 0 to scan all scenes.
+    type: NUMBER
+  javbeacon_browser_url:
+    displayName: JAVBeacon browser URL
+    description: Optional public URL opened by the scene-page JAVBeacon button, for example https://jav.example.com. Defaults to JAVBeacon URL.
+    type: STRING
+  webhook_secret:
+    displayName: JAVBeacon webhook secret
+    description: Dedicated secret configured in JAVBeacon under Settings > StashApp > Changed-scene sync.
+    type: STRING
+  watchlist_tag_id:
+    displayName: Watchlist tag ID
+    description: Stash tag ID used by the always-visible Watchlist button on scene cards.
+    type: STRING
+  subs_base_url:
+    displayName: JAVBeacon-Subs base URL
+    description: Base URL reachable from the Stash server, for example https://subs.example.com. Do not include /api/v1/jobs.
+    type: STRING
+  subs_api_token:
+    displayName: JAVBeacon-Subs API token
+    description: Bearer token used by Stash for subtitle job requests. It is sent only by the server-side plugin.
+    type: STRING
+  subs_scene_path_filters:
+    displayName: Scene path filters
+    description: Optional case-insensitive partial path matches controlling where + CC is shown. Separate multiple values with new lines, commas, or semicolons. Blank allows every scene path.
+    type: STRING
+  subs_timeout_seconds:
+    displayName: Request timeout (seconds)
+    description: HTTP timeout for JAVBeacon-Subs requests. Defaults to 30 seconds.
+    type: NUMBER
+  subs_recursive:
+    displayName: Recursive
+    description: Process inputs recursively. Defaults to false for the single scene file.
+    type: BOOLEAN
+  subs_overwrite:
+    displayName: Overwrite
+    description: Default for non-interactive subtitle requests. The scene button asks before replacing existing subtitles and passes that choice for each request.
+    type: BOOLEAN
+  subs_auto_detect_release:
+    displayName: Auto-detect release
+    description: Detect the release from the scene filename. Defaults to true.
+    type: BOOLEAN
+  subs_release_within_days:
+    displayName: Release within days
+    description: Restrict release matching to this many days. Defaults to 0.
+    type: NUMBER
+  subs_debug_mode:
+    displayName: Debug mode
+    description: Enable JAVBeacon-Subs debug mode for submitted jobs. Defaults to true.
+    type: BOOLEAN
+  subs_keep_japanese:
+    displayName: Keep Japanese
+    description: Preserve Japanese subtitle tracks. Defaults to true.
+    type: BOOLEAN
+  subs_write_ass:
+    displayName: Write ASS
+    description: Ask JAVBeacon-Subs to write ASS output. Defaults to false.
+    type: BOOLEAN
+  subs_job_options:
+    displayName: Job options (JSON)
+    description: Optional advanced JSON overrides for the JAVBeacon-Subs request. Blank uses the individual settings and documented defaults. inputs is always controlled by the current scene.
+    type: STRING
+  scrubber_cover_enabled:
+    displayName: Enable cover-area video preview
+    description: On the scene page, hovering the cover/poster area before playback plays Stash's native scene preview video, as in the scene grid. Falls back to sprite screenshots when preview video is unavailable. Defaults to true.
+    type: BOOLEAN
+  scrubber_seek_preview_enabled:
+    displayName: Enable large seek-bar preview
+    description: Replaces Stash's small seek-bar thumbnail with a large preview painted into the cover/video area at the sprite sheet's native resolution. Defaults to true.
+    type: BOOLEAN
+  scrubber_hover_delay_ms:
+    displayName: Cover hover delay (ms)
+    description: How long the pointer must stay over the cover area before sprite scrubbing starts. Defaults to 400ms.
+    type: NUMBER
+  scrubber_interval_ms:
+    displayName: Sprite fallback interval (ms)
+    description: How long each sprite screenshot is shown if the scene has no playable preview video. Defaults to 700ms; minimum 100ms.
+    type: NUMBER
+exec:
+  - python3
+  - "{pluginDir}/stash_metadata.py"
+interface: raw
+errLog: debug
+tasks:
+  - name: Test JAVBeacon connection
+    description: Verify the realtime webhook and record a trace in Stash and JAVBeacon logs.
+    defaultArgs:
+      mode: test
+  - name: Preview metadata enrichment
+    description: Review proposed fill-only changes without writing to Stash.
+    defaultArgs:
+      mode: scan
+      dry_run: true
+  - name: Migrate cached metadata to Stash
+    description: Fill empty scene fields from already indexed JAVBeacon releases without refreshing Silo or scraping source sites, up to the configured run limit.
+    defaultArgs:
+      mode: scan
+      dry_run: false
+hooks:
+  - name: Enrich created or updated scene
+    description: Fill missing scene metadata after Stash scene changes.
+    triggeredBy:
+      - Scene.Create.Post
+      - Scene.Update.Post
+      - Scene.Destroy.Post
+    defaultArgs:
+      mode: hook

@@ -1,0 +1,45 @@
+name: Release
+on:
+  push:
+    tags:
+      - 'v*'
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test
+        run: |
+          python -m unittest discover -q
+          node --test test_javbeacon_subtitles.js test_javbeacon_scrubber.js
+      - name: Check version
+        shell: bash
+        run: |
+          expected="$(python - <<'PY'
+          from pathlib import Path
+          for line in Path('stash-metadata.yml').read_text().splitlines():
+              if line.startswith('version:'):
+                  print(line.split(':', 1)[1].strip())
+                  break
+          PY
+          )"
+          test "$GITHUB_REF_NAME" = "v$expected"
+      - name: Package plugin
+        shell: bash
+        run: |
+          mkdir -p dist/stash-metadata
+          cp stash-metadata.yml stash_metadata.py javbeacon_features.py javbeacon_subtitles.js javbeacon_subtitles.css javbeacon_scrubber.js javbeacon_scrubber.css dist/stash-metadata/
+          (cd dist && zip -r "stash-metadata-${GITHUB_REF_NAME}.zip" stash-metadata)
+          (cd dist && sha256sum "stash-metadata-${GITHUB_REF_NAME}.zip" > SHA256SUMS)
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/*.zip dist/SHA256SUMS --title "Stash.Metadata $GITHUB_REF_NAME" --generate-notes --latest
