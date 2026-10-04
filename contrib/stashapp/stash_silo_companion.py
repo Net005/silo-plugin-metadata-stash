@@ -657,7 +657,8 @@ def main():
         result = {"realtime": realtime, "enrichment": enrichment, "silo_refresh": silo_refresh, "silo_collection": silo_collection}
     else:
         raise RuntimeError("unknown task mode")
-    _log(json.dumps(result, ensure_ascii=False))
+    if mode != "hook":
+        _log(json.dumps(result, ensure_ascii=False))
     return {"output": result}
 
 

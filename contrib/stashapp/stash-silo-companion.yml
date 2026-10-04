@@ -1,6 +1,6 @@
 name: Stash.Silo Companion
 description: Enrich Stash scenes from linked metadata and keep the Silo collection current.
-version: 0.2.6
+version: 0.2.7
 ui:
   javascript:
     - stash_silo_subtitles.js
@@ -133,7 +133,7 @@ exec:
   - python3
   - "{pluginDir}/stash_silo_companion.py"
 interface: raw
-errLog: debug
+errLog: info
 tasks:
   - name: Test metadata backend connection
     description: Verify the realtime webhook and record a trace in Stash and JAVBeacon logs.
