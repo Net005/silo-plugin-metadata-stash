@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	provider "github.com/Net005/silo-plugin-metadata-stash/internal/legacyprovider"
 	"strconv"
 	"strings"
 	"time"
@@ -43,9 +44,6 @@ func (s *watchSyncServer) ApplyEvents(ctx context.Context, req *pluginv1.WatchSy
 func (s *watchSyncServer) applyOne(ctx context.Context, e *pluginv1.WatchSyncEvent) *pluginv1.WatchSyncApplyResult {
 	result := &pluginv1.WatchSyncApplyResult{EventId: e.GetEventId(), Status: pluginv1.WatchSyncApplyStatus_WATCH_SYNC_APPLY_STATUS_NO_CHANGE}
 	c := s.runtime.stash()
-	if !c.configured() {
-		return retryResult(e, "Stash connection not configured")
-	}
 	id := ""
 	if e.GetMedia() != nil {
 		id = e.GetMedia().GetExternalIds()[capabilityID]
@@ -53,9 +51,27 @@ func (s *watchSyncServer) applyOne(ctx context.Context, e *pluginv1.WatchSyncEve
 	if id == "" {
 		id = e.GetProviderItemKey()
 	}
+	releaseID := int64(0)
+	if e.GetMedia() != nil {
+		releaseID, _ = strconv.ParseInt(strings.TrimSpace(e.GetMedia().GetExternalIds()["javbeacon"]), 10, 64)
+	}
+	if releaseID == 0 {
+		if raw, ok := strings.CutPrefix(e.GetProviderItemKey(), "javbeacon:"); ok {
+			releaseID, _ = strconv.ParseInt(raw, 10, 64)
+		}
+	}
+	if strings.HasPrefix(id, "javbeacon:") || (releaseID > 0 && e.GetMedia().GetExternalIds()[capabilityID] == "" && !strings.HasPrefix(e.GetProviderItemKey(), "stash:")) {
+		id = ""
+	}
 	id = strings.TrimPrefix(id, "stash:")
+	if s.runtime.legacy != nil && s.runtime.legacy.Provider().Configured() && (id != "" || releaseID > 0) {
+		return s.applyViaJAVBeacon(ctx, e, id, releaseID)
+	}
 	if id == "" {
 		return result
+	}
+	if !c.configured() {
+		return retryResult(e, "Stash connection not configured")
 	}
 	var err error
 	changed := false
@@ -81,6 +97,48 @@ func (s *watchSyncServer) applyOne(ctx context.Context, e *pluginv1.WatchSyncEve
 	}
 	return result
 }
+func (s *watchSyncServer) applyViaJAVBeacon(ctx context.Context, e *pluginv1.WatchSyncEvent, sceneID string, releaseID int64) *pluginv1.WatchSyncApplyResult {
+	result := &pluginv1.WatchSyncApplyResult{EventId: e.GetEventId(), Status: pluginv1.WatchSyncApplyStatus_WATCH_SYNC_APPLY_STATUS_NO_CHANGE}
+	pb := provider.PlaybackEvent{ReleaseID: releaseID, StashSceneID: sceneID, SessionID: e.GetPlaybackSessionId(), PositionSeconds: e.GetPositionSeconds(), RuntimeSeconds: e.GetDurationSeconds(), OccurredAt: eventTime(e)}
+	switch e.GetOperation() {
+	case pluginv1.WatchSyncOperation_WATCH_SYNC_OPERATION_SCROBBLE_START:
+		pb.Event = "start"
+	case pluginv1.WatchSyncOperation_WATCH_SYNC_OPERATION_SCROBBLE_PAUSE:
+		pb.Event = "progress"
+		pb.IsPaused = true
+	case pluginv1.WatchSyncOperation_WATCH_SYNC_OPERATION_SCROBBLE_STOP:
+		pb.Event = "stop"
+		pb.IsPlayed = e.GetCompleted()
+	case pluginv1.WatchSyncOperation_WATCH_SYNC_OPERATION_MARK_WATCHED:
+		pb.Event = "stop"
+		pb.IsPlayed = true
+	default:
+		return result
+	}
+	if sceneID != "" && pb.IsPlayed && !pb.OccurredAt.IsZero() {
+		if stash := s.runtime.stash(); stash.configured() {
+			row, err := stash.findScene(ctx, sceneID)
+			if err != nil {
+				return retryResult(e, err.Error())
+			}
+			if row != nil && row.hasPlayAt(pb.OccurredAt) {
+				return result
+			}
+		}
+	}
+	if pb.SessionID == "" {
+		pb.SessionID = e.GetWatchHistoryId()
+	}
+	if pb.SessionID == "" {
+		pb.SessionID = e.GetEventId()
+	}
+	if _, err := s.runtime.legacy.Provider().ReportPlayback(ctx, pb); err != nil {
+		return retryResult(e, err.Error())
+	}
+	result.Status = pluginv1.WatchSyncApplyStatus_WATCH_SYNC_APPLY_STATUS_APPLIED
+	return result
+}
+
 func eventTime(e *pluginv1.WatchSyncEvent) time.Time {
 	if at := e.GetOccurredAt(); at != nil && at.IsValid() {
 		return at.AsTime()

@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 
+	legacyprovider "github.com/Net005/silo-plugin-metadata-stash/internal/legacyprovider"
+	legacytasks "github.com/Net005/silo-plugin-metadata-stash/internal/legacytasks"
 	pluginv1 "github.com/Silo-Server/silo-plugin-sdk/pkg/pluginproto/silo/plugin/v1"
 	publicmanifest "github.com/Silo-Server/silo-plugin-sdk/pkg/pluginsdk/manifest"
 	"github.com/Silo-Server/silo-plugin-sdk/pkg/pluginsdk/runtime"
@@ -27,14 +29,18 @@ const capabilityID = "stash"
 
 type runtimeServer struct {
 	runtimedefault.Server
-	manifest *pluginv1.PluginManifest
-	mu       sync.RWMutex
-	client   *stashClient
-	artwork  *artworkClient
-	siloBase string
-	siloKey  string
-	pollOnce sync.Once
-	task     *scheduledTaskServer
+	manifest                                                 *pluginv1.PluginManifest
+	mu                                                       sync.RWMutex
+	client                                                   *stashClient
+	artwork                                                  *artworkClient
+	siloBase                                                 string
+	siloKey                                                  string
+	pollOnce                                                 sync.Once
+	task                                                     *scheduledTaskServer
+	legacy                                                   *legacytasks.Manager
+	siloLibraryID                                            string
+	stashFilters, stashPrefix, releaseFilters, releasePrefix string
+	watchListCollectionID                                    string
 }
 
 func (s *runtimeServer) GetManifest(context.Context, *pluginv1.GetManifestRequest) (*pluginv1.GetManifestResponse, error) {
@@ -62,7 +68,18 @@ func (s *runtimeServer) Configure(_ context.Context, req *pluginv1.ConfigureRequ
 		if siloKey != "" {
 			s.siloKey = siloKey
 		}
+		s.siloLibraryID = text(v["silo_library_id"])
+		s.stashFilters = text(v["stash_saved_filter_selection"])
+		s.stashPrefix = text(v["stash_saved_filter_prefix"])
+		s.releaseFilters = text(v["saved_filter_selection"])
+		s.releasePrefix = text(v["saved_filter_prefix"])
+		s.watchListCollectionID = text(v["silo_watchlist_collection_id"])
+		legacy := s.legacy
+		config := legacytasks.Config{JAVBeaconURL: s.artwork.base, JAVBeaconKey: s.artwork.key, SiloURL: s.siloBase, SiloKey: s.siloKey, SiloLibraryID: s.siloLibraryID, StashFilters: s.stashFilters, StashPrefix: s.stashPrefix, ReleaseFilters: s.releaseFilters, ReleasePrefix: s.releasePrefix, WatchListCollectionID: s.watchListCollectionID}
 		s.mu.Unlock()
+		if legacy != nil {
+			legacy.Configure(config)
+		}
 		s.pollOnce.Do(func() { go s.pollMatching() })
 	}
 	return &pluginv1.ConfigureResponse{}, nil
@@ -86,13 +103,14 @@ type metadataServer struct {
 	pluginv1.UnimplementedMetadataProviderServer
 	pluginv1.UnimplementedImageResolverServer
 	runtime *runtimeServer
+	people  personQueue
 }
 
 func supported(t string) bool { return t == "" || t == "movie" }
 func sceneID(raw string, ids *structpb.Struct) string {
 	if ids != nil {
 		v := ids.AsMap()
-		if id := text(v[capabilityID]); id != "" {
+		if id := text(v[capabilityID]); id != "" && !strings.HasPrefix(id, "javbeacon:") {
 			return strings.TrimPrefix(id, "stash:")
 		}
 	}
@@ -105,6 +123,14 @@ func sceneID(raw string, ids *structpb.Struct) string {
 func providerIDs(id string) *structpb.Struct {
 	x, _ := structpb.NewStruct(map[string]any{capabilityID: id})
 	return x
+}
+func providerIDsWithRelease(id string, releaseID int64) *structpb.Struct {
+	values := map[string]any{capabilityID: id}
+	if releaseID > 0 {
+		values["javbeacon"] = strconv.FormatInt(releaseID, 10)
+	}
+	out, _ := structpb.NewStruct(values)
+	return out
 }
 func displayTitle(s scene) string {
 	if strings.TrimSpace(s.Title) != "" {
@@ -130,10 +156,7 @@ func (s *metadataServer) Search(ctx context.Context, req *pluginv1.SearchMetadat
 		return &pluginv1.SearchMetadataResponse{}, nil
 	}
 	c := s.runtime.stash()
-	if c == nil {
-		return nil, fmt.Errorf("Stash connection not configured")
-	}
-	if id := sceneID("", req.GetProviderIds()); id != "" {
+	if id := sceneID("", req.GetProviderIds()); id != "" && c.configured() {
 		row, err := c.findScene(ctx, id)
 		if err != nil {
 			return nil, err
@@ -142,22 +165,61 @@ func (s *metadataServer) Search(ctx context.Context, req *pluginv1.SearchMetadat
 			return &pluginv1.SearchMetadataResponse{}, nil
 		}
 		result := searchResult(*row)
-		if art := s.runtime.sceneArtwork(ctx, row.ID); art != nil && art.PosterPath != "" {
-			result.ImageUrl = backendImagePath(art.PosterPath)
+		if art := s.runtime.sceneArtwork(ctx, row.ID); art != nil {
+			result.ProviderIds = providerIDsWithRelease(row.ID, art.ReleaseID)
+			if art.PosterPath != "" {
+				result.ImageUrl = backendImagePath(art.PosterPath)
+			}
 		}
 		return &pluginv1.SearchMetadataResponse{Results: []*pluginv1.ProviderSearchResult{result}}, nil
 	}
-	rows, err := c.search(ctx, req.GetQuery())
-	if err != nil {
-		return nil, err
+	if releaseID := legacyReleaseID("", req.GetProviderIds()); releaseID > 0 {
+		release, err := s.fetchLegacy(ctx, releaseID)
+		if err != nil {
+			return nil, err
+		}
+		if release != nil {
+			if release.StashSceneID != "" && c.configured() {
+				row, err := c.findScene(ctx, release.StashSceneID)
+				if err != nil {
+					return nil, err
+				}
+				if row != nil {
+					result := searchResult(*row)
+					result.ProviderIds = providerIDsWithRelease(row.ID, releaseID)
+					return &pluginv1.SearchMetadataResponse{Results: []*pluginv1.ProviderSearchResult{result}}, nil
+				}
+			}
+			return &pluginv1.SearchMetadataResponse{Results: []*pluginv1.ProviderSearchResult{legacySearchResult(release)}}, nil
+		}
 	}
 	out := &pluginv1.SearchMetadataResponse{}
-	for _, row := range rows {
-		result := searchResult(row)
-		if art := s.runtime.sceneArtwork(ctx, row.ID); art != nil && art.PosterPath != "" {
-			result.ImageUrl = backendImagePath(art.PosterPath)
+	if c.configured() {
+		rows, err := c.search(ctx, req.GetQuery())
+		if err != nil {
+			return nil, err
 		}
-		out.Results = append(out.Results, result)
+		for _, row := range rows {
+			result := searchResult(row)
+			if art := s.runtime.sceneArtwork(ctx, row.ID); art != nil {
+				result.ProviderIds = providerIDsWithRelease(row.ID, art.ReleaseID)
+				if art.PosterPath != "" {
+					result.ImageUrl = backendImagePath(art.PosterPath)
+				}
+			}
+			out.Results = append(out.Results, result)
+		}
+	}
+	if len(out.Results) == 0 && s.runtime.legacy != nil && s.runtime.legacy.Provider().Configured() {
+		releases, err := s.runtime.legacy.Provider().Search(ctx, req.GetQuery(), 25)
+		if err != nil {
+			return nil, err
+		}
+		for i := range releases {
+			if releases[i].ReleaseID > 0 {
+				out.Results = append(out.Results, legacySearchResult(&releases[i]))
+			}
+		}
 	}
 	return out, nil
 }
@@ -166,31 +228,61 @@ func (s *metadataServer) GetMetadata(ctx context.Context, req *pluginv1.GetMetad
 		return &pluginv1.GetMetadataResponse{}, nil
 	}
 	id := sceneID(req.GetProviderId(), req.GetProviderIds())
+	var release *legacyprovider.Metadata
 	if id == "" {
-		return &pluginv1.GetMetadataResponse{}, nil
+		var err error
+		release, err = s.fetchLegacy(ctx, legacyReleaseID(req.GetProviderId(), req.GetProviderIds()))
+		if err != nil {
+			return nil, err
+		}
+		if release != nil {
+			id = release.StashSceneID
+		}
 	}
 	c := s.runtime.stash()
-	if c == nil {
-		return nil, fmt.Errorf("Stash connection not configured")
-	}
-	row, err := c.findScene(ctx, id)
-	if err != nil || row == nil {
-		return &pluginv1.GetMetadataResponse{}, err
-	}
-	item := metadataItem(*row)
-	if art := s.runtime.sceneArtwork(ctx, id); art != nil {
-		if art.PosterPath != "" {
-			item.PosterPath = backendImagePath(art.PosterPath)
+	if id != "" && c.configured() {
+		row, err := c.findScene(ctx, id)
+		if err != nil {
+			return nil, err
 		}
-		if len(art.BackdropPaths) > 0 {
-			item.BackdropPath = backendImagePath(art.BackdropPaths[0])
+		if row != nil {
+			item := metadataItem(*row)
+			if release != nil {
+				item.ProviderIds = providerIDsWithRelease(id, release.ReleaseID)
+			}
+			if s.runtime.legacy != nil && s.runtime.legacy.Provider().Configured() {
+				for i, p := range row.Performers {
+					if i < len(item.People) && p.ID != "" {
+						item.People[i].PhotoPath = performerImagePath(p.ID)
+					}
+				}
+			}
+			if art := s.runtime.sceneArtwork(ctx, id); art != nil {
+				if art.ReleaseID > 0 {
+					item.ProviderIds = providerIDsWithRelease(id, art.ReleaseID)
+				}
+				if art.PosterPath != "" {
+					item.PosterPath = backendImagePath(art.PosterPath)
+				}
+				if len(art.BackdropPaths) > 0 {
+					item.BackdropPath = backendImagePath(art.BackdropPaths[0])
+				}
+			}
+			s.queuePeople(*row)
+			return &pluginv1.GetMetadataResponse{Item: item}, nil
 		}
 	}
-	return &pluginv1.GetMetadataResponse{Item: item}, nil
+	if release != nil {
+		return &pluginv1.GetMetadataResponse{Item: legacyMetadataItem(release)}, nil
+	}
+	return &pluginv1.GetMetadataResponse{}, nil
 }
 func metadataItem(s scene) *pluginv1.MetadataItem {
 	genres := []string{}
 	for _, t := range s.Tags {
+		if strings.EqualFold(t.Name, "Watchlist") || strings.HasPrefix(strings.ToLower(t.Name), "collection: ") {
+			continue
+		}
 		genres = append(genres, t.Name)
 	}
 	people := []*pluginv1.PersonRecord{}
@@ -216,9 +308,6 @@ func metadataItem(s scene) *pluginv1.MetadataItem {
 	}
 	return &pluginv1.MetadataItem{ProviderId: "stash:" + s.ID, ItemType: "movie", Title: displayTitle(s), OriginalTitle: s.Title, SortTitle: displayTitle(s), Year: year, Overview: s.Details, Runtime: runtimeMinutes(s), Genres: genres, ProviderIds: providerIDs(s.ID), ReleaseDate: s.Date, PosterPath: imagePath, BackdropPath: imagePath, People: people, Studios: studios}
 }
-func (s *metadataServer) GetPersonDetail(context.Context, *pluginv1.GetPersonDetailRequest) (*pluginv1.GetPersonDetailResponse, error) {
-	return &pluginv1.GetPersonDetailResponse{}, nil
-}
 func (s *metadataServer) GetSeasons(context.Context, *pluginv1.GetSeasonsRequest) (*pluginv1.GetSeasonsResponse, error) {
 	return &pluginv1.GetSeasonsResponse{}, nil
 }
@@ -230,34 +319,47 @@ func (s *metadataServer) GetImages(ctx context.Context, req *pluginv1.GetImagesR
 		return &pluginv1.GetImagesResponse{}, nil
 	}
 	id := sceneID(req.GetProviderId(), req.GetProviderIds())
+	var release *legacyprovider.Metadata
 	if id == "" {
-		return &pluginv1.GetImagesResponse{}, nil
-	}
-	c := s.runtime.stash()
-	if c == nil {
-		return nil, fmt.Errorf("Stash connection not configured")
-	}
-	row, err := c.findScene(ctx, id)
-	if err != nil || row == nil {
-		return &pluginv1.GetImagesResponse{}, err
-	}
-	out := &pluginv1.GetImagesResponse{}
-	art := s.runtime.sceneArtwork(ctx, id)
-	if art != nil && art.PosterPath != "" {
-		out.Images = append(out.Images, &pluginv1.ImageRecord{Kind: "poster", Url: backendImagePath(art.PosterPath)})
-	}
-	if row.Paths.Screenshot != "" && len(out.Images) == 0 {
-		out.Images = append(out.Images, &pluginv1.ImageRecord{Kind: "poster", Url: coverPath(id)})
-	}
-	if art != nil {
-		for _, path := range art.BackdropPaths {
-			out.Images = append(out.Images, &pluginv1.ImageRecord{Kind: "backdrop", Url: backendImagePath(path)})
+		var err error
+		release, err = s.fetchLegacy(ctx, legacyReleaseID(req.GetProviderId(), req.GetProviderIds()))
+		if err != nil {
+			return nil, err
+		}
+		if release != nil {
+			id = release.StashSceneID
 		}
 	}
-	if row.Paths.Screenshot != "" {
-		out.Images = append(out.Images, &pluginv1.ImageRecord{Kind: "backdrop", Url: coverPath(id)})
+	c := s.runtime.stash()
+	if id != "" && c.configured() {
+		row, err := c.findScene(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		if row != nil {
+			out := &pluginv1.GetImagesResponse{}
+			art := s.runtime.sceneArtwork(ctx, id)
+			if art != nil && art.PosterPath != "" {
+				out.Images = append(out.Images, &pluginv1.ImageRecord{Kind: "poster", Url: backendImagePath(art.PosterPath)})
+			}
+			if row.Paths.Screenshot != "" && len(out.Images) == 0 {
+				out.Images = append(out.Images, &pluginv1.ImageRecord{Kind: "poster", Url: coverPath(id)})
+			}
+			if art != nil {
+				for _, path := range art.BackdropPaths {
+					out.Images = append(out.Images, &pluginv1.ImageRecord{Kind: "backdrop", Url: backendImagePath(path)})
+				}
+			}
+			if row.Paths.Screenshot != "" {
+				out.Images = append(out.Images, &pluginv1.ImageRecord{Kind: "backdrop", Url: coverPath(id)})
+			}
+			return out, nil
+		}
 	}
-	return out, nil
+	if release != nil {
+		return &pluginv1.GetImagesResponse{Images: legacyImages(release)}, nil
+	}
+	return &pluginv1.GetImagesResponse{}, nil
 }
 func (s *metadataServer) ResolveImageURL(_ context.Context, req *pluginv1.ResolveImageURLRequest) (*pluginv1.ResolveImageURLResponse, error) {
 	c := s.runtime.stash()
@@ -278,6 +380,12 @@ func (s *metadataServer) ResolveImageURLs(_ context.Context, req *pluginv1.Resol
 	return &pluginv1.ResolveImageURLsResponse{Urls: out}, nil
 }
 func (s *metadataServer) resolveImageURL(stash *stashClient, path string) string {
+	if legacyPath, ok := strings.CutPrefix(path, "javbeacon://"); ok {
+		if s.runtime.legacy == nil || strings.Contains(legacyPath, "..") || strings.ContainsAny(legacyPath, "?#\\") {
+			return ""
+		}
+		return s.runtime.legacy.Provider().ImageURL("/" + legacyPath)
+	}
 	if backendPath, ok := strings.CutPrefix(path, "stash://backend"); ok {
 		return s.runtime.artworkClient().imageURL(backendPath)
 	}
@@ -309,7 +417,7 @@ func main() {
 		panic(err)
 	}
 	logger := hclog.New(&hclog.LoggerOptions{Name: "stash-metadata", Level: hclog.Info})
-	rs := &runtimeServer{manifest: m}
+	rs := &runtimeServer{manifest: m, legacy: legacytasks.New(logger)}
 	ms := &metadataServer{runtime: rs}
 	ws := &watchSyncServer{runtime: rs}
 	rs.task = &scheduledTaskServer{runtime: rs, log: logger}

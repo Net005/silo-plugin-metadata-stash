@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	provider "github.com/Net005/silo-plugin-metadata-stash/internal/legacyprovider"
 	pluginv1 "github.com/Silo-Server/silo-plugin-sdk/pkg/pluginproto/silo/plugin/v1"
 	"github.com/hashicorp/go-hclog"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -26,8 +27,17 @@ type scheduledTaskServer struct {
 	cursor  string
 }
 
-func (s *scheduledTaskServer) Run(_ context.Context, req *pluginv1.RunScheduledTaskRequest) (*pluginv1.RunScheduledTaskResponse, error) {
-	if req.GetTaskKey() != "match-unmatched" && !strings.HasSuffix(req.GetTaskKey(), ":match-unmatched") {
+func (s *scheduledTaskServer) Run(ctx context.Context, req *pluginv1.RunScheduledTaskRequest) (*pluginv1.RunScheduledTaskResponse, error) {
+	key := req.GetTaskKey()
+	for _, task := range []string{"collection-sync", "watchlist-collection-sync", "metadata-refresh", "watched-sync", "play-backfill", "repair-matched"} {
+		if key == task || strings.HasSuffix(key, ":"+task) {
+			if s.runtime.legacy == nil {
+				return taskOutput(map[string]any{"status": "not_configured"})
+			}
+			return s.runtime.legacy.Run(ctx, req)
+		}
+	}
+	if key != "match-unmatched" && !strings.HasSuffix(key, ":match-unmatched") {
 		return taskOutput(map[string]any{"status": "unknown_task"})
 	}
 	if !s.start() {
@@ -65,7 +75,7 @@ func (s *scheduledTaskServer) start() bool {
 }
 func (s *runtimeServer) pollMatching() {
 	task := s.task
-	ticker := time.NewTicker(15 * time.Minute)
+	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
 	for {
 		task.start()
@@ -112,15 +122,38 @@ func (s *scheduledTaskServer) match(ctx context.Context) (map[string]any, error)
 				skipped++
 				continue
 			}
-			found, err := c.search(ctx, item.Title)
+			files, err := provider.NewSiloClient(base, key).ItemFilePaths(ctx, item.ContentID)
 			if err != nil {
 				return nil, err
 			}
-			if len(found) != 1 {
+			candidates := files
+			if len(candidates) == 0 {
+				candidates = []string{item.Title}
+			}
+			sceneID := ""
+			ambiguous := false
+			for _, candidate := range candidates {
+				found, err := c.search(ctx, candidate)
+				if err != nil {
+					return nil, err
+				}
+				if len(found) > 1 {
+					ambiguous = true
+					break
+				}
+				if len(found) == 1 {
+					if sceneID != "" && sceneID != found[0].ID {
+						ambiguous = true
+						break
+					}
+					sceneID = found[0].ID
+				}
+			}
+			if ambiguous || sceneID == "" {
 				skipped++
 				continue
 			}
-			body := map[string]any{"library_id": item.LibraryID, "provider_ids": map[string]string{"stash": found[0].ID}}
+			body := map[string]any{"library_id": item.LibraryID, "provider_ids": map[string]string{"stash": sceneID}}
 			if err = siloRequest(ctx, base, key, http.MethodPost, "/api/v2/admin/items/"+url.PathEscape(item.ContentID)+"/match/apply", body, nil); err != nil {
 				return nil, err
 			}

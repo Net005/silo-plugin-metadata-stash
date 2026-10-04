@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -82,5 +83,40 @@ func TestSearchTermsIncludePureTabooTitleWithoutQualitySuffix(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("missing title fallback: %#v", terms)
+	}
+}
+
+func TestConcurrentSceneMetadataLookupsAreCoalesced(t *testing.T) {
+	var calls atomic.Int32
+	entered := make(chan struct{}, 1)
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		select {
+		case entered <- struct{}{}:
+		default:
+		}
+		<-release
+		_, _ = w.Write([]byte(`{"data":{"findScene":{"id":"42","title":"Scene"}}}`))
+	}))
+	defer server.Close()
+	c := &stashClient{base: server.URL, key: "key"}
+	var wg sync.WaitGroup
+	for i := 0; i < 12; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			row, err := c.findScene(context.Background(), "42")
+			if err != nil || row == nil || row.ID != "42" {
+				t.Errorf("row=%v err=%v", row, err)
+			}
+		}()
+	}
+	<-entered
+	time.Sleep(10 * time.Millisecond)
+	close(release)
+	wg.Wait()
+	if calls.Load() != 1 {
+		t.Fatalf("scene queries=%d", calls.Load())
 	}
 }

@@ -17,9 +17,17 @@ import (
 )
 
 type stashClient struct {
-	base, key string
-	http      *http.Client
-	playMu    sync.Mutex
+	base, key    string
+	http         *http.Client
+	playMu       sync.Mutex
+	sceneMu      sync.Mutex
+	sceneFlights map[string]*sceneFlight
+}
+
+type sceneFlight struct {
+	done chan struct{}
+	row  *scene
+	err  error
 }
 
 type scene struct {
@@ -102,11 +110,32 @@ func (c *stashClient) graphql(ctx context.Context, query string, variables any, 
 	return json.Unmarshal(result.Data, out)
 }
 func (c *stashClient) findScene(ctx context.Context, id string) (*scene, error) {
+	c.sceneMu.Lock()
+	if flight := c.sceneFlights[id]; flight != nil {
+		c.sceneMu.Unlock()
+		select {
+		case <-flight.done:
+			return flight.row, flight.err
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	if c.sceneFlights == nil {
+		c.sceneFlights = map[string]*sceneFlight{}
+	}
+	flight := &sceneFlight{done: make(chan struct{})}
+	c.sceneFlights[id] = flight
+	c.sceneMu.Unlock()
 	var data struct {
 		Scene *scene `json:"findScene"`
 	}
-	err := c.graphql(ctx, `query($id: ID!) { findScene(id:$id) { `+sceneFields+` } }`, map[string]any{"id": id}, &data)
-	return data.Scene, err
+	flight.err = c.graphql(ctx, `query($id: ID!) { findScene(id:$id) { `+sceneFields+` } }`, map[string]any{"id": id}, &data)
+	flight.row = data.Scene
+	c.sceneMu.Lock()
+	delete(c.sceneFlights, id)
+	close(flight.done)
+	c.sceneMu.Unlock()
+	return flight.row, flight.err
 }
 func (c *stashClient) search(ctx context.Context, query string) ([]scene, error) {
 	terms := searchTerms(query)
@@ -262,10 +291,8 @@ func (c *stashClient) addPlayOnce(ctx context.Context, id string, at time.Time) 
 	if item == nil {
 		return false, errors.New("Stash scene missing")
 	}
-	for _, raw := range item.PlayHistory {
-		if old, e := time.Parse(time.RFC3339Nano, raw); e == nil && absDuration(old.Sub(at)) < 30*time.Second {
-			return false, nil
-		}
+	if item.hasPlayAt(at) {
+		return false, nil
 	}
 	var out struct {
 		Added struct {
@@ -275,6 +302,18 @@ func (c *stashClient) addPlayOnce(ctx context.Context, id string, at time.Time) 
 	err = c.graphql(ctx, fmt.Sprintf(`mutation { sceneAddPlay(id:%q,times:[%q]) { count } }`, id, at.UTC().Format(time.RFC3339Nano)), nil, &out)
 	return err == nil, err
 }
+func (s *scene) hasPlayAt(at time.Time) bool {
+	if s == nil || at.IsZero() {
+		return false
+	}
+	for _, raw := range s.PlayHistory {
+		if old, err := time.Parse(time.RFC3339Nano, raw); err == nil && absDuration(old.Sub(at)) < 30*time.Second {
+			return true
+		}
+	}
+	return false
+}
+
 func absDuration(d time.Duration) time.Duration {
 	if d < 0 {
 		return -d

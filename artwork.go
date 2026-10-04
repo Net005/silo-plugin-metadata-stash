@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -19,6 +20,7 @@ type artworkClient struct {
 
 type sceneArtwork struct {
 	SceneID       string   `json:"scene_id"`
+	ReleaseID     int64    `json:"release_id"`
 	PosterPath    string   `json:"poster_path"`
 	BackdropPaths []string `json:"backdrop_paths"`
 }
@@ -70,7 +72,12 @@ func (c *artworkClient) fetch(ctx context.Context, sceneID string) (*sceneArtwor
 	return &art, nil
 }
 
+var performerImageRoute = regexp.MustCompile(`^/api/v1/integrations/performers/[0-9]+/image$`)
+
 func validArtworkPath(path string) bool {
+	if performerImageRoute.MatchString(path) {
+		return true
+	}
 	if !strings.HasPrefix(path, "/covers/") && !strings.HasPrefix(path, "/screenshots/") {
 		return false
 	}

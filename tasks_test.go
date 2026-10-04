@@ -19,6 +19,14 @@ func TestMatchTaskAppliesOnlyUniqueExactScenes(t *testing.T) {
 			_, _ = w.Write([]byte(`{"items":[{"content_id":"movie:one","content_type":"movie","library_id":"16","title":"ATID-705"},{"content_id":"movie:two","content_type":"movie","library_id":"16","title":"PRED-901"}],"page":{"has_more":false}}`))
 			return
 		}
+		if strings.HasSuffix(r.URL.Path, "/files") {
+			if strings.Contains(r.URL.Path, "movie:one") {
+				_, _ = w.Write([]byte(`{"items":[{"file_path":"/library/ATID-705.mp4"}],"page":{"has_more":false}}`))
+			} else {
+				_, _ = w.Write([]byte(`{"items":[{"file_path":"/library/PRED-901.mp4"}],"page":{"has_more":false}}`))
+			}
+			return
+		}
 		if strings.Contains(r.URL.Path, "/match/apply") {
 			var body map[string]any
 			_ = json.NewDecoder(r.Body).Decode(&body)
