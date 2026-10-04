@@ -1,6 +1,6 @@
 {
   "plugin_id": "stash.metadata",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "checksum": "__CHECKSUM__",
   "silo_api_version": "v1",
   "presentation": {
@@ -73,7 +73,8 @@
         "external_id_namespaces": [
           "stash"
         ],
-        "max_batch_size": 25
+        "max_batch_size": 25,
+        "export_watchlist": true
       }
     },
     {

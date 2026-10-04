@@ -1,6 +1,6 @@
 name: Stash.Metadata Companion
 description: Fill missing Stash scene metadata from an exactly linked JAVBeacon release.
-version: 0.2.0
+version: 0.2.1
 ui:
   javascript:
     - javbeacon_subtitles.js
