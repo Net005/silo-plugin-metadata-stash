@@ -1,32 +1,26 @@
 # Stash.Metadata
 
-Stash.Metadata is a dedicated Stash plugin that fills missing scene metadata from a **JAVBeacon release already linked to that exact Stash scene ID**. Stash owns scene metadata, covers, and play history. This plugin never writes play or O history and does not use Silo.
-
-Existing metadata already stored in Silo is not reset by installing or updating this plugin. The migration task reads JAVBeacon’s already indexed releases through the linked Stash scene IDs and fills missing Stash fields without a full Silo refresh or source scrape. Silo-only manual edits that were never stored in JAVBeacon cannot be inferred from that cache; export those separately before removing Silo if you need them in Stash.
-
-It also includes the existing JAVBeacon Stash scene link, realtime change webhook, subtitles controls, Watchlist button, and cover/scrubber previews in one plugin.
-
-## What it changes
-
-- Fills empty scene title, code, details, director, date, and source URL. Existing values are preserved.
-- Reuses studios, performers, and tags by exact name. Creating missing entities is optional and off by default. Existing scene associations are preserved.
-- Can fetch a JAVBeacon poster through its resize/crop route **only if Stash reports no screenshot** and `cover_mode` is `missing`. Cover updates are off by default and are performed only by the explicit enrichment task, never by scene hooks.
-- On scene create/update, sends the existing realtime webhook when configured and independently attempts fill-only enrichment. Scenes not yet linked in JAVBeacon are skipped; rerun the backfill after the link is established.
-- Scans 200 scenes per manual backfill by default. The log includes `next_page` and `next_index` to resume exactly at the next scene; pass these as task arguments for subsequent runs. Set `max_scenes_per_run` to `0` for a full scan.
+A **Go Silo plugin** that uses StashApp as its metadata, artwork, playback and Watchlist source. The Silo capabilities are `metadata_provider.v1`, `image_resolver.v1`, and `watch_sync_provider.v1`. The StashApp companion lives in [`contrib/stashapp`](contrib/stashapp) and enriches Stash from JAVBeacon's existing index; JAVBeacon is not in the Silo plugin's runtime path.
 
 ## Install
 
-1. Download the latest release ZIP and extract its `stash-metadata` directory under Stash's `plugins` directory, so `stash-metadata/stash-metadata.yml` exists. Reload Stash plugins.
-2. Set **JAVBeacon URL** and **JAVBeacon API key** under Settings → Plugins → Stash.Metadata. The key stays in the server-side Python plugin; the browser UI uses Stash plugin tasks.
-3. Set the optional **JAVBeacon webhook secret** for realtime scene-change sync. Copy the other settings from the older JAVBeacon Stash plugin if you used subtitles, Watchlist, or player enhancements.
-4. Run **Preview metadata enrichment** and review the Stash plugin log. Then run **Enrich missing scene metadata**. Automatic create/update enrichment also uses the same fill-only rules.
-5. After checking the replacement in Stash, remove the older JAVBeacon Stash plugin and Silo JAVBeacon plugin from their respective plugin directories to avoid duplicate hooks and buttons.
+1. Download the Silo plugin binary for your architecture from the latest release, then install it in Silo. Configure the StashApp URL, Stash API key and, if used, Watchlist tag ID. Select **Stash.Metadata** as the movie library metadata provider and connect its Stash watch provider.
+2. Extract the release's `stash-metadata-companion` ZIP into Stash's plugins directory. Reload Stash plugins, then configure its JAVBeacon URL and API key. The companion's existing subtitles, scene link, Watchlist button and player preview features are included.
+3. After verifying the new provider, remove the old Silo JAVBeacon plugin and old Stash JAVBeacon realtime plugin to avoid duplicate hooks and controls. Existing Silo collections remain stored, but JAVBeacon saved-filter collections are no longer updated by this replacement.
 
-JAVBeacon must be updated to a version providing the API-key-protected `GET /api/v1/integrations/stash/enrichment/{sceneId}` and `/covers/{id}/stash-poster` endpoints before enrichment can work. The realtime webhook remains a separate secret-based endpoint.
+The Go provider matches Stash scenes by an existing `stash` provider ID or an exact normalized scene code, title, or file stem. Ambiguous searches are not auto-selected. Metadata and screenshot URLs come directly from Stash. Completed Silo plays are added to Stash only when their event timestamp is not already in Stash play history; retrying the same event does not add a duplicate. Resume checkpoints are sent without inflating play duration. Watchlist events update the configured Stash tag while retaining other tags. Stash watched state is imported to Silo in pages. A bounded exact-match pass runs on startup and every 15 minutes when the Silo admin URL and key are configured; it is also exposed as a scheduled task. The companion can queue a targeted Silo refresh after a Stash scene edit when the same Silo connection is configured and it finds one exact catalog item.
+
+## Existing Silo metadata
+
+Installing this plugin does not delete Silo's stored metadata. To move Silo's cached fields into Stash **without a metadata refresh**, use the companion's **Preview existing Silo metadata migration** task, then **Import existing Silo metadata**. Configure the Silo URL, API key and library ID temporarily. The task reads matched catalog records, identifies a Stash scene by the exact stored scene ID or a unique exact code/title/file-stem match, and fills only empty Stash fields. Ambiguous rows are skipped. It does not change plays, O counts or existing Stash values. The bounded task reports a cursor and index for resumption.
+
+The companion's separate **Migrate cached metadata to Stash** task fills remaining empty fields from JAVBeacon's already indexed releases by exact Stash scene ID; it does not scrape or refresh Silo. JAVBeacon v1.0.280 or newer is required for that task.
 
 ## Development
 
 ```sh
-python3 -m unittest discover -q
-node --test test_javbeacon_subtitles.js test_javbeacon_scrubber.js
+go test ./...
+go vet ./...
+python3 -m unittest discover -s contrib/stashapp -q
+node --test contrib/stashapp/test_javbeacon_subtitles.js contrib/stashapp/test_javbeacon_scrubber.js
 ```

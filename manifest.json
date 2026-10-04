@@ -1,0 +1,131 @@
+{
+  "plugin_id": "stash.metadata",
+  "version": "0.2.0",
+  "checksum": "__CHECKSUM__",
+  "silo_api_version": "v1",
+  "presentation": {
+    "display_name": "Stash.Metadata",
+    "summary": "Use StashApp as Silo's scene metadata and watch provider.",
+    "description_markdown": "Direct StashApp scene metadata, artwork, watch history and Watchlist integration for Silo. JAVBeacon enrichment is handled in StashApp by the companion plugin.",
+    "setup_markdown": "Configure the StashApp URL and API key, then select Stash.Metadata as the Movies library metadata and watch provider.",
+    "homepage_url": "https://github.com/Net005/-silo-plugin-metadata-stash",
+    "source_url": "https://github.com/Net005/-silo-plugin-metadata-stash",
+    "support_url": "https://github.com/Net005/-silo-plugin-metadata-stash/issues",
+    "changelog_url": "https://github.com/Net005/-silo-plugin-metadata-stash/releases",
+    "publisher_name": "Net005",
+    "publisher_url": "https://github.com/Net005",
+    "license_spdx": "NOASSERTION"
+  },
+  "supported_platforms": [
+    {
+      "os": "linux",
+      "arch": "amd64"
+    },
+    {
+      "os": "linux",
+      "arch": "arm64"
+    },
+    {
+      "os": "darwin",
+      "arch": "arm64"
+    }
+  ],
+  "capabilities": [
+    {
+      "type": "metadata_provider.v1",
+      "id": "stash",
+      "display_name": "StashApp",
+      "description": "Scene metadata directly from StashApp.",
+      "metadata": {
+        "default_priority": {
+          "movie": 1
+        }
+      }
+    },
+    {
+      "type": "image_resolver.v1",
+      "id": "stash",
+      "display_name": "Stash Images",
+      "description": "Resolve Stash scene screenshots.",
+      "metadata": {
+        "schemes": [
+          "stash"
+        ],
+        "priority": 100
+      }
+    },
+    {
+      "type": "watch_sync_provider.v1",
+      "id": "stash",
+      "display_name": "Stash Playback Sync",
+      "description": "Sync Silo plays and Watchlist directly with StashApp.",
+      "watch_sync_provider": {
+        "auth_methods": [
+          "WATCH_SYNC_AUTH_METHOD_API_KEY"
+        ],
+        "export_watched": true,
+        "import_watched": true,
+        "import_watchlist": true,
+        "scrobble_playback": true,
+        "supported_media_types": [
+          "WATCH_SYNC_MEDIA_TYPE_MOVIE"
+        ],
+        "external_id_namespaces": [
+          "stash"
+        ],
+        "max_batch_size": 25
+      }
+    },
+    {
+      "type": "scheduled_task.v1",
+      "id": "match-unmatched",
+      "display_name": "Match unmatched Stash scenes",
+      "description": "Apply only unique exact Stash matches to unmatched Silo movie items."
+    }
+  ],
+  "global_config_schema": [
+    {
+      "key": "connection",
+      "title": "StashApp Connection",
+      "description": "Direct StashApp GraphQL connection.",
+      "json_schema": "{\"type\":\"object\",\"properties\":{\"base_url\":{\"type\":\"string\",\"format\":\"uri\",\"minLength\":1},\"api_key\":{\"type\":\"string\",\"minLength\":1},\"watchlist_tag_id\":{\"type\":\"string\"},\"silo_base_url\":{\"type\":\"string\",\"format\":\"uri\"},\"silo_api_key\":{\"type\":\"string\"}},\"required\":[\"base_url\",\"api_key\"],\"additionalProperties\":false}",
+      "required": true,
+      "admin_form": {
+        "fields": [
+          {
+            "key": "base_url",
+            "label": "StashApp URL",
+            "control": "ADMIN_FORM_CONTROL_TEXT",
+            "required": true
+          },
+          {
+            "key": "api_key",
+            "label": "StashApp API key",
+            "control": "ADMIN_FORM_CONTROL_PASSWORD",
+            "required": true,
+            "secret": true
+          },
+          {
+            "key": "watchlist_tag_id",
+            "label": "Watchlist tag ID",
+            "control": "ADMIN_FORM_CONTROL_TEXT",
+            "required": false
+          },
+          {
+            "key": "silo_base_url",
+            "label": "Silo admin URL for automatic exact matching",
+            "control": "ADMIN_FORM_CONTROL_TEXT",
+            "required": false
+          },
+          {
+            "key": "silo_api_key",
+            "label": "Silo admin API key",
+            "control": "ADMIN_FORM_CONTROL_PASSWORD",
+            "secret": true,
+            "required": false
+          }
+        ]
+      }
+    }
+  ]
+}

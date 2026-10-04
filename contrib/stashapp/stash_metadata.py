@@ -3,6 +3,8 @@
 
 import base64
 import json
+import os
+import re
 import sys
 import urllib.error
 import urllib.parse
@@ -20,6 +22,7 @@ query StashMetadataScene($id: ID!) {
     performers { id name }
     tags { id name }
     paths { screenshot }
+    files { path }
   }
 }
 """
@@ -232,11 +235,12 @@ def _scene(payload, scene_id):
     return _stash_graphql(payload, SCENE_QUERY, {"id": str(scene_id)}).get("findScene")
 
 
-def _enrich_scene(payload, settings, scene_id, *, dry_run, allow_cover=True):
+def _enrich_scene(payload, settings, scene_id, *, dry_run, allow_cover=True, source=None):
     scene = _scene(payload, scene_id)
     if not scene:
         return {"scene_id": str(scene_id), "state": "missing_scene"}
-    source = _enrichment(settings, scene_id)
+    if source is None:
+        source = _enrichment(settings, scene_id)
     if source is None:
         return {"scene_id": str(scene_id), "state": "unlinked"}
     cover_mode = str(settings.get("cover_mode") or "off").strip().lower()
@@ -297,11 +301,178 @@ def _scan(payload, settings, *, dry_run, start_page=1, start_index=0):
     return {"mode": "preview" if dry_run else "enrich", "checked": checked, "counts": counts, "examples": examples, "next_page": None, "next_index": None}
 
 
+
+def _silo_get(settings, path, profile_id=None):
+    base = str(settings.get("silo_url") or "").strip().rstrip("/")
+    parsed = urllib.parse.urlparse(base)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc or parsed.username or parsed.password:
+        raise RuntimeError("configure a valid Silo URL")
+    key = str(settings.get("silo_api_key") or "").strip()
+    if not key:
+        raise RuntimeError("configure a Silo API key")
+    headers = {"Accept": "application/json", "Authorization": "Bearer " + key}
+    if profile_id:
+        headers["X-Profile-Id"] = profile_id
+    request = urllib.request.Request(base + path, headers=headers)
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return _json_response(response)
+    except urllib.error.HTTPError as error:
+        raise RuntimeError(f"Silo returned HTTP {error.code}") from error
+
+
+def _silo_scene_id(item):
+    for field in ("provider_ids", "external_ids"):
+        value = item.get(field) or {}
+        if isinstance(value, dict):
+            raw = str(value.get("stash") or "").strip().removeprefix("stash:")
+            if raw.isdigit():
+                return raw
+    for field in ("poster_url", "backdrop_url"):
+        path = urllib.parse.urlparse(str(item.get(field) or "")).path
+        matched = re.fullmatch(r"/api/v1/integrations/silo/stash/scenes/([0-9]+)/(?:cover|poster)", path)
+        if matched:
+            return matched.group(1)
+    return None
+
+
+def _silo_unique_scene(payload, item):
+    title = str(item.get("code") or item.get("title") or "").strip()
+    key = re.sub(r"[^a-z0-9]", "", title.casefold())
+    if not key:
+        return None
+    query = "query($filter:FindFilterType) { findScenes(filter:$filter) { scenes { id code title files { path } } } }"
+    data = _stash_graphql(payload, query, {"filter": {"q": title, "per_page": 50}})
+    rows = (data.get("findScenes") or {}).get("scenes") or []
+    matches = []
+    for scene in rows:
+        values = [scene.get("code"), scene.get("title")]
+        values.extend(os.path.splitext(os.path.basename(file.get("path") or ""))[0] for file in scene.get("files") or [])
+        if any(re.sub(r"[^a-z0-9]", "", str(value or "").casefold()) == key for value in values):
+            matches.append(str(scene["id"]))
+    return matches[0] if len(set(matches)) == 1 else None
+
+
+def _silo_source(item):
+    def names(values):
+        return [str(value.get("name") if isinstance(value, dict) else value).strip() for value in values or [] if value]
+    studios = names(item.get("studios"))
+    studio = item.get("studio") or (studios[0] if studios else "")
+    cast = names(item.get("cast") or item.get("people") or item.get("performers"))
+    return {"title": item.get("title") or "", "code": item.get("code") or "",
+            "details": item.get("overview") or item.get("details") or "",
+            "date": item.get("release_date") or item.get("date") or "",
+            "studio": studio if isinstance(studio, str) else studio.get("name", ""),
+            "performers": cast, "tags": names(item.get("genres") or item.get("tags"))}
+
+
+def _import_silo(payload, settings, *, dry_run, cursor="", start_index=0):
+    library_id = str(settings.get("silo_library_id") or "").strip()
+    if not library_id:
+        raise RuntimeError("configure the Silo library ID")
+    profiles = _silo_get(settings, "/api/v2/profiles").get("items") or []
+    if not profiles:
+        raise RuntimeError("Silo returned no profiles")
+    profile_id = str(profiles[0]["id"])
+    limit = int(settings.get("max_scenes_per_run") if settings.get("max_scenes_per_run") not in (None, "") else 200)
+    if limit < 0:
+        raise RuntimeError("max_scenes_per_run must be nonnegative")
+    counts = {}
+    examples = []
+    checked = 0
+    index = max(0, int(start_index))
+    if index >= 200:
+        raise RuntimeError("start_index must be less than 200")
+    while True:
+        params = {"library_id": library_id, "limit": "200", "skip_total": "true", "status": "matched", "sort": "-added_at"}
+        if cursor:
+            params["cursor"] = cursor
+        page = _silo_get(settings, "/api/v2/catalog?" + urllib.parse.urlencode(params), profile_id)
+        rows = page.get("items") or []
+        for offset, row in enumerate(rows[index:], start=index):
+            if limit and checked >= limit:
+                return {"mode": "silo_preview" if dry_run else "silo_import", "checked": checked, "counts": counts, "examples": examples, "next_cursor": cursor, "next_index": offset}
+            checked += 1
+            scene_id = _silo_scene_id(row)
+            detail = None
+            if not scene_id:
+                content_id = str(row.get("content_id") or "")
+                if content_id:
+                    detail = _silo_get(settings, "/api/v2/catalog/items/" + urllib.parse.quote(content_id, safe=""), profile_id)
+                    if str(detail.get("content_id")) == content_id:
+                        scene_id = _silo_scene_id(detail)
+            if not scene_id:
+                scene_id = _silo_unique_scene(payload, {**row, **(detail or {})})
+            if not scene_id:
+                state = "no_unique_scene_match"
+                result = None
+            else:
+                source = _silo_source({**row, **(detail or {})})
+                result = _enrich_scene(payload, settings, scene_id, dry_run=dry_run, allow_cover=False, source=source)
+                state = result["state"]
+            counts[state] = counts.get(state, 0) + 1
+            if result and state in ("preview", "updated") and len(examples) < 20:
+                examples.append(result)
+        next_cursor = str((page.get("page") or {}).get("next_cursor") or "")
+        if not (page.get("page") or {}).get("has_more") or not next_cursor or next_cursor == cursor:
+            break
+        cursor = next_cursor
+        index = 0
+    return {"mode": "silo_preview" if dry_run else "silo_import", "checked": checked, "counts": counts, "examples": examples, "next_cursor": None, "next_index": None}
+
+
+def _silo_post(settings, path, body):
+    base = str(settings.get("silo_url") or "").strip().rstrip("/")
+    key = str(settings.get("silo_api_key") or "").strip()
+    data = json.dumps(body).encode()
+    request = urllib.request.Request(base + path, data=data,
+        headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            if response.status != 202:
+                raise RuntimeError(f"Silo refresh returned HTTP {response.status}")
+            return _json_response(response)
+    except urllib.error.HTTPError as error:
+        raise RuntimeError(f"Silo refresh returned HTTP {error.code}") from error
+
+
+def _refresh_silo_scene(payload, settings, scene_id):
+    if not all(settings.get(key) for key in ("silo_url", "silo_api_key", "silo_library_id")):
+        return {"state": "disabled"}
+    scene = _scene(payload, scene_id)
+    if not scene:
+        return {"state": "missing_scene"}
+    terms = [scene.get("code"), scene.get("title")]
+    terms.extend(os.path.splitext(os.path.basename(file.get("path") or ""))[0] for file in scene.get("files") or [])
+    terms = [str(x).strip() for x in terms if str(x or "").strip()]
+    if not terms:
+        return {"state": "no_identity"}
+    profiles = _silo_get(settings, "/api/v2/profiles").get("items") or []
+    if not profiles:
+        raise RuntimeError("Silo returned no profiles")
+    library_id = str(settings["silo_library_id"])
+    content_ids = set()
+    for term in dict.fromkeys(terms[:3]):
+        params = {"library_id": library_id, "q": term, "limit": "50", "status": "matched"}
+        page = _silo_get(settings, "/api/v2/catalog?" + urllib.parse.urlencode(params), str(profiles[0]["id"]))
+        key = re.sub(r"[^a-z0-9]", "", term.casefold())
+        for item in page.get("items") or []:
+            candidate = re.sub(r"[^a-z0-9]", "", str(item.get("title") or "").casefold())
+            if key and candidate == key and item.get("content_id"):
+                content_ids.add(str(item["content_id"]))
+    if len(content_ids) != 1:
+        return {"state": "ambiguous" if content_ids else "unmatched"}
+    content_id = next(iter(content_ids))
+    job = _silo_post(settings, "/api/v2/admin/items/" + urllib.parse.quote(content_id, safe="") + "/refresh-metadata", {"mode": "complete"})
+    return {"state": "queued", "content_id": content_id, "job_id": job.get("id")}
+
 def main():
     payload = json.load(sys.stdin)
     args = payload.get("args") or {}
     mode = str(args.get("mode") or "hook").lower()
-    if mode == "scan":
+    if mode == "silo_import":
+        result = _import_silo(payload, _settings(payload), dry_run=_bool(args.get("dry_run"), True), cursor=str(args.get("start_cursor") or ""), start_index=args.get("start_index") or 0)
+    elif mode == "scan":
         result = _scan(payload, _settings(payload), dry_run=_bool(args.get("dry_run"), True), start_page=args.get("start_page") or 1, start_index=args.get("start_index") or 0)
     elif mode == "subtitles":
         result = features.request_subtitles(payload, args)
@@ -329,7 +500,15 @@ def main():
             enrichment = {"state": "disabled" if hook.get("type") != "Scene.Destroy.Post" else "destroyed"}
         else:
             enrichment = _enrich_scene(payload, settings, scene_id, dry_run=False, allow_cover=False)
-        result = {"realtime": realtime, "enrichment": enrichment}
+        if hook.get("type") == "Scene.Destroy.Post" or not _bool(settings.get("refresh_silo_on_scene_update"), True):
+            silo_refresh = {"state": "disabled"}
+        else:
+            try:
+                silo_refresh = _refresh_silo_scene(payload, settings, scene_id)
+            except Exception as error:
+                silo_refresh = {"state": "error", "error": str(error)}
+                _log("Silo targeted refresh failed: " + str(error))
+        result = {"realtime": realtime, "enrichment": enrichment, "silo_refresh": silo_refresh}
     else:
         raise RuntimeError("unknown task mode")
     _log(json.dumps(result, ensure_ascii=False))

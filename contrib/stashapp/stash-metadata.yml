@@ -1,6 +1,6 @@
-name: Stash.Metadata
+name: Stash.Metadata Companion
 description: Fill missing Stash scene metadata from an exactly linked JAVBeacon release.
-version: 0.1.0
+version: 0.2.0
 ui:
   javascript:
     - javbeacon_subtitles.js
@@ -37,6 +37,22 @@ settings:
     displayName: Maximum scenes per backfill run
     description: Defaults to 200. Set to 0 to scan all scenes.
     type: NUMBER
+  silo_url:
+    displayName: Silo URL for one-time migration
+    description: Silo base URL reachable from Stash. Used only by the optional cached-metadata import task.
+    type: STRING
+  silo_api_key:
+    displayName: Silo API key for one-time migration
+    description: Silo API key used only to read existing catalog metadata; remove after migration.
+    type: STRING
+  refresh_silo_on_scene_update:
+    displayName: Refresh matching Silo item after Stash edit
+    description: When Silo connection settings are present, queue a targeted refresh only for a uniquely matched item. Defaults to true.
+    type: BOOLEAN
+  silo_library_id:
+    displayName: Silo library ID for migration
+    description: Silo library containing the existing matched movie items to import.
+    type: STRING
   javbeacon_browser_url:
     displayName: JAVBeacon browser URL
     description: Optional public URL opened by the scene-page JAVBeacon button, for example https://jav.example.com. Defaults to JAVBeacon URL.
@@ -128,6 +144,16 @@ tasks:
     defaultArgs:
       mode: scan
       dry_run: true
+  - name: Preview existing Silo metadata migration
+    description: Read existing Silo catalog data and preview fill-only Stash updates for items with an exact Stash scene ID.
+    defaultArgs:
+      mode: silo_import
+      dry_run: true
+  - name: Import existing Silo metadata
+    description: Copy missing scene fields from Silo catalog records with an exact Stash scene ID. No source refresh is requested.
+    defaultArgs:
+      mode: silo_import
+      dry_run: false
   - name: Migrate cached metadata to Stash
     description: Fill empty scene fields from already indexed JAVBeacon releases without refreshing Silo or scraping source sites, up to the configured run limit.
     defaultArgs:
