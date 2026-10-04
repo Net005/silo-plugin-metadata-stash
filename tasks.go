@@ -20,15 +20,23 @@ import (
 
 type scheduledTaskServer struct {
 	pluginv1.UnimplementedScheduledTaskServer
-	runtime *runtimeServer
-	log     hclog.Logger
-	mu      sync.Mutex
-	running bool
-	cursor  string
+	runtime       *runtimeServer
+	log           hclog.Logger
+	mu            sync.Mutex
+	running       bool
+	cursor        string
+	artworkMu     sync.Mutex
+	artworkCursor string
+	artworkRetry  map[string]time.Time
 }
 
 func (s *scheduledTaskServer) Run(ctx context.Context, req *pluginv1.RunScheduledTaskRequest) (*pluginv1.RunScheduledTaskResponse, error) {
 	key := req.GetTaskKey()
+	if key == "cache-artwork" || strings.HasSuffix(key, ":cache-artwork") {
+		// Finish the task RPC before the admin API calls back into ImageResolver.
+		go s.runArtworkRepair()
+		return taskOutput(map[string]any{"status": "started", "detail": "Artwork caching continues in the background; progress is recorded in plugin logs"})
+	}
 	for _, task := range []string{"collection-sync", "watchlist-collection-sync", "metadata-refresh", "watched-sync", "play-backfill", "repair-matched"} {
 		if key == task || strings.HasSuffix(key, ":"+task) {
 			if s.runtime.legacy == nil {
@@ -75,6 +83,7 @@ func (s *scheduledTaskServer) start() bool {
 }
 func (s *runtimeServer) pollMatching() {
 	task := s.task
+	go task.pollArtwork()
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
 	for {
@@ -173,6 +182,9 @@ func (s *scheduledTaskServer) match(ctx context.Context) (map[string]any, error)
 	return map[string]any{"status": "partial", "matched": matched, "skipped": skipped, "next_cursor": cursor}, nil
 }
 func siloRequest(ctx context.Context, base, key, method, path string, body any, out any) error {
+	return siloProfileRequest(ctx, base, key, "", method, path, body, out)
+}
+func siloProfileRequest(ctx context.Context, base, key, profile, method, path string, body any, out any) error {
 	var reader io.Reader
 	if body != nil {
 		data, _ := json.Marshal(body)
@@ -184,6 +196,9 @@ func siloRequest(ctx context.Context, base, key, method, path string, body any, 
 	}
 	req.Header.Set("Authorization", "Bearer "+key)
 	req.Header.Set("Accept", "application/json")
+	if profile != "" {
+		req.Header.Set("X-Profile-Id", profile)
+	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}

@@ -1,6 +1,6 @@
 {
   "plugin_id": "stash.metadata",
-  "version": "0.2.12",
+  "version": "0.2.13",
   "checksum": "__CHECKSUM__",
   "silo_api_version": "v1",
   "presentation": {
@@ -75,6 +75,12 @@
         ],
         "max_batch_size": 25
       }
+    },
+    {
+      "type": "scheduled_task.v1",
+      "id": "cache-artwork",
+      "display_name": "Cache existing Stash artwork",
+      "description": "Copy uncached existing Stash/JAVBeacon posters and backdrops into Silo's configured S3 or local artwork storage across all accessible libraries. Preserves selections and metadata locks; no metadata refresh. Also checks automatically in bounded batches every minute."
     },
     {
       "type": "scheduled_task.v1",
