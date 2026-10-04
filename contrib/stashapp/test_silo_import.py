@@ -86,6 +86,27 @@ class RealtimeCollectionTests(unittest.TestCase):
             result = plugin._sync_silo_watchlist_collection({}, self.settings, self.hook)
         return result, writes
 
+    def test_unique_collection_infers_library_id(self):
+        settings = dict(self.settings)
+        settings.pop("silo_library_id")
+        with patch.object(plugin, "_scene", return_value={"id": "42", "code": "ATID-705", "title": "", "files": [], "tags": [{"id": "99"}]}), \
+             patch.object(plugin, "_silo_get") as silo_get, \
+             patch.object(plugin.urllib.request, "urlopen") as urlopen:
+            silo_get.side_effect = [
+                {"items": [
+                    {"id": "7", "title": "WatchList", "library_id": "16", "collection_type": "manual", "slug": "javbeacon-stash-preset-filter-library-16"},
+                    {"id": "8", "title": "Watchlist", "library_id": "16", "collection_type": "manual", "slug": "javbeacon-watchlist-library-16"},
+                ]},
+                {"items": [{"id": "profile"}]},
+                {"items": [{"content_id": "movie:one", "title": "ATID705"}]},
+                {"provider_ids": {"stash": "42"}},
+                {"items": [{"media_item_id": "movie:one"}], "page": {"has_more": False}},
+            ]
+            result = plugin._sync_silo_watchlist_collection({}, settings, self.hook)
+        self.assertEqual(result["state"], "unchanged")
+        self.assertIn("library_id=16", silo_get.call_args_list[2].args[1])
+        urlopen.assert_not_called()
+
     def test_add_and_remove_update_existing_collection(self):
         added, writes = self._run(True, False)
         self.assertEqual(added["state"], "added")

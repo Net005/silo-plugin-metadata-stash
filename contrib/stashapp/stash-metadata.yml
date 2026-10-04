@@ -1,6 +1,6 @@
 name: Stash.Metadata Companion
 description: Fill missing Stash scene metadata from an exactly linked JAVBeacon release.
-version: 0.2.2
+version: 0.2.3
 ui:
   javascript:
     - stash_subtitles.js
@@ -51,7 +51,7 @@ settings:
     type: BOOLEAN
   silo_library_id:
     displayName: Silo library ID
-    description: Silo library containing the existing matched movie items for migration, targeted refresh and WatchList collection updates.
+    description: Silo library containing matched movie items. Required for migration and targeted refresh; optional for WatchList updates when one exact collection name exists.
     type: STRING
   silo_watchlist_collection_id:
     displayName: Silo WatchList collection ID

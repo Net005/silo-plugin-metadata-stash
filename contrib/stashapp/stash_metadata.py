@@ -446,22 +446,29 @@ def _sync_silo_watchlist_collection(payload, settings, hook):
     # which fields were actually edited. Playback and enrichment hooks are ignored.
     if hook.get("type") != "Scene.Update.Post" or "tag_ids" not in (hook.get("inputFields") or []):
         return {"state": "not_tag_update"}
-    if not all(settings.get(key) for key in ("silo_url", "silo_api_key", "silo_library_id", "watchlist_tag_id")):
+    if not all(settings.get(key) for key in ("silo_url", "silo_api_key", "watchlist_tag_id")):
         return {"state": "disabled"}
     scene_id = str(hook.get("id") or (hook.get("input") or {}).get("id") or "")
     scene = _scene(payload, scene_id)
     if not scene:
         return {"state": "missing_scene"}
     desired = any(str(tag.get("id")) == str(settings["watchlist_tag_id"]) for tag in scene.get("tags") or [])
-    library_id = str(settings["silo_library_id"])
+    configured_library = str(settings.get("silo_library_id") or "").strip()
     collections = _silo_get(settings, "/api/v2/admin/collections").get("items") or []
     configured_id = str(settings.get("silo_watchlist_collection_id") or "").strip()
-    matches = [row for row in collections if str(row.get("library_id")) == library_id
+    matches = [row for row in collections if (not configured_library or str(row.get("library_id")) == configured_library)
                and str(row.get("title") or "").casefold() == "watchlist"
                and (not configured_id or str(row.get("id")) == configured_id)]
+    if not configured_id:
+        stash_collections = [row for row in matches if str(row.get("slug") or "").startswith("javbeacon-stash-preset-")]
+        if stash_collections:
+            matches = stash_collections
     if len(matches) != 1:
         return {"state": "ambiguous_collection" if matches else "missing_collection"}
     collection = matches[0]
+    library_id = str(collection.get("library_id") or "")
+    if not library_id:
+        return {"state": "collection_without_library"}
     if str(collection.get("collection_type") or "manual") != "manual":
         return {"state": "nonmanual_collection"}
     terms = [scene.get("code"), scene.get("title")]
