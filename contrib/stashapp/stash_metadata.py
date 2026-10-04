@@ -441,6 +441,93 @@ def _silo_post(settings, path, body):
         raise RuntimeError(f"Silo refresh returned HTTP {error.code}") from error
 
 
+def _sync_silo_watchlist_collection(payload, settings, hook):
+    # Stash includes the full input on every update, but inputFields records
+    # which fields were actually edited. Playback and enrichment hooks are ignored.
+    if hook.get("type") != "Scene.Update.Post" or "tag_ids" not in (hook.get("inputFields") or []):
+        return {"state": "not_tag_update"}
+    if not all(settings.get(key) for key in ("silo_url", "silo_api_key", "silo_library_id", "watchlist_tag_id")):
+        return {"state": "disabled"}
+    scene_id = str(hook.get("id") or (hook.get("input") or {}).get("id") or "")
+    scene = _scene(payload, scene_id)
+    if not scene:
+        return {"state": "missing_scene"}
+    desired = any(str(tag.get("id")) == str(settings["watchlist_tag_id"]) for tag in scene.get("tags") or [])
+    library_id = str(settings["silo_library_id"])
+    collections = _silo_get(settings, "/api/v2/admin/collections").get("items") or []
+    configured_id = str(settings.get("silo_watchlist_collection_id") or "").strip()
+    matches = [row for row in collections if str(row.get("library_id")) == library_id
+               and str(row.get("title") or "").casefold() == "watchlist"
+               and (not configured_id or str(row.get("id")) == configured_id)]
+    if len(matches) != 1:
+        return {"state": "ambiguous_collection" if matches else "missing_collection"}
+    collection = matches[0]
+    if str(collection.get("collection_type") or "manual") != "manual":
+        return {"state": "nonmanual_collection"}
+    terms = [scene.get("code"), scene.get("title")]
+    terms.extend(os.path.splitext(os.path.basename(file.get("path") or ""))[0] for file in scene.get("files") or [])
+    terms = [str(term).strip() for term in terms if str(term or "").strip()]
+    if not terms:
+        return {"state": "no_identity"}
+    profiles = _silo_get(settings, "/api/v2/profiles").get("items") or []
+    if not profiles:
+        raise RuntimeError("Silo returned no profiles")
+    profile_id = str(profiles[0]["id"])
+    content_ids = set()
+    for term in dict.fromkeys(terms[:3]):
+        params = {"library_id": library_id, "q": term, "limit": "50", "status": "matched"}
+        page = _silo_get(settings, "/api/v2/catalog?" + urllib.parse.urlencode(params), profile_id)
+        key = re.sub(r"[^a-z0-9]", "", term.casefold())
+        for item in page.get("items") or []:
+            values = [item.get("title"), item.get("code")]
+            if key and any(re.sub(r"[^a-z0-9]", "", str(value or "").casefold()) == key for value in values) and item.get("content_id"):
+                content_ids.add(str(item["content_id"]))
+    if len(content_ids) != 1:
+        return {"state": "ambiguous_item" if content_ids else "unmatched_item"}
+    content_id = next(iter(content_ids))
+    detail = _silo_get(settings, "/api/v2/catalog/items/" + urllib.parse.quote(content_id, safe=""), profile_id)
+    linked_scene = _silo_scene_id(detail)
+    if linked_scene and linked_scene != scene_id:
+        return {"state": "different_scene"}
+    collection_id = str(collection["id"])
+    prefix = "/api/v2/admin/collections/" + urllib.parse.quote(collection_id, safe="") + "/items"
+    cursor = ""
+    for _ in range(100):
+        path = prefix + "?limit=200" + ("&cursor=" + urllib.parse.quote(cursor, safe="") if cursor else "")
+        page = _silo_get(settings, path)
+        if any(str(row.get("media_item_id")) == content_id for row in page.get("items") or []):
+            current = True
+            break
+        next_cursor = str((page.get("page") or {}).get("next_cursor") or "")
+        if not (page.get("page") or {}).get("has_more"):
+            current = False
+            break
+        if not next_cursor or next_cursor == cursor:
+            raise RuntimeError("Silo collection pagination did not advance")
+        cursor = next_cursor
+    else:
+        raise RuntimeError("Silo collection has too many membership pages")
+    if current == desired:
+        return {"state": "unchanged", "content_id": content_id, "collection_id": collection_id}
+    path = prefix + "/" + urllib.parse.quote(content_id, safe="")
+    base = str(settings["silo_url"]).strip().rstrip("/")
+    parsed = urllib.parse.urlparse(base)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc or parsed.username or parsed.password:
+        raise RuntimeError("configure a valid Silo URL")
+    headers = {"Authorization": "Bearer " + str(settings["silo_api_key"]).strip()}
+    if desired:
+        headers["Content-Type"] = "application/json"
+    request = urllib.request.Request(base + path, data=b'{"position":0}' if desired else None,
+                                     headers=headers, method="PUT" if desired else "DELETE")
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            if response.status != 204:
+                raise RuntimeError(f"Silo collection update returned HTTP {response.status}")
+    except urllib.error.HTTPError as error:
+        raise RuntimeError(f"Silo collection update returned HTTP {error.code}") from error
+    return {"state": "added" if desired else "removed", "content_id": content_id, "collection_id": collection_id}
+
+
 def _refresh_silo_scene(payload, settings, scene_id):
     if not all(settings.get(key) for key in ("silo_url", "silo_api_key", "silo_library_id")):
         return {"state": "disabled"}
@@ -493,6 +580,11 @@ def main():
         scene_id = hook.get("id") or (hook.get("input") or {}).get("id")
         if not scene_id:
             raise RuntimeError("scene hook did not include an ID")
+        try:
+            silo_collection = _sync_silo_watchlist_collection(payload, settings, hook)
+        except Exception as error:
+            silo_collection = {"state": "error", "error": str(error)}
+            _log("Silo WatchList collection update failed: " + str(error))
         if settings.get("javbeacon_url") and settings.get("webhook_secret"):
             try:
                 realtime = features.request_realtime_sync(payload, args)
@@ -513,7 +605,7 @@ def main():
             except Exception as error:
                 silo_refresh = {"state": "error", "error": str(error)}
                 _log("Silo targeted refresh failed: " + str(error))
-        result = {"realtime": realtime, "enrichment": enrichment, "silo_refresh": silo_refresh}
+        result = {"realtime": realtime, "enrichment": enrichment, "silo_refresh": silo_refresh, "silo_collection": silo_collection}
     else:
         raise RuntimeError("unknown task mode")
     _log(json.dumps(result, ensure_ascii=False))

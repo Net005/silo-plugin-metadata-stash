@@ -54,3 +54,54 @@ class TargetedRefreshTests(unittest.TestCase):
         settings={"silo_url":"http://silo", "silo_api_key":"key", "silo_library_id":"16"}
         self.assertEqual(plugin._refresh_silo_scene({},settings,"42")["state"],"ambiguous")
         silo_post.assert_not_called()
+
+class RealtimeCollectionTests(unittest.TestCase):
+    settings = {"silo_url": "https://silo.example", "silo_api_key": "key", "silo_library_id": "16", "watchlist_tag_id": "99"}
+    hook = {"id": "42", "type": "Scene.Update.Post", "inputFields": ["id", "tag_ids"]}
+
+    def _run(self, desired, current, linked_scene="42"):
+        from unittest.mock import Mock
+        scene = {"id": "42", "code": "ATID-705", "title": "", "files": [], "tags": [{"id": "99"}] if desired else []}
+        def silo_get(_settings, path, profile_id=None):
+            if path == "/api/v2/admin/collections":
+                return {"items": [{"id": "7", "title": "WatchList", "library_id": "16", "collection_type": "manual"}]}
+            if path == "/api/v2/profiles":
+                return {"items": [{"id": "profile"}]}
+            if path.startswith("/api/v2/catalog?"):
+                self.assertEqual(profile_id, "profile")
+                return {"items": [{"content_id": "movie:one", "title": "ATID705"}]}
+            if path.startswith("/api/v2/catalog/items/"):
+                return {"provider_ids": {"stash": linked_scene}}
+            if path.startswith("/api/v2/admin/collections/7/items?"):
+                return {"items": [{"media_item_id": "movie:one"}] if current else [], "page": {"has_more": False}}
+            raise AssertionError(path)
+        writes = []
+        def urlopen(request, timeout):
+            writes.append((request.get_method(), request.full_url, request.data))
+            response = Mock(status=204)
+            response.__enter__ = Mock(return_value=response)
+            response.__exit__ = Mock(return_value=False)
+            return response
+        with patch.object(plugin, "_scene", return_value=scene), patch.object(plugin, "_silo_get", side_effect=silo_get), patch.object(plugin.urllib.request, "urlopen", side_effect=urlopen):
+            result = plugin._sync_silo_watchlist_collection({}, self.settings, self.hook)
+        return result, writes
+
+    def test_add_and_remove_update_existing_collection(self):
+        added, writes = self._run(True, False)
+        self.assertEqual(added["state"], "added")
+        self.assertEqual(writes, [("PUT", "https://silo.example/api/v2/admin/collections/7/items/movie%3Aone", b'{"position":0}')])
+        removed, writes = self._run(False, True)
+        self.assertEqual(removed["state"], "removed")
+        self.assertEqual(writes[0][0], "DELETE")
+
+    def test_repeat_and_unrelated_hook_do_not_write(self):
+        self.assertEqual(self._run(True, True)[1], [])
+        with patch.object(plugin, "_scene") as scene:
+            result = plugin._sync_silo_watchlist_collection({}, self.settings, {"id": "42", "type": "Scene.Update.Post", "inputFields": ["play_count"]})
+        self.assertEqual(result["state"], "not_tag_update")
+        scene.assert_not_called()
+
+    def test_different_linked_scene_is_not_changed(self):
+        result, writes = self._run(True, False, linked_scene="43")
+        self.assertEqual(result["state"], "different_scene")
+        self.assertEqual(writes, [])
