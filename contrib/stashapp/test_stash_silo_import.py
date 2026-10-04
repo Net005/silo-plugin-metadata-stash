@@ -40,7 +40,7 @@ class TargetedRefreshTests(unittest.TestCase):
     @patch.object(plugin, "_scene")
     def test_scene_edit_refreshes_one_exact_silo_item(self, scene, silo_get, silo_post):
         scene.return_value={"id":"42","code":"ATID-705","title":"", "files":[]}
-        silo_get.side_effect=[{"items":[{"id":"profile"}]},{"items":[{"content_id":"movie:one","title":"ATID705"},{"content_id":"movie:two","title":"ATID7050"}]}]
+        silo_get.side_effect=[{"items":[{"id":"profile"}]},{"items":[{"content_id":"movie:one","title":"ATID705"},{"content_id":"movie:two","title":"ATID7050"}]},{"provider_ids":{"stash":"42"}}]
         settings={"silo_url":"http://silo", "silo_api_key":"key", "silo_library_id":"16"}
         result=plugin._refresh_silo_scene({},settings,"42")
         self.assertEqual(result["state"],"queued")
@@ -93,6 +93,7 @@ class RealtimeCollectionTests(unittest.TestCase):
              patch.object(plugin, "_silo_get") as silo_get, \
              patch.object(plugin.urllib.request, "urlopen") as urlopen:
             silo_get.side_effect = [
+                {"items": [{"id": "16", "type": "movies", "enabled": True}]},
                 {"items": [
                     {"id": "7", "title": "WatchList", "library_id": "16", "collection_type": "manual", "slug": "javbeacon-stash-preset-filter-library-16"},
                     {"id": "8", "title": "Watchlist", "library_id": "16", "collection_type": "manual", "slug": "javbeacon-watchlist-library-16"},
@@ -104,7 +105,7 @@ class RealtimeCollectionTests(unittest.TestCase):
             ]
             result = plugin._sync_silo_watchlist_collection({}, settings, self.hook)
         self.assertEqual(result["state"], "unchanged")
-        self.assertIn("library_id=16", silo_get.call_args_list[2].args[1])
+        self.assertIn("library_id=16", silo_get.call_args_list[3].args[1])
         urlopen.assert_not_called()
 
     def test_add_and_remove_update_existing_collection(self):
@@ -126,3 +127,73 @@ class RealtimeCollectionTests(unittest.TestCase):
         result, writes = self._run(True, False, linked_scene="43")
         self.assertEqual(result["state"], "different_scene")
         self.assertEqual(writes, [])
+
+class MultipleLibraryTests(unittest.TestCase):
+    @patch.object(plugin, "_silo_get")
+    def test_blank_selection_discovers_enabled_movie_libraries(self, silo_get):
+        silo_get.return_value = {"items": [
+            {"id": "16", "type": "movies", "enabled": True},
+            {"id": "19", "type": "movies", "enabled": True},
+            {"id": "3", "type": "shows", "enabled": True},
+            {"id": "20", "type": "movies", "enabled": False},
+        ]}
+        self.assertEqual(plugin._silo_movie_libraries({}), ["16", "19"])
+
+    @patch.object(plugin, "_enrich_scene", return_value={"state": "preview", "scene_id": "42"})
+    @patch.object(plugin, "_silo_get")
+    def test_migration_resumes_in_second_library(self, silo_get, enrich):
+        def get(_settings, path, profile_id=None):
+            if path == "/api/v2/libraries":
+                return {"items": [{"id": "16", "type": "movies"}, {"id": "19", "type": "movies"}]}
+            if path == "/api/v2/profiles":
+                return {"items": [{"id": "profile"}]}
+            if "library_id=16" in path:
+                return {"items": [{"content_id": "one", "provider_ids": {"stash": "42"}}], "page": {"has_more": False}}
+            if "library_id=19" in path:
+                return {"items": [{"content_id": "two", "provider_ids": {"stash": "42"}}], "page": {"has_more": False}}
+            raise AssertionError(path)
+        silo_get.side_effect = get
+        settings = {"max_scenes_per_run": 1}
+        first = plugin._import_silo({}, settings, dry_run=True)
+        self.assertEqual((first["next_library_id"], first["next_index"]), ("19", 0))
+        second = plugin._import_silo({}, settings, dry_run=True, start_library_id=first["next_library_id"], cursor=first["next_cursor"], start_index=first["next_index"])
+        self.assertEqual(second["next_library_id"], None)
+        self.assertEqual(enrich.call_count, 2)
+
+    @patch.object(plugin, "_silo_post", return_value={"id": "job"})
+    @patch.object(plugin, "_silo_get")
+    @patch.object(plugin, "_scene", return_value={"id": "42", "code": "ATID-705", "files": []})
+    def test_targeted_refresh_visits_each_selected_library(self, scene, silo_get, silo_post):
+        def get(_settings, path, profile_id=None):
+            if path == "/api/v2/profiles":
+                return {"items": [{"id": "profile"}]}
+            if "library_id=16" in path:
+                return {"items": [{"content_id": "one", "code": "ATID705"}]}
+            if "library_id=19" in path:
+                return {"items": [{"content_id": "two", "code": "ATID705"}]}
+            if path.startswith("/api/v2/catalog/items/"):
+                return {"provider_ids": {"stash": "42"}}
+            raise AssertionError(path)
+        silo_get.side_effect = get
+        result = plugin._refresh_silo_scene({}, {"silo_url": "http://silo", "silo_api_key": "key", "silo_library_id": "16,19"}, "42")
+        self.assertEqual(result["state"], "queued")
+        self.assertEqual({item["library_id"] for item in result["items"]}, {"16", "19"})
+        self.assertEqual(silo_post.call_count, 2)
+
+class MultiLibraryWatchListTests(unittest.TestCase):
+    @patch.object(plugin, "_sync_silo_watchlist_collection_one")
+    @patch.object(plugin, "_silo_get")
+    @patch.object(plugin, "_scene")
+    def test_stash_tag_updates_existing_collections_in_two_libraries(self, scene, silo_get, sync_one):
+        scene.return_value = {"id": "42", "tags": [{"id": "1355"}]}
+        silo_get.return_value = {"items": [
+            {"id": "7", "title": "WatchList", "library_id": "16", "collection_type": "manual"},
+            {"id": "8", "title": "WatchList", "library_id": "19", "collection_type": "manual"},
+        ]}
+        sync_one.side_effect = lambda settings, row, scene_id, desired, collection: {"state": "added", "collection_id": collection["id"]}
+        settings = {"silo_url": "http://silo", "silo_api_key": "key", "watchlist_tag_id": "1355", "silo_library_id": "16,19"}
+        hook = {"id": "42", "type": "Scene.Update.Post", "inputFields": ["tag_ids"]}
+        result = plugin._sync_silo_watchlist_collection({}, settings, hook)
+        self.assertEqual(result["state"], "multiple")
+        self.assertEqual({entry["collection_id"] for entry in result["results"]}, {"7", "8"})
+        self.assertEqual(sync_one.call_count, 2)

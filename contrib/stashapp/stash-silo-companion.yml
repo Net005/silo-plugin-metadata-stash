@@ -1,6 +1,6 @@
 name: Stash.Silo Companion
 description: Enrich Stash scenes from linked metadata and keep the Silo collection current.
-version: 0.2.4
+version: 0.2.5
 ui:
   javascript:
     - stash_silo_subtitles.js
@@ -38,11 +38,11 @@ settings:
     description: Defaults to 200. Set to 0 to scan all scenes.
     type: NUMBER
   silo_url:
-    displayName: Silo URL for one-time migration
+    displayName: Silo URL
     description: Silo base URL reachable from Stash. Used for cached-metadata migration, targeted refresh and realtime WatchList collection updates.
     type: STRING
   silo_api_key:
-    displayName: Silo API key for one-time migration
+    displayName: Silo API key
     description: Silo API key used for cached-metadata migration, targeted refresh and realtime WatchList collection updates.
     type: STRING
   refresh_silo_on_scene_update:
@@ -50,12 +50,12 @@ settings:
     description: When Silo connection settings are present, queue a targeted refresh only for a uniquely matched item. Defaults to true.
     type: BOOLEAN
   silo_library_id:
-    displayName: Silo library ID
-    description: Silo library containing matched movie items. Required for migration and targeted refresh; optional for WatchList updates when one exact collection name exists.
+    displayName: Silo movie library IDs (optional)
+    description: Leave blank to use every enabled Silo movie library, or enter comma-separated IDs to limit migration, targeted refresh and WatchList collection updates. Find each ID in its Silo library settings URL.
     type: STRING
   silo_watchlist_collection_id:
-    displayName: Silo WatchList collection ID
-    description: Optional. Select the existing manual WatchList collection by ID if the library has more than one collection with that name.
+    displayName: Silo WatchList collection IDs (optional)
+    description: Leave blank to select one existing StashApp-derived manual WatchList collection per movie library. Enter comma-separated collection IDs if a library has multiple WatchList collections.
     type: STRING
   webhook_secret:
     displayName: JAVBeacon webhook secret
@@ -145,12 +145,12 @@ tasks:
       mode: scan
       dry_run: true
   - name: Preview existing Silo metadata migration
-    description: Read existing Silo catalog data and preview fill-only Stash updates for items with an exact Stash scene ID.
+    description: Preview fill-only Stash updates from all selected existing Silo movie libraries. Ambiguous scene matches are skipped.
     defaultArgs:
       mode: silo_import
       dry_run: true
   - name: Import existing Silo metadata
-    description: Copy missing scene fields from Silo catalog records with an exact Stash scene ID. No source refresh is requested.
+    description: Copy missing scene fields from selected existing Silo movie libraries. No source refresh or scrape is requested.
     defaultArgs:
       mode: silo_import
       dry_run: false

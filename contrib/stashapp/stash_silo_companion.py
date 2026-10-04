@@ -371,10 +371,26 @@ def _silo_source(item):
             "performers": cast, "tags": names(item.get("genres") or item.get("tags"))}
 
 
-def _import_silo(payload, settings, *, dry_run, cursor="", start_index=0):
-    library_id = str(settings.get("silo_library_id") or "").strip()
-    if not library_id:
-        raise RuntimeError("configure the Silo library ID")
+def _silo_movie_libraries(settings):
+    """Resolve one or more configured IDs, or discover every enabled movie library."""
+    raw = str(settings.get("silo_library_id") or "").strip()
+    requested = [value.strip() for value in re.split(r"[,;\s]+", raw) if value.strip()]
+    if requested:
+        return list(dict.fromkeys(requested))
+    libraries = _silo_get(settings, "/api/v2/libraries").get("items") or []
+    available = {str(row.get("id")): row for row in libraries
+                 if str(row.get("type") or "").lower() == "movies" and row.get("enabled", True)}
+    if not available:
+        raise RuntimeError("Silo returned no enabled movie libraries")
+    return list(available)
+
+
+def _import_silo(payload, settings, *, dry_run, cursor="", start_index=0, start_library_id=""):
+    libraries = _silo_movie_libraries(settings)
+    if start_library_id:
+        if start_library_id not in libraries:
+            raise RuntimeError("start_library_id is not an enabled selected movie library")
+        libraries = libraries[libraries.index(start_library_id):]
     profiles = _silo_get(settings, "/api/v2/profiles").get("items") or []
     if not profiles:
         raise RuntimeError("Silo returned no profiles")
@@ -388,42 +404,45 @@ def _import_silo(payload, settings, *, dry_run, cursor="", start_index=0):
     index = max(0, int(start_index))
     if index >= 200:
         raise RuntimeError("start_index must be less than 200")
-    while True:
-        params = {"library_id": library_id, "limit": "200", "skip_total": "true", "status": "matched", "sort": "-added_at"}
-        if cursor:
-            params["cursor"] = cursor
-        page = _silo_get(settings, "/api/v2/catalog?" + urllib.parse.urlencode(params), profile_id)
-        rows = page.get("items") or []
-        for offset, row in enumerate(rows[index:], start=index):
-            if limit and checked >= limit:
-                return {"mode": "silo_preview" if dry_run else "silo_import", "checked": checked, "counts": counts, "examples": examples, "next_cursor": cursor, "next_index": offset}
-            checked += 1
-            scene_id = _silo_scene_id(row)
-            detail = None
-            if not scene_id:
-                content_id = str(row.get("content_id") or "")
-                if content_id:
-                    detail = _silo_get(settings, "/api/v2/catalog/items/" + urllib.parse.quote(content_id, safe=""), profile_id)
-                    if str(detail.get("content_id")) == content_id:
-                        scene_id = _silo_scene_id(detail)
-            if not scene_id:
-                scene_id = _silo_unique_scene(payload, {**row, **(detail or {})})
-            if not scene_id:
-                state = "no_unique_scene_match"
-                result = None
-            else:
-                source = _silo_source({**row, **(detail or {})})
-                result = _enrich_scene(payload, settings, scene_id, dry_run=dry_run, allow_cover=False, source=source)
-                state = result["state"]
-            counts[state] = counts.get(state, 0) + 1
-            if result and state in ("preview", "updated") and len(examples) < 20:
-                examples.append(result)
-        next_cursor = str((page.get("page") or {}).get("next_cursor") or "")
-        if not (page.get("page") or {}).get("has_more") or not next_cursor or next_cursor == cursor:
-            break
-        cursor = next_cursor
+    for library_id in libraries:
+        while True:
+            params = {"library_id": library_id, "limit": "200", "skip_total": "true", "status": "matched", "sort": "-added_at"}
+            if cursor:
+                params["cursor"] = cursor
+            page = _silo_get(settings, "/api/v2/catalog?" + urllib.parse.urlencode(params), profile_id)
+            rows = page.get("items") or []
+            for offset, row in enumerate(rows[index:], start=index):
+                if limit and checked >= limit:
+                    return {"mode": "silo_preview" if dry_run else "silo_import", "checked": checked, "counts": counts, "examples": examples, "next_library_id": library_id, "next_cursor": cursor, "next_index": offset}
+                checked += 1
+                scene_id = _silo_scene_id(row)
+                detail = None
+                if not scene_id:
+                    content_id = str(row.get("content_id") or "")
+                    if content_id:
+                        detail = _silo_get(settings, "/api/v2/catalog/items/" + urllib.parse.quote(content_id, safe=""), profile_id)
+                        if str(detail.get("content_id")) == content_id:
+                            scene_id = _silo_scene_id(detail)
+                if not scene_id:
+                    scene_id = _silo_unique_scene(payload, {**row, **(detail or {})})
+                if not scene_id:
+                    state = "no_unique_scene_match"
+                    result = None
+                else:
+                    source = _silo_source({**row, **(detail or {})})
+                    result = _enrich_scene(payload, settings, scene_id, dry_run=dry_run, allow_cover=False, source=source)
+                    state = result["state"]
+                counts[state] = counts.get(state, 0) + 1
+                if result and state in ("preview", "updated") and len(examples) < 20:
+                    examples.append({"library_id": library_id, **result})
+            next_cursor = str((page.get("page") or {}).get("next_cursor") or "")
+            if not (page.get("page") or {}).get("has_more") or not next_cursor or next_cursor == cursor:
+                break
+            cursor = next_cursor
+            index = 0
+        cursor = ""
         index = 0
-    return {"mode": "silo_preview" if dry_run else "silo_import", "checked": checked, "counts": counts, "examples": examples, "next_cursor": None, "next_index": None}
+    return {"mode": "silo_preview" if dry_run else "silo_import", "checked": checked, "counts": counts, "examples": examples, "next_library_id": None, "next_cursor": None, "next_index": None}
 
 
 def _silo_post(settings, path, body):
@@ -453,19 +472,29 @@ def _sync_silo_watchlist_collection(payload, settings, hook):
     if not scene:
         return {"state": "missing_scene"}
     desired = any(str(tag.get("id")) == str(settings["watchlist_tag_id"]) for tag in scene.get("tags") or [])
-    configured_library = str(settings.get("silo_library_id") or "").strip()
+    allowed = set(_silo_movie_libraries(settings))
     collections = _silo_get(settings, "/api/v2/admin/collections").get("items") or []
-    configured_id = str(settings.get("silo_watchlist_collection_id") or "").strip()
-    matches = [row for row in collections if (not configured_library or str(row.get("library_id")) == configured_library)
-               and str(row.get("title") or "").casefold() == "watchlist"
-               and (not configured_id or str(row.get("id")) == configured_id)]
-    if not configured_id:
-        stash_collections = [row for row in matches if str(row.get("slug") or "").startswith("javbeacon-stash-preset-")]
-        if stash_collections:
-            matches = stash_collections
-    if len(matches) != 1:
-        return {"state": "ambiguous_collection" if matches else "missing_collection"}
-    collection = matches[0]
+    configured_ids = {value.strip() for value in re.split(r"[,;\s]+", str(settings.get("silo_watchlist_collection_id") or "")) if value.strip()}
+    candidates = [row for row in collections if str(row.get("library_id")) in allowed
+                  and str(row.get("title") or "").casefold() == "watchlist"
+                  and (not configured_ids or str(row.get("id")) in configured_ids)]
+    selected = []
+    for library_id in allowed:
+        matches = [row for row in candidates if str(row.get("library_id")) == library_id]
+        if not configured_ids:
+            stash_collections = [row for row in matches if str(row.get("slug") or "").startswith("javbeacon-stash-preset-")]
+            if stash_collections:
+                matches = stash_collections
+        if len(matches) > 1:
+            return {"state": "ambiguous_collection", "library_id": library_id}
+        selected.extend(matches)
+    if not selected:
+        return {"state": "missing_collection"}
+    results = [_sync_silo_watchlist_collection_one(settings, scene, scene_id, desired, collection) for collection in selected]
+    return results[0] if len(results) == 1 else {"state": "multiple", "results": results}
+
+
+def _sync_silo_watchlist_collection_one(settings, scene, scene_id, desired, collection):
     library_id = str(collection.get("library_id") or "")
     if not library_id:
         return {"state": "collection_without_library"}
@@ -494,8 +523,8 @@ def _sync_silo_watchlist_collection(payload, settings, hook):
     content_id = next(iter(content_ids))
     detail = _silo_get(settings, "/api/v2/catalog/items/" + urllib.parse.quote(content_id, safe=""), profile_id)
     linked_scene = _silo_scene_id(detail)
-    if linked_scene and linked_scene != scene_id:
-        return {"state": "different_scene"}
+    if linked_scene != scene_id:
+        return {"state": "different_scene" if linked_scene else "unverified_scene"}
     collection_id = str(collection["id"])
     prefix = "/api/v2/admin/collections/" + urllib.parse.quote(collection_id, safe="") + "/items"
     cursor = ""
@@ -536,7 +565,7 @@ def _sync_silo_watchlist_collection(payload, settings, hook):
 
 
 def _refresh_silo_scene(payload, settings, scene_id):
-    if not all(settings.get(key) for key in ("silo_url", "silo_api_key", "silo_library_id")):
+    if not all(settings.get(key) for key in ("silo_url", "silo_api_key")):
         return {"state": "disabled"}
     scene = _scene(payload, scene_id)
     if not scene:
@@ -546,31 +575,46 @@ def _refresh_silo_scene(payload, settings, scene_id):
     terms = [str(x).strip() for x in terms if str(x or "").strip()]
     if not terms:
         return {"state": "no_identity"}
+    libraries = _silo_movie_libraries(settings)
     profiles = _silo_get(settings, "/api/v2/profiles").get("items") or []
     if not profiles:
         raise RuntimeError("Silo returned no profiles")
-    library_id = str(settings["silo_library_id"])
-    content_ids = set()
-    for term in dict.fromkeys(terms[:3]):
-        params = {"library_id": library_id, "q": term, "limit": "50", "status": "matched"}
-        page = _silo_get(settings, "/api/v2/catalog?" + urllib.parse.urlencode(params), str(profiles[0]["id"]))
-        key = re.sub(r"[^a-z0-9]", "", term.casefold())
-        for item in page.get("items") or []:
-            candidate = re.sub(r"[^a-z0-9]", "", str(item.get("title") or "").casefold())
-            if key and candidate == key and item.get("content_id"):
-                content_ids.add(str(item["content_id"]))
-    if len(content_ids) != 1:
-        return {"state": "ambiguous" if content_ids else "unmatched"}
-    content_id = next(iter(content_ids))
-    job = _silo_post(settings, "/api/v2/admin/items/" + urllib.parse.quote(content_id, safe="") + "/refresh-metadata", {"mode": "complete"})
-    return {"state": "queued", "content_id": content_id, "job_id": job.get("id")}
+    profile_id = str(profiles[0]["id"])
+    queued = []
+    ambiguous = []
+    for library_id in libraries:
+        content_ids = set()
+        for term in dict.fromkeys(terms[:3]):
+            params = {"library_id": library_id, "q": term, "limit": "50", "status": "matched"}
+            page = _silo_get(settings, "/api/v2/catalog?" + urllib.parse.urlencode(params), profile_id)
+            key = re.sub(r"[^a-z0-9]", "", term.casefold())
+            for item in page.get("items") or []:
+                values = [item.get("title"), item.get("code")]
+                if key and any(re.sub(r"[^a-z0-9]", "", str(value or "").casefold()) == key for value in values) and item.get("content_id"):
+                    content_ids.add(str(item["content_id"]))
+        if len(content_ids) > 1:
+            ambiguous.append(library_id)
+            continue
+        if not content_ids:
+            continue
+        content_id = next(iter(content_ids))
+        detail = _silo_get(settings, "/api/v2/catalog/items/" + urllib.parse.quote(content_id, safe=""), profile_id)
+        linked_scene = _silo_scene_id(detail)
+        if linked_scene and linked_scene != str(scene_id):
+            continue
+        job = _silo_post(settings, "/api/v2/admin/items/" + urllib.parse.quote(content_id, safe="") + "/refresh-metadata", {"mode": "complete"})
+        queued.append({"library_id": library_id, "content_id": content_id, "job_id": job.get("id")})
+    if queued:
+        return {"state": "queued", "items": queued, "ambiguous_libraries": ambiguous}
+    return {"state": "ambiguous" if ambiguous else "unmatched", "ambiguous_libraries": ambiguous}
+
 
 def main():
     payload = json.load(sys.stdin)
     args = payload.get("args") or {}
     mode = str(args.get("mode") or "hook").lower()
     if mode == "silo_import":
-        result = _import_silo(payload, _settings(payload), dry_run=_bool(args.get("dry_run"), True), cursor=str(args.get("start_cursor") or ""), start_index=args.get("start_index") or 0)
+        result = _import_silo(payload, _settings(payload), dry_run=_bool(args.get("dry_run"), True), cursor=str(args.get("start_cursor") or ""), start_index=args.get("start_index") or 0, start_library_id=str(args.get("start_library_id") or ""))
     elif mode == "scan":
         result = _scan(payload, _settings(payload), dry_run=_bool(args.get("dry_run"), True), start_page=args.get("start_page") or 1, start_index=args.get("start_index") or 0)
     elif mode == "subtitles":
