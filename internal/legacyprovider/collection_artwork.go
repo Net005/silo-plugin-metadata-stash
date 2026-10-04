@@ -10,6 +10,7 @@ import (
 	"math/rand"
 	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"net/url"
 	"sort"
 	"strings"
@@ -112,8 +113,77 @@ func (c *SiloClient) uploadCollectionArtwork(ctx context.Context, collectionID, 
 	}
 	defer resp.Body.Close()
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("silo: collection %s upload returned HTTP %d", kind, resp.StatusCode)
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return nil
+	}
+	// Silo may be unable to retrieve a remote source URL even when the plugin
+	// can retrieve it. Uploading the same image as a file avoids that server-side
+	// fetch, while Silo still creates its normal resized artwork variants.
+	if resp.StatusCode == http.StatusInternalServerError {
+		if err := c.uploadCollectionArtworkFile(ctx, path, sourceURL); err == nil {
+			return nil
+		} else {
+			return fmt.Errorf("silo: collection %s source URL upload returned HTTP %d; file fallback: %w", kind, resp.StatusCode, err)
+		}
+	}
+	return fmt.Errorf("silo: collection %s upload returned HTTP %d", kind, resp.StatusCode)
+}
+
+func (c *SiloClient) uploadCollectionArtworkFile(ctx context.Context, path, sourceURL string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sourceURL, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("fetching artwork: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("artwork source returned HTTP %d", resp.StatusCode)
+	}
+	const maxImageBytes = 10 << 20
+	image, err := io.ReadAll(io.LimitReader(resp.Body, maxImageBytes+1))
+	if err != nil {
+		return fmt.Errorf("reading artwork: %w", err)
+	}
+	if len(image) > maxImageBytes {
+		return fmt.Errorf("artwork exceeds Silo's 10 MB limit")
+	}
+	contentType := http.DetectContentType(image)
+	ext := map[string]string{"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}[contentType]
+	if ext == "" {
+		return fmt.Errorf("unsupported artwork content type %s", contentType)
+	}
+	var body bytes.Buffer
+	form := multipart.NewWriter(&body)
+	header := textproto.MIMEHeader{}
+	header.Set("Content-Disposition", fmt.Sprintf(`form-data; name="image"; filename="artwork.%s"`, ext))
+	header.Set("Content-Type", contentType)
+	part, err := form.CreatePart(header)
+	if err != nil {
+		return err
+	}
+	if _, err := part.Write(image); err != nil {
+		return err
+	}
+	if err := form.Close(); err != nil {
+		return err
+	}
+	req, err = http.NewRequestWithContext(ctx, http.MethodPut, c.baseURL+path, &body)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	req.Header.Set("Content-Type", form.FormDataContentType())
+	result, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer result.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(result.Body, 1<<20))
+	if result.StatusCode < 200 || result.StatusCode >= 300 {
+		return fmt.Errorf("file upload returned HTTP %d", result.StatusCode)
 	}
 	return nil
 }

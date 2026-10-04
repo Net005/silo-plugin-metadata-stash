@@ -89,6 +89,50 @@ func TestSyncCollectionArtworkUploadsOncePerWindow(t *testing.T) {
 	}
 }
 
+func TestCollectionArtworkFallsBackToFileWhenSiloCannotFetchURL(t *testing.T) {
+	image := []byte{0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 'J', 'F', 'I', 'F', 0}
+	fileUploads := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/image" {
+			w.Header().Set("Content-Type", "image/jpeg")
+			_, _ = w.Write(image)
+			return
+		}
+		if r.URL.Path != "/api/v2/admin/collections/c1/poster" {
+			t.Errorf("unexpected path %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Errorf("parse upload: %v", err)
+		}
+		if r.FormValue("source_url") != "" {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		file, header, err := r.FormFile("image")
+		if err != nil {
+			t.Errorf("missing file: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		defer file.Close()
+		if header.Header.Get("Content-Type") != "image/jpeg" {
+			t.Errorf("unexpected file type %q", header.Header.Get("Content-Type"))
+		}
+		fileUploads++
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	client := NewSiloClient(server.URL, "test")
+	if err := client.uploadCollectionArtwork(context.Background(), "c1", "poster", server.URL+"/image"); err != nil {
+		t.Fatal(err)
+	}
+	if fileUploads != 1 {
+		t.Fatalf("file uploads = %d, want 1", fileUploads)
+	}
+}
+
 func TestArtworkRotationUsuallyFavorsRecentButSometimesUsesOlder(t *testing.T) {
 	candidates := make([]CollectionArtwork, 20)
 	for i := range candidates {
