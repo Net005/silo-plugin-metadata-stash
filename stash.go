@@ -294,6 +294,9 @@ func (c *stashClient) addPlayOnce(ctx context.Context, id string, at time.Time) 
 	if item.hasPlayAt(at) {
 		return false, nil
 	}
+	if item.PlayCount != len(item.PlayHistory) {
+		return false, errors.New("Stash play count does not match timestamped history; refusing automatic play write")
+	}
 	var out struct {
 		Added struct {
 			Count int `json:"count"`

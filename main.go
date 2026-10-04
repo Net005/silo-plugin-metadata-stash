@@ -75,7 +75,7 @@ func (s *runtimeServer) Configure(_ context.Context, req *pluginv1.ConfigureRequ
 		s.releasePrefix = text(v["saved_filter_prefix"])
 		s.watchListCollectionID = text(v["silo_watchlist_collection_id"])
 		legacy := s.legacy
-		config := legacytasks.Config{JAVBeaconURL: s.artwork.base, JAVBeaconKey: s.artwork.key, SiloURL: s.siloBase, SiloKey: s.siloKey, SiloLibraryID: s.siloLibraryID, StashFilters: s.stashFilters, StashPrefix: s.stashPrefix, ReleaseFilters: s.releaseFilters, ReleasePrefix: s.releasePrefix, WatchListCollectionID: s.watchListCollectionID}
+		config := legacytasks.Config{JAVBeaconURL: s.artwork.base, JAVBeaconKey: s.artwork.key, StashURL: s.client.base, StashKey: s.client.key, SiloURL: s.siloBase, SiloKey: s.siloKey, SiloLibraryID: s.siloLibraryID, StashFilters: s.stashFilters, StashPrefix: s.stashPrefix, ReleaseFilters: s.releaseFilters, ReleasePrefix: s.releasePrefix, WatchListCollectionID: s.watchListCollectionID}
 		s.mu.Unlock()
 		if legacy != nil {
 			legacy.Configure(config)

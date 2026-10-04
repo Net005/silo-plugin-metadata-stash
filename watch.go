@@ -124,6 +124,9 @@ func (s *watchSyncServer) applyViaJAVBeacon(ctx context.Context, e *pluginv1.Wat
 			if row != nil && row.hasPlayAt(pb.OccurredAt) {
 				return result
 			}
+			if row == nil || row.PlayCount != len(row.PlayHistory) {
+				return retryResult(e, "Stash play history is incomplete; refusing automatic play write")
+			}
 		}
 	}
 	if pb.SessionID == "" {

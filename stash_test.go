@@ -73,6 +73,25 @@ func TestSceneIDPreservesOldStashIdentity(t *testing.T) {
 	}
 }
 
+func TestAddPlayOnceRefusesIncompleteHistory(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Query string `json:"query"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if strings.Contains(body.Query, "mutation") {
+			t.Error("incomplete history must not be mutated")
+		}
+		_, _ = w.Write([]byte(`{"data":{"findScene":{"id":"42","play_count":5,"play_history":[]}}}`))
+	}))
+	defer server.Close()
+	c := &stashClient{base: server.URL, key: "key"}
+	added, err := c.addPlayOnce(context.Background(), "42", time.Now())
+	if added || err == nil {
+		t.Fatalf("added=%t err=%v", added, err)
+	}
+}
+
 func TestSearchTermsIncludePureTabooTitleWithoutQualitySuffix(t *testing.T) {
 	terms := searchTerms("Pure Taboo - 2026-07-28 - Sample Scene [WEBDL-2160p].mp4")
 	found := false

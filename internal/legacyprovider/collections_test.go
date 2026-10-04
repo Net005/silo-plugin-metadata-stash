@@ -19,7 +19,7 @@ func TestSyncCollectionsCreatesAndReconcilesOrderedMembers(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.URL.Path == "/api/v2/admin/collections" && r.Method == http.MethodGet:
-			if r.URL.RawQuery != "" {
+			if r.URL.Query().Get("library_id") != "lib" {
 				t.Errorf("unexpected collection list query: %s", r.URL.RawQuery)
 			}
 			items := []siloCollection{}

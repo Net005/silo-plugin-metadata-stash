@@ -26,20 +26,26 @@ type Config struct {
 // enters them, so this plugin must actually implement Configure rather than
 // treat it as a no-op.
 type Provider struct {
-	mu             sync.RWMutex
-	client         *Client
-	siloAPIKey     string
-	siloBaseURL    string
-	siloLibraryID  string
-	stashFilters   string
-	stashPrefix    string
-	javFilters     string
-	javPrefix      string
-	lastSyncedAt   string
-	snapshotMu     sync.Mutex
-	snapshot       *LibrarySync
-	snapshotClient *Client
-	snapshotAt     time.Time
+	mu                  sync.RWMutex
+	client              *Client
+	siloAPIKey          string
+	siloBaseURL         string
+	siloLibraryID       string
+	stashFilters        string
+	stashPrefix         string
+	stashURL            string
+	stashAPIKey         string
+	stashFilterMu       sync.Mutex
+	stashFilterCache    []StashSavedFilter
+	stashFilterCacheKey string
+	stashFilterCacheAt  time.Time
+	javFilters          string
+	javPrefix           string
+	lastSyncedAt        string
+	snapshotMu          sync.Mutex
+	snapshot            *LibrarySync
+	snapshotClient      *Client
+	snapshotAt          time.Time
 }
 
 // NewProvider returns an unconfigured provider. Every RPC returns a clear

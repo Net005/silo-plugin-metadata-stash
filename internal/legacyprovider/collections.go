@@ -103,14 +103,35 @@ func (c *SiloClient) collectionRequestETag(ctx context.Context, method, path str
 	return resp.Header.Get("ETag"), nil
 }
 
-func (c *SiloClient) collections(ctx context.Context) ([]siloCollection, error) {
-	var response struct {
-		Items []siloCollection `json:"items"`
+func (c *SiloClient) collections(ctx context.Context, libraryIDs ...string) ([]siloCollection, error) {
+	if len(libraryIDs) == 0 {
+		libraryIDs = []string{""}
 	}
-	if err := c.collectionRequest(ctx, http.MethodGet, "/api/v2/admin/collections", nil, &response); err != nil {
-		return nil, err
+	var result []siloCollection
+	seenLibraries, seenCollections := map[string]bool{}, map[string]bool{}
+	for _, libraryID := range libraryIDs {
+		if seenLibraries[libraryID] {
+			continue
+		}
+		seenLibraries[libraryID] = true
+		path := "/api/v2/admin/collections"
+		if libraryID != "" {
+			path += "?library_id=" + url.QueryEscape(libraryID)
+		}
+		var response struct {
+			Items []siloCollection `json:"items"`
+		}
+		if err := c.collectionRequest(ctx, http.MethodGet, path, nil, &response); err != nil {
+			return nil, err
+		}
+		for _, item := range response.Items {
+			if !seenCollections[item.ID] {
+				result = append(result, item)
+				seenCollections[item.ID] = true
+			}
+		}
 	}
-	return response.Items, nil
+	return result, nil
 }
 
 func (c *SiloClient) collectionMembers(ctx context.Context, id string) (map[string]int, error) {
@@ -158,7 +179,13 @@ func (c *SiloClient) SyncCollections(ctx context.Context, specs []CollectionSpec
 // SyncCollectionsBatch limits writes per invocation so Silo scheduled tasks
 // can resume safely instead of exceeding the task RPC deadline or API quota.
 func (c *SiloClient) SyncCollectionsBatch(ctx context.Context, specs []CollectionSpec, maxChanges int, pruneUnselected ...bool) (int, bool, error) {
-	existing, err := c.collections(ctx)
+	libraryIDs := []string{}
+	for _, spec := range specs {
+		if spec.LibraryID != "" {
+			libraryIDs = append(libraryIDs, spec.LibraryID)
+		}
+	}
+	existing, err := c.collections(ctx, libraryIDs...)
 	if err != nil {
 		return 0, false, err
 	}
@@ -178,11 +205,17 @@ func (c *SiloClient) SyncCollectionsBatch(ctx context.Context, specs []Collectio
 	pruneJAV := len(pruneUnselected) > 0 && pruneUnselected[0]
 	pruneStash := len(pruneUnselected) > 1 && pruneUnselected[1]
 	pruneEmpty := len(pruneUnselected) > 2 && pruneUnselected[2]
+	prunableCollection := func(item siloCollection) bool {
+		if strings.HasPrefix(item.Slug, "javbeacon-stash-preset-") {
+			return pruneStash
+		}
+		return strings.HasPrefix(item.Slug, "javbeacon-preset-") && (pruneJAV || pruneEmpty)
+	}
 	// Keep prior collections by default. Multi-library sync explicitly opts into
 	// removing an owned collection when it has no local matches in its library.
 	for _, item := range existing {
 		if (strings.HasPrefix(item.Slug, "javbeacon-preset-") || strings.HasPrefix(item.Slug, "javbeacon-stash-preset-")) && strings.HasPrefix(item.Description, collectionOwner) {
-			if _, ok := desired[item.Slug]; !ok && !(pruneEmpty && activeLibraries[item.LibraryID]) && !(pruneJAV && strings.HasPrefix(item.Slug, "javbeacon-preset-")) && !(pruneStash && strings.HasPrefix(item.Slug, "javbeacon-stash-preset-")) {
+			if _, ok := desired[item.Slug]; !ok && !(activeLibraries[item.LibraryID] && prunableCollection(item)) {
 				desired[item.Slug] = CollectionSpec{LibraryID: item.LibraryID}
 			}
 		}
@@ -210,7 +243,7 @@ func (c *SiloClient) SyncCollectionsBatch(ctx context.Context, specs []Collectio
 	if pruneJAV || pruneStash || pruneEmpty {
 		for _, item := range existing {
 			owned := strings.HasPrefix(item.Description, collectionOwner) && (strings.HasPrefix(item.Slug, "javbeacon-preset-") || strings.HasPrefix(item.Slug, "javbeacon-stash-preset-"))
-			prunable := pruneEmpty || (pruneJAV && strings.HasPrefix(item.Slug, "javbeacon-preset-")) || (pruneStash && strings.HasPrefix(item.Slug, "javbeacon-stash-preset-"))
+			prunable := prunableCollection(item)
 			if !owned || !prunable || !activeLibraries[item.LibraryID] {
 				continue
 			}
@@ -235,6 +268,11 @@ func (c *SiloClient) SyncCollectionsBatch(ctx context.Context, specs []Collectio
 			return changed, false, nil
 		}
 		spec := desired[slug]
+		// An empty-name entry is a preservation marker for a disabled source,
+		// not an instruction to empty the existing collection's memberships.
+		if spec.Name == "" {
+			continue
+		}
 		collection, exists := bySlug[slug]
 		if exists && (!strings.HasPrefix(collection.Description, collectionOwner) || collection.LibraryID != spec.LibraryID) {
 			return changed, false, fmt.Errorf("silo: collection slug %q belongs to another owner", slug)
@@ -362,7 +400,7 @@ func (c *SiloClient) SyncCollectionsBatch(ctx context.Context, specs []Collectio
 		}
 	}
 	if createdAny {
-		updated, err := c.collections(ctx)
+		updated, err := c.collections(ctx, libraryIDs...)
 		if err != nil {
 			return changed, false, err
 		}

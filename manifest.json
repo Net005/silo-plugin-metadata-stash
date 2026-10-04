@@ -1,6 +1,6 @@
 {
   "plugin_id": "stash.metadata",
-  "version": "0.2.13",
+  "version": "0.2.14",
   "checksum": "__CHECKSUM__",
   "silo_api_version": "v1",
   "presentation": {
@@ -183,7 +183,8 @@
             "key": "stash_saved_filter_selection",
             "label": "Stash scene saved filters to import",
             "control": "ADMIN_FORM_CONTROL_TEXT",
-            "required": false
+            "required": false,
+            "description": "Comma-separated Stash scene saved-filter IDs or exact names. Blank disables these collection imports. WatchList is maintained separately by the companion."
           },
           {
             "key": "stash_saved_filter_prefix",

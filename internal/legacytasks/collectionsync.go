@@ -245,12 +245,19 @@ func (s *collectionSyncTaskServer) poll() {
 }
 
 func (s *collectionSyncTaskServer) sync(ctx context.Context, force bool) (map[string]any, error) {
+	stashSelection, stashPrefix, javSelection, javPrefix := s.runtime.provider.SavedFilterSettings()
 	snapshot, err := s.runtime.provider.LibrarySync(ctx)
-	if err != nil {
+	if err != nil && strings.TrimSpace(stashSelection) == "" {
 		return nil, err
 	}
-	if snapshot.CollectionIdentityVersion < 1 {
+	releaseSourceReady := err == nil && snapshot.CollectionIdentityVersion >= 1
+	if !releaseSourceReady && strings.TrimSpace(stashSelection) == "" {
 		return map[string]any{"status": "skipped", "reason": "upgrade JAVBeacon to v1.0.285 before saved-filter reconciliation"}, nil
+	}
+	if !releaseSourceReady {
+		// Stash imports continue when the optional release backend is unavailable.
+		// Preserve its existing collections until an authoritative snapshot returns.
+		snapshot = &provider.LibrarySync{CollectionIdentityVersion: 1, ReleaseCodes: map[int64]string{}}
 	}
 	key := s.runtime.provider.SiloAPIKey()
 	if key == "" {
@@ -261,10 +268,11 @@ func (s *collectionSyncTaskServer) sync(ctx context.Context, force bool) (map[st
 		return nil, fmt.Errorf("collection-sync: Silo URL is required")
 	}
 	client := provider.NewSiloClient(baseURL, key)
-	stashSelection, stashPrefix, javSelection, javPrefix := s.runtime.provider.SavedFilterSettings()
-	snapshot, err = selectedFilterSnapshot(snapshot, javSelection, javPrefix)
-	if err != nil {
-		return nil, err
+	if releaseSourceReady {
+		snapshot, err = selectedFilterSnapshot(snapshot, javSelection, javPrefix)
+		if err != nil {
+			return nil, err
+		}
 	}
 	stashFilters := []provider.StashSavedFilter{}
 	if strings.TrimSpace(stashSelection) != "" {
@@ -311,7 +319,7 @@ func (s *collectionSyncTaskServer) sync(ctx context.Context, force bool) (map[st
 			}
 		}
 	}
-	changed, complete, err := client.SyncCollectionsBatch(ctx, specs, 400, strings.TrimSpace(javSelection) != "", true, true)
+	changed, complete, err := client.SyncCollectionsBatch(ctx, specs, 400, releaseSourceReady && strings.TrimSpace(javSelection) != "", strings.TrimSpace(stashSelection) != "", releaseSourceReady)
 	if err != nil {
 		if strings.Contains(err.Error(), "HTTP 429") {
 			return map[string]any{"status": "partial", "reason": "rate_limited", "changes": changed, "watched_changes": 0}, nil

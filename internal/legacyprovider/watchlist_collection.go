@@ -13,7 +13,7 @@ import (
 // SyncExistingWatchList reconciles only membership of a uniquely identified
 // existing manual collection. It never creates, renames or deletes collections.
 func (c *SiloClient) SyncExistingWatchList(ctx context.Context, libraryID, configuredID string, desired []string, allowRemovals bool, maxChanges int, artwork ...[]CollectionArtwork) (int, bool, string, error) {
-	collections, err := c.collections(ctx)
+	collections, err := c.collections(ctx, libraryID)
 	if err != nil {
 		return 0, false, "", err
 	}

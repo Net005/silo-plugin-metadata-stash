@@ -58,7 +58,7 @@ func TestSyncCollectionsPrunesOnlyOwnedZeroMatchCollections(t *testing.T) {
 	defer server.Close()
 	// The scope entry names an enabled library without creating a collection.
 	specs := []CollectionSpec{{Kind: "library", LibraryID: "19"}}
-	changed, complete, err := NewSiloClient(server.URL, "key").SyncCollectionsBatch(context.Background(), specs, 0, false, false, true)
+	changed, complete, err := NewSiloClient(server.URL, "key").SyncCollectionsBatch(context.Background(), specs, 0, false, true, true)
 	if err != nil || !complete || changed != 1 || !deleted["empty"] || deleted["user"] {
 		t.Fatalf("changed=%d complete=%v deleted=%v err=%v", changed, complete, deleted, err)
 	}
