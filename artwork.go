@@ -73,15 +73,32 @@ func (c *artworkClient) fetch(ctx context.Context, sceneID string) (*sceneArtwor
 }
 
 var performerImageRoute = regexp.MustCompile(`^/api/v1/integrations/performers/[0-9]+/image$`)
+var legacySceneCoverRoute = regexp.MustCompile(`^/api/v1/integrations/silo/stash/scenes/[0-9]+/(?:cover|poster)$`)
 
 func validArtworkPath(path string) bool {
 	if performerImageRoute.MatchString(path) {
+		return true
+	}
+	if legacySceneCoverRoute.MatchString(path) {
 		return true
 	}
 	if !strings.HasPrefix(path, "/covers/") && !strings.HasPrefix(path, "/screenshots/") {
 		return false
 	}
 	return !strings.Contains(path, "..") && !strings.ContainsAny(path, "?#\\")
+}
+
+func validArtworkReference(raw string) bool {
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.IsAbs() || parsed.Host != "" || !validArtworkPath(parsed.Path) {
+		return false
+	}
+	if parsed.RawQuery == "" {
+		return true
+	}
+	query := parsed.Query()
+	return legacySceneCoverRoute.MatchString(parsed.Path) && len(query) == 1 &&
+		(query.Get("variant") == "poster" || query.Get("variant") == "backdrop")
 }
 
 func backendImagePath(path string) string {
@@ -92,7 +109,7 @@ func backendImagePath(path string) string {
 }
 
 func (c *artworkClient) imageURL(path string) string {
-	if !c.configured() || !validArtworkPath(path) {
+	if !c.configured() || !validArtworkReference(path) {
 		return ""
 	}
 	u, err := url.Parse(c.base + path)

@@ -380,16 +380,21 @@ func (s *metadataServer) ResolveImageURLs(_ context.Context, req *pluginv1.Resol
 	return &pluginv1.ResolveImageURLsResponse{Urls: out}, nil
 }
 func (s *metadataServer) resolveImageURL(stash *stashClient, path string) string {
-	if legacyPath, ok := strings.CutPrefix(path, "javbeacon://"); ok {
-		if s.runtime.legacy == nil || strings.Contains(legacyPath, "..") || strings.ContainsAny(legacyPath, "?#\\") {
-			return ""
+	// Silo passes either the canonical URL or only its scheme-less path,
+	// depending on which image rendering path calls this resolver.
+	path = strings.TrimPrefix(strings.TrimPrefix(path, "javbeacon://"), "stash://")
+	path = strings.TrimPrefix(path, "backend/")
+	backendPath := "/" + strings.TrimPrefix(path, "/")
+	if validArtworkReference(backendPath) {
+		if resolved := s.runtime.artworkClient().imageURL(backendPath); resolved != "" {
+			return resolved
 		}
-		return s.runtime.legacy.Provider().ImageURL("/" + legacyPath)
+		if s.runtime.legacy != nil {
+			return s.runtime.legacy.Provider().ImageURL(backendPath)
+		}
+		return ""
 	}
-	if backendPath, ok := strings.CutPrefix(path, "stash://backend"); ok {
-		return s.runtime.artworkClient().imageURL(backendPath)
-	}
-	return stash.imageURL(strings.TrimPrefix(path, "stash://"))
+	return stash.imageURL(path)
 }
 func loadManifest() (*pluginv1.PluginManifest, error) {
 	m, err := publicmanifest.Load(manifestJSON)

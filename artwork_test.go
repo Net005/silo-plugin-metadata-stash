@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -52,6 +53,38 @@ func TestConformedPosterAndScreenshotsBecomeSiloImages(t *testing.T) {
 	resolved, err := server.ResolveImageURL(context.Background(), &pluginv1.ResolveImageURLRequest{Path: images.GetImages()[0].GetUrl()})
 	if err != nil || !strings.HasPrefix(resolved.GetUrl(), backend.URL+"/covers/7/stash-poster?api_key=artwork-key") {
 		t.Fatalf("resolved=%q err=%v", resolved.GetUrl(), err)
+	}
+}
+
+func TestImageResolverRoutesCanonicalAndSchemeLessArtwork(t *testing.T) {
+	runtime := &runtimeServer{
+		client:  &stashClient{base: "https://stash.example", key: "stash-key"},
+		artwork: &artworkClient{base: "https://jav.example", key: "artwork-key"},
+	}
+	server := &metadataServer{runtime: runtime}
+	cases := []struct{ input, host, path, variant string }{
+		{"stash://backend/covers/400320/stash-poster", "jav.example", "/covers/400320/stash-poster", ""},
+		{"backend/covers/400320/stash-poster", "jav.example", "/covers/400320/stash-poster", ""},
+		{"javbeacon://covers/400320/stash-poster", "jav.example", "/covers/400320/stash-poster", ""},
+		{"covers/400320/stash-poster", "jav.example", "/covers/400320/stash-poster", ""},
+		{"api/v1/integrations/silo/stash/scenes/41641/cover?variant=poster", "jav.example", "/api/v1/integrations/silo/stash/scenes/41641/cover", "poster"},
+		{"stash://scene/43263/screenshot", "stash.example", "/scene/43263/screenshot", ""},
+		{"scene/43263/screenshot", "stash.example", "/scene/43263/screenshot", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.input, func(t *testing.T) {
+			got := server.resolveImageURL(runtime.client, tc.input)
+			u, err := url.Parse(got)
+			if err != nil || u.Host != tc.host || u.Path != tc.path || u.Query().Get("variant") != tc.variant {
+				t.Fatalf("unexpected destination host=%q path=%q variant=%q err=%v", u.Host, u.Path, u.Query().Get("variant"), err)
+			}
+			if tc.host == "jav.example" && u.Query().Get("api_key") != "artwork-key" {
+				t.Fatal("JAVBeacon key missing")
+			}
+			if tc.host == "stash.example" && u.Query().Get("apikey") != "stash-key" {
+				t.Fatal("Stash key missing")
+			}
+		})
 	}
 }
 
