@@ -96,10 +96,10 @@ global.window = {
   },
 };
 
-require("./javbeacon_subtitles.js");
+require("./stash_subtitles.js");
 
 const pluginSource = fs.readFileSync(
-  require.resolve("./javbeacon_subtitles.js"),
+  require.resolve("./stash_subtitles.js"),
   "utf8"
 );
 assert.match(pluginSource, /mode: "release_link"/);
@@ -134,12 +134,12 @@ assert.match(pluginSource, /if \(!status \|\| !status\.sidecar_found\) return "r
 assert.match(pluginSource, /if \(status\.up_to_date === true\) return "green";/);
 assert.match(pluginSource, /statusColor: subtitleStatusColor\(completed, subtitleStatus\)/);
 const cssSource = fs.readFileSync(
-  require.resolve("./javbeacon_subtitles.css"),
+  require.resolve("./stash_subtitles.css"),
   "utf8"
 );
-assert.match(cssSource, /\.javbeacon-subs-status-green\s*\{/);
-assert.match(cssSource, /\.javbeacon-subs-status-orange\s*\{/);
-assert.match(cssSource, /\.javbeacon-subs-status-red\s*\{/);
+assert.match(cssSource, /\.stash-metadata-subs-status-green\s*\{/);
+assert.match(cssSource, /\.stash-metadata-subs-status-orange\s*\{/);
+assert.match(cssSource, /\.stash-metadata-subs-status-red\s*\{/);
 
 (async () => {
 
@@ -244,10 +244,10 @@ function renderCardActions(result) {
   return result.type(result.props);
 }
 // The subtitle/watchlist buttons are merged into the same
-// "javbeacon-card-actions-row" div (cardActions.props.children[2]) that now
+// "stash-metadata-card-actions-row" div (cardActions.props.children[2]) that now
 // also carries Stash's own popovers content - see the merge-row comment
-// above .javbeacon-card-actions-row for why. Watchlist sits inside the
-// row's first child, a "javbeacon-card-actions-left" cluster it shares with
+// above .stash-metadata-card-actions-row for why. Watchlist sits inside the
+// row's first child, a "stash-metadata-card-actions-left" cluster it shares with
 // Stash's popovers (left, index 0 of that cluster); +CC is the row's own
 // second child (right, index 1 of the row).
 function renderCardAction(actions, index) {
@@ -273,13 +273,13 @@ const captionQueriesBeforeCards = queryCalls.filter((call) =>
 let cardActions = renderCardActions(cardResult);
 assert.equal(
   cardActions.props.children[2].props.className,
-  "javbeacon-card-actions-row"
+  "stash-metadata-card-actions-row"
 );
 const leftCluster = cardActions.props.children[2].props.children[0];
-assert.equal(leftCluster.props.className, "javbeacon-card-actions-left");
+assert.equal(leftCluster.props.className, "stash-metadata-card-actions-left");
 assert.equal(leftCluster.props.children[1], renderedPopovers);
 let subtitleAction = renderSubtitleAction(cardActions);
-assert.equal(subtitleAction.props.className, "javbeacon-subs-card-action");
+assert.equal(subtitleAction.props.className, "stash-metadata-subs-card-action");
 assert.equal(
   queryCalls.find((call) => call.query.includes("JAVBeaconSubtitleSettings"))
     .options.fetchPolicy,
@@ -293,7 +293,7 @@ assert.equal(
 assert.equal(lazyQueryCalls.length, 0);
 const watchlistAction = renderWatchlistAction(cardActions);
 const watchlistButton = watchlistAction.props.children;
-assert.equal(watchlistAction.props.className, "javbeacon-watchlist-card-action");
+assert.equal(watchlistAction.props.className, "stash-metadata-watchlist-card-action");
 assert.equal(watchlistButton.props.children.props.children, "+ Watchlist");
 assert.equal(watchlistButton.props.disabled, false);
 await watchlistButton.props.onClick({ preventDefault() {}, stopPropagation() {} });
@@ -365,7 +365,7 @@ assert.equal(expandedState, true);
 assert.equal(prevented, true);
 assert.equal(stopped, true);
 const completedCardAction = renderSubtitleAction(cardActions);
-assert.equal(completedCardAction.props.className, "javbeacon-subs-card-action");
+assert.equal(completedCardAction.props.className, "stash-metadata-subs-card-action");
 assert.equal(completedCardAction.props.children.props.completed, true);
 const completedSubtitleButton = completedCardAction.props.children.type(
   completedCardAction.props.children.props

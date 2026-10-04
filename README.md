@@ -22,5 +22,5 @@ The companion's separate **Migrate cached metadata to Stash** task fills remaini
 go test ./...
 go vet ./...
 python3 -m unittest discover -s contrib/stashapp -q
-node --test contrib/stashapp/test_javbeacon_subtitles.js contrib/stashapp/test_javbeacon_scrubber.js
+node --test contrib/stashapp/test_stash_subtitles.js contrib/stashapp/test_stash_scrubber.js
 ```

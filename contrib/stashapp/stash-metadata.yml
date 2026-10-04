@@ -3,11 +3,11 @@ description: Fill missing Stash scene metadata from an exactly linked JAVBeacon 
 version: 0.2.1
 ui:
   javascript:
-    - javbeacon_subtitles.js
-    - javbeacon_scrubber.js
+    - stash_subtitles.js
+    - stash_scrubber.js
   css:
-    - javbeacon_subtitles.css
-    - javbeacon_scrubber.css
+    - stash_subtitles.css
+    - stash_scrubber.css
 settings:
   javbeacon_url:
     displayName: JAVBeacon URL

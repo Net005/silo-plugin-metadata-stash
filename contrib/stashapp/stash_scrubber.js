@@ -354,13 +354,13 @@
   // control bar's functionality.
   function createOverlay(playerEl) {
     const backdrop = document.createElement("div");
-    backdrop.className = "javbeacon-scrub-overlay";
+    backdrop.className = "stash-metadata-scrub-overlay";
     backdrop.setAttribute("aria-hidden", "true");
     const frame = document.createElement("div");
-    frame.className = "javbeacon-scrub-frame";
+    frame.className = "stash-metadata-scrub-frame";
     backdrop.appendChild(frame);
     const video = document.createElement("video");
-    video.className = "javbeacon-hover-video";
+    video.className = "stash-metadata-hover-video";
     video.muted = true;
     video.loop = true;
     video.playsInline = true;
@@ -389,16 +389,16 @@
 
   // Hides the underlying static poster/cover image while the overlay shows
   // a scrubbed frame, via a body-level class the CSS keys off (see
-  // javbeacon_scrubber.css) rather than writing directly to the
+  // stash_scrubber.css) rather than writing directly to the
   // player-owned .vjs-poster element's own style or classList.
   function showOverlay(backdrop) {
     backdrop.classList.add("is-visible");
-    document.body.classList.add("javbeacon-scrubbing");
+    document.body.classList.add("stash-metadata-scrubbing");
   }
 
   function hideOverlay(backdrop) {
     backdrop.classList.remove("is-visible");
-    document.body.classList.remove("javbeacon-scrubbing");
+    document.body.classList.remove("stash-metadata-scrubbing");
   }
 
   // Confirmed live against a running Stash instance: the player root itself
@@ -539,7 +539,7 @@
       poster?.removeEventListener("mouseleave", onPosterLeave);
       progress?.removeEventListener("mousemove", onSeekMove);
       progress?.removeEventListener("mouseleave", onSeekLeave);
-      document.body.classList.remove("javbeacon-scrubbing");
+      document.body.classList.remove("stash-metadata-scrubbing");
       backdrop.remove();
     };
   }
@@ -616,7 +616,7 @@
       null,
       rendered,
       React.createElement(ScenePlayerScrubber, {
-        key: "javbeacon-scrubber",
+        key: "stash-metadata-scrubber",
         scene: props.scene,
       })
     );

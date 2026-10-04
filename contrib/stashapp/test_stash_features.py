@@ -2,7 +2,7 @@ import json
 import unittest
 from unittest import mock
 
-import javbeacon_features as plugin
+import stash_features as plugin
 
 
 class FakeResponse:

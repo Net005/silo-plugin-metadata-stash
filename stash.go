@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -108,37 +109,76 @@ func (c *stashClient) findScene(ctx context.Context, id string) (*scene, error) 
 	return data.Scene, err
 }
 func (c *stashClient) search(ctx context.Context, query string) ([]scene, error) {
-	query = strings.TrimSpace(query)
-	if query == "" {
+	terms := searchTerms(query)
+	if len(terms) == 0 {
 		return nil, nil
 	}
-	var data struct {
-		Found struct {
-			Scenes []scene `json:"scenes"`
-		} `json:"findScenes"`
-	}
-	err := c.graphql(ctx, `query($filter:FindFilterType) { findScenes(filter:$filter) { scenes { `+sceneFields+` } } }`, map[string]any{"filter": map[string]any{"q": query, "per_page": 50}}, &data)
-	if err != nil {
-		return nil, err
-	}
-	var matches []scene
+	matches := []scene{}
 	seen := map[string]bool{}
-	key := compact(query)
-	for _, item := range data.Found.Scenes {
-		exact := compact(item.Code) == key && item.Code != "" || compact(item.Title) == key && item.Title != ""
-		for _, f := range item.Files {
-			stem := strings.TrimSuffix(filepath.Base(f.Path), filepath.Ext(f.Path))
-			if compact(stem) == key {
-				exact = true
-			}
+	for _, term := range terms {
+		var data struct {
+			Found struct {
+				Scenes []scene `json:"scenes"`
+			} `json:"findScenes"`
 		}
-		if exact && !seen[item.ID] {
-			matches = append(matches, item)
-			seen[item.ID] = true
+		err := c.graphql(ctx, `query($filter:FindFilterType) { findScenes(filter:$filter) { scenes { `+sceneFields+` } } }`, map[string]any{"filter": map[string]any{"q": term, "per_page": 50}}, &data)
+		if err != nil {
+			return nil, err
+		}
+		key := compact(term)
+		for _, item := range data.Found.Scenes {
+			exact := item.Code != "" && compact(item.Code) == key || item.Title != "" && compact(item.Title) == key
+			for _, file := range item.Files {
+				stem := strings.TrimSuffix(filepath.Base(file.Path), filepath.Ext(file.Path))
+				if compact(stem) == key {
+					exact = true
+				}
+			}
+			if exact && !seen[item.ID] {
+				matches = append(matches, item)
+				seen[item.ID] = true
+			}
 		}
 	}
 	return matches, nil
 }
+
+var qualitySuffix = regexp.MustCompile(`\s*\[[^\]]+\]\s*$`)
+var dateSegment = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
+
+func searchTerms(query string) []string {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil
+	}
+	stem := strings.TrimSuffix(filepath.Base(query), filepath.Ext(query))
+	terms := []string{query}
+	if stem != query {
+		terms = append(terms, stem)
+	}
+	clean := strings.TrimSpace(qualitySuffix.ReplaceAllString(stem, ""))
+	if clean != stem {
+		terms = append(terms, clean)
+	}
+	parts := strings.Split(clean, " - ")
+	for i := 0; i < len(parts)-1; i++ {
+		if dateSegment.MatchString(strings.TrimSpace(parts[i])) {
+			terms = append(terms, strings.TrimSpace(strings.Join(parts[i+1:], " - ")))
+			break
+		}
+	}
+	seen := map[string]bool{}
+	out := []string{}
+	for _, term := range terms {
+		key := compact(term)
+		if key != "" && !seen[key] {
+			seen[key] = true
+			out = append(out, term)
+		}
+	}
+	return out
+}
+
 func compact(s string) string {
 	var b strings.Builder
 	for _, r := range strings.ToLower(s) {

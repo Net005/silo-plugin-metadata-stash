@@ -310,8 +310,8 @@
         "aria-label": completed
           ? "Request replacement subtitles for this scene"
           : "Request subtitles from JAVBeacon-Subs",
-        className: `minimal javbeacon-subs-button${
-          completed ? " javbeacon-subs-complete" : ""
+        className: `minimal stash-metadata-subs-button${
+          completed ? " stash-metadata-subs-complete" : ""
         }`,
         disabled: loading,
         onClick,
@@ -332,8 +332,8 @@
         : React.createElement(
             "span",
             {
-              className: `javbeacon-subs-label${
-                statusColor ? ` javbeacon-subs-status-${statusColor}` : ""
+              className: `stash-metadata-subs-label${
+                statusColor ? ` stash-metadata-subs-status-${statusColor}` : ""
               }`,
               "aria-hidden": "true",
             },
@@ -347,7 +347,7 @@
       "svg",
       {
         "aria-hidden": "true",
-        className: "javbeacon-release-icon",
+        className: "stash-metadata-release-icon",
         fill: "none",
         viewBox: "0 0 24 24",
       },
@@ -409,7 +409,7 @@
       Button,
       {
         "aria-label": "Open this release in JAVBeacon",
-        className: "minimal javbeacon-release-button",
+        className: "minimal stash-metadata-release-button",
         disabled: loading,
         onClick,
         onMouseDown: (event) => event.stopPropagation(),
@@ -484,13 +484,13 @@
 
     return React.createElement(
       "div",
-      { className: "javbeacon-watchlist-card-action" },
+      { className: "stash-metadata-watchlist-card-action" },
       React.createElement(
         Button,
         {
           "aria-label": title,
           "aria-pressed": inWatchlist,
-          className: `minimal javbeacon-watchlist-button${
+          className: `minimal stash-metadata-watchlist-button${
             inWatchlist ? " is-watchlisted" : ""
           }`,
           disabled,
@@ -523,7 +523,7 @@
     return React.createElement(
       "div",
       {
-        className: "javbeacon-subs-card-action",
+        className: "stash-metadata-subs-card-action",
       },
       React.createElement(SubtitleButton, {
         completed,
@@ -559,7 +559,7 @@
       if (!section) return undefined;
 
       const mount = document.createElement("div");
-      mount.className = "javbeacon-scene-story-mount";
+      mount.className = "stash-metadata-scene-story-mount";
       const titleContainer = title?.parentElement;
       if (titleContainer?.parentElement === section) {
         section.insertBefore(mount, titleContainer.nextSibling);
@@ -587,7 +587,7 @@
       {
         "aria-expanded": expanded,
         "aria-label": `Scene details: ${story}`,
-        className: `javbeacon-scene-story${expanded ? " is-expanded" : ""}`,
+        className: `stash-metadata-scene-story${expanded ? " is-expanded" : ""}`,
         onClick: toggle,
         onKeyDown,
         onMouseDown: (event) => event.stopPropagation(),
@@ -602,7 +602,7 @@
       React.Fragment,
       null,
       React.createElement("span", {
-        className: "javbeacon-card-actions-probe",
+        className: "stash-metadata-card-actions-probe",
         ref: setProbe,
       }),
       mountNode ? ReactDOM.createPortal(content, mountNode) : null
@@ -701,7 +701,7 @@
       React.Fragment,
       null,
       React.createElement("span", {
-        className: "javbeacon-card-actions-probe",
+        className: "stash-metadata-card-actions-probe",
         ref: setProbe,
       }),
       React.createElement(SceneCardStory, { scene: resolvedScene }),
@@ -716,7 +716,7 @@
       // the same row Stash already draws, just wider.
       React.createElement(
         "div",
-        { className: "javbeacon-card-actions-row" },
+        { className: "stash-metadata-card-actions-row" },
         // Watchlist sits immediately left of Stash's own popovers icons, in
         // one inline cluster - the same left assignment it had back when it
         // was independently position:absolute (left: 0.55rem), now flush
@@ -725,7 +725,7 @@
         // on the row itself.
         React.createElement(
           "div",
-          { className: "javbeacon-card-actions-left" },
+          { className: "stash-metadata-card-actions-left" },
           React.createElement(SceneCardWatchlistAction, {
             scene: resolvedScene,
             settings,
@@ -777,7 +777,7 @@
       if (!actionGroup) return undefined;
 
       const mount = document.createElement("span");
-      mount.className = "javbeacon-subs-action";
+      mount.className = "stash-metadata-subs-action";
       actionGroup.insertBefore(mount, actionGroup.firstChild);
       setMountNode(mount);
 
@@ -809,7 +809,7 @@
       null,
       rendered,
       React.createElement(ScenePageSubtitleAction, {
-        key: "javbeacon-subs-portal",
+        key: "stash-metadata-subs-portal",
         scene: props.scene,
       })
     );
@@ -825,7 +825,7 @@
     // directly into that same row instead of adding a new one below it. See
     // the merge-row comment inside SceneCardActions for why.
     return React.createElement(SceneCardActions, {
-      key: "javbeacon-card-actions",
+      key: "stash-metadata-card-actions",
       popovers: rendered,
       scene: props.scene,
     });

@@ -10,7 +10,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-import javbeacon_features as features
+import stash_features as features
 
 
 PLUGIN_ID = "stash-metadata"

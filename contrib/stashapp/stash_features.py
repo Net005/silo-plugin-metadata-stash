@@ -17,7 +17,7 @@ PLUGIN_ID = "stash-metadata"
 
 def debug(message, **fields):
     details = " ".join(f"{key}={value}" for key, value in fields.items() if value not in (None, ""))
-    print(f"[JAVBeacon] {message}{' ' + details if details else ''}", file=sys.stderr, flush=True)
+    print(f"[Stash.Metadata] {message}{' ' + details if details else ''}", file=sys.stderr, flush=True)
 
 
 def _read_json_response(response):

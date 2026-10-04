@@ -71,3 +71,16 @@ func TestSceneIDPreservesOldStashIdentity(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestSearchTermsIncludePureTabooTitleWithoutQualitySuffix(t *testing.T) {
+	terms := searchTerms("Pure Taboo - 2026-07-28 - Sample Scene [WEBDL-2160p].mp4")
+	found := false
+	for _, term := range terms {
+		if term == "Sample Scene" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("missing title fallback: %#v", terms)
+	}
+}

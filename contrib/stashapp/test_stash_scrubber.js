@@ -42,7 +42,7 @@ global.window = {
   },
 };
 
-require("./javbeacon_scrubber.js");
+require("./stash_scrubber.js");
 
 const {
   extractPx,
@@ -64,7 +64,7 @@ const {
 // insertion must only ever add our own backdrop node via insertBefore or, as
 // a fallback, appendChild - never remove, replace, or reorder any existing
 // child.
-const pluginSource = fs.readFileSync(require.resolve("./javbeacon_scrubber.js"), "utf8");
+const pluginSource = fs.readFileSync(require.resolve("./stash_scrubber.js"), "utf8");
 assert.doesNotMatch(pluginSource, /playerEl\.style/, "must never write to the player element's style");
 assert.doesNotMatch(pluginSource, /playerEl\.removeChild/, "must never remove an existing child of the player element");
 assert.doesNotMatch(pluginSource, /playerEl\.replaceChild/, "must never replace an existing child of the player element");
@@ -79,7 +79,7 @@ assert.match(
   "must fall back to appending the backdrop to the player element when no control bar is found"
 );
 
-const cssSource = fs.readFileSync(require.resolve("./javbeacon_scrubber.css"), "utf8");
+const cssSource = fs.readFileSync(require.resolve("./stash_scrubber.css"), "utf8");
 assert.match(pluginSource, /paths\?\.preview|paths\.preview/, "details hover must use Stash's native preview URL");
 assert.match(pluginSource, /video\.muted = true/, "hover preview must be muted");
 assert.match(pluginSource, /video\.loop = true/, "hover preview must loop");
@@ -87,7 +87,7 @@ assert.match(pluginSource, /playerVideo\?\.addEventListener\("play", onPosterLea
 
 assert.match(
   cssSource,
-  /\.javbeacon-scrub-overlay\s*\{[^}]*position:\s*absolute/,
+  /\.stash-metadata-scrub-overlay\s*\{[^}]*position:\s*absolute/,
   "the overlay must be position: absolute, positioned relative to the player it is now inserted into"
 );
 
@@ -125,18 +125,18 @@ assert.match(pluginSource, /function playerBox\(/, "must define playerBox to siz
 // directly to the player-owned .vjs-poster element.
 assert.match(
   jsWithoutComments,
-  /document\.body\.classList\.add\(["']javbeacon-scrubbing["']\)/,
-  "showOverlay must add the javbeacon-scrubbing body class"
+  /document\.body\.classList\.add\(["']stash-metadata-scrubbing["']\)/,
+  "showOverlay must add the stash-metadata-scrubbing body class"
 );
 assert.match(
   jsWithoutComments,
-  /document\.body\.classList\.remove\(["']javbeacon-scrubbing["']\)/,
-  "hideOverlay/detach must remove the javbeacon-scrubbing body class"
+  /document\.body\.classList\.remove\(["']stash-metadata-scrubbing["']\)/,
+  "hideOverlay/detach must remove the stash-metadata-scrubbing body class"
 );
 assert.match(
   cssWithoutComments,
-  /\.javbeacon-scrubbing\s+\.vjs-poster\s*\{[^}]*opacity:\s*0/,
-  "CSS must hide .vjs-poster while .javbeacon-scrubbing is set"
+  /\.stash-metadata-scrubbing\s+\.vjs-poster\s*\{[^}]*opacity:\s*0/,
+  "CSS must hide .vjs-poster while .stash-metadata-scrubbing is set"
 );
 
 // Two elements, not one: the backdrop (opaque, full box) blocks the native
@@ -149,7 +149,7 @@ assert.match(
 // cell shows real (wrong) pixels, not empty space.
 assert.match(pluginSource, /function createOverlay\(/, "must define createOverlay to build the backdrop+frame pair");
 assert.match(pluginSource, /backdrop\.appendChild\(frame\)/, "the frame element must be a child of the backdrop");
-assert.match(cssSource, /\.javbeacon-scrub-frame\s*\{/, "CSS must style the child frame element separately from the backdrop");
+assert.match(cssSource, /\.stash-metadata-scrub-frame\s*\{/, "CSS must style the child frame element separately from the backdrop");
 
 // extractPx pulls the numeric pixel value out of a CSS length, including
 // negative offsets (background-position commonly uses these).
