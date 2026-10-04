@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -23,6 +24,12 @@ type SiloBackfillResult struct {
 }
 
 func (p *Provider) BackfillSiloPlays(ctx context.Context, sceneID string, plays []SiloBackfillPlay) (*SiloBackfillResult, error) {
+	p.mu.RLock()
+	excluded := p.excludedScenes[sceneID]
+	p.mu.RUnlock()
+	if excluded {
+		return &SiloBackfillResult{Skipped: len(plays), Reason: "Scene excluded from playback writes in plugin settings"}, nil
+	}
 	c, err := p.activeClient()
 	if err != nil {
 		return nil, err
@@ -55,4 +62,14 @@ func (p *Provider) BackfillSiloPlays(ctx context.Context, sceneID string, plays 
 		return nil, err
 	}
 	return &result, nil
+}
+
+func (p *Provider) ConfigureExcludedScenes(raw string) {
+	ids := map[string]bool{}
+	for _, id := range strings.FieldsFunc(raw, func(r rune) bool { return r == ',' || r == '\n' || r == ' ' }) {
+		ids[strings.TrimPrefix(id, "stash:")] = true
+	}
+	p.mu.Lock()
+	p.excludedScenes = ids
+	p.mu.Unlock()
 }

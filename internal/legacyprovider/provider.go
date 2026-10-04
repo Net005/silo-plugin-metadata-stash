@@ -35,6 +35,7 @@ type Provider struct {
 	stashPrefix         string
 	stashURL            string
 	stashAPIKey         string
+	excludedScenes      map[string]bool
 	stashFilterMu       sync.Mutex
 	stashFilterCache    []StashSavedFilter
 	stashFilterCacheKey string

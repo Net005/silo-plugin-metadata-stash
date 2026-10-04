@@ -24,6 +24,7 @@ type Config struct {
 	SiloURL, SiloKey, SiloLibraryID                          string
 	StashFilters, StashPrefix, ReleaseFilters, ReleasePrefix string
 	WatchListCollectionID                                    string
+	ExcludedScenes                                           string
 }
 
 func New(log hclog.Logger) *Manager {
@@ -34,6 +35,7 @@ func New(log hclog.Logger) *Manager {
 func (m *Manager) Configure(c Config) {
 	m.provider.Configure(provider.Config{BaseURL: c.JAVBeaconURL, APIKey: c.JAVBeaconKey})
 	m.provider.ConfigureStashConnection(c.StashURL, c.StashKey)
+	m.provider.ConfigureExcludedScenes(c.ExcludedScenes)
 	m.provider.ConfigureSiloConnection(c.SiloURL, c.SiloLibraryID, c.SiloKey)
 	m.provider.ConfigureSavedFilters(c.StashFilters, c.StashPrefix, c.ReleaseFilters, c.ReleasePrefix)
 	m.tasks.mu.Lock()

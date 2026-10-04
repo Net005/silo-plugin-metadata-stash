@@ -57,7 +57,7 @@ func (s *runtimeServer) Configure(_ context.Context, req *pluginv1.ConfigureRequ
 		if key == "" && s.client != nil {
 			key = s.client.key
 		}
-		s.client = &stashClient{base: strings.TrimRight(text(v["base_url"]), "/"), key: key}
+		s.client = &stashClient{base: strings.TrimRight(text(v["base_url"]), "/"), key: key, excludedScenes: excludedSceneIDs(text(v["playback_excluded_scene_ids"]))}
 		artKey := text(v["javbeacon_api_key"])
 		if artKey == "" && s.artwork != nil {
 			artKey = s.artwork.key
@@ -76,6 +76,7 @@ func (s *runtimeServer) Configure(_ context.Context, req *pluginv1.ConfigureRequ
 		s.watchListCollectionID = text(v["silo_watchlist_collection_id"])
 		legacy := s.legacy
 		config := legacytasks.Config{JAVBeaconURL: s.artwork.base, JAVBeaconKey: s.artwork.key, StashURL: s.client.base, StashKey: s.client.key, SiloURL: s.siloBase, SiloKey: s.siloKey, SiloLibraryID: s.siloLibraryID, StashFilters: s.stashFilters, StashPrefix: s.stashPrefix, ReleaseFilters: s.releaseFilters, ReleasePrefix: s.releasePrefix, WatchListCollectionID: s.watchListCollectionID}
+		config.ExcludedScenes = text(v["playback_excluded_scene_ids"])
 		s.mu.Unlock()
 		if legacy != nil {
 			legacy.Configure(config)

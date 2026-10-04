@@ -17,11 +17,20 @@ import (
 )
 
 type stashClient struct {
-	base, key    string
-	http         *http.Client
-	playMu       sync.Mutex
-	sceneMu      sync.Mutex
-	sceneFlights map[string]*sceneFlight
+	base, key      string
+	excludedScenes map[string]bool
+	http           *http.Client
+	playMu         sync.Mutex
+	sceneMu        sync.Mutex
+	sceneFlights   map[string]*sceneFlight
+}
+
+func excludedSceneIDs(raw string) map[string]bool {
+	ids := map[string]bool{}
+	for _, id := range strings.FieldsFunc(raw, func(r rune) bool { return r == ',' || r == '\n' || r == ' ' }) {
+		ids[strings.TrimPrefix(id, "stash:")] = true
+	}
+	return ids
 }
 
 type sceneFlight struct {

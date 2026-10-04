@@ -92,6 +92,13 @@ func TestAddPlayOnceRefusesIncompleteHistory(t *testing.T) {
 	}
 }
 
+func TestExcludedSceneIDs(t *testing.T) {
+	ids := excludedSceneIDs("42, stash:43\n44")
+	if len(ids) != 3 || !ids["42"] || !ids["43"] || !ids["44"] {
+		t.Fatal(ids)
+	}
+}
+
 func TestSearchTermsIncludePureTabooTitleWithoutQualitySuffix(t *testing.T) {
 	terms := searchTerms("Pure Taboo - 2026-07-28 - Sample Scene [WEBDL-2160p].mp4")
 	found := false

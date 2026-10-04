@@ -64,6 +64,9 @@ func (s *watchSyncServer) applyOne(ctx context.Context, e *pluginv1.WatchSyncEve
 		id = ""
 	}
 	id = strings.TrimPrefix(id, "stash:")
+	if c != nil && c.excludedScenes[id] {
+		return result
+	}
 	if s.runtime.legacy != nil && s.runtime.legacy.Provider().Configured() && (id != "" || releaseID > 0) {
 		return s.applyViaJAVBeacon(ctx, e, id, releaseID)
 	}
