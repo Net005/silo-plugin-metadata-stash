@@ -10,6 +10,46 @@ import (
 	"time"
 )
 
+func TestMetadataBatchSkipsFilelessEntryAndContinues(t *testing.T) {
+	acked := 0
+	jav := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		acked++
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer jav.Close()
+	refreshes := 0
+	silo := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v2/admin/items/orphan/files":
+			w.Write([]byte(`{"items":[],"page":{"has_more":false}}`))
+		case "/api/v2/admin/items/current/files":
+			w.Write([]byte(`{"items":[{"file_path":"/media/current.mp4"}],"page":{"has_more":false}}`))
+		case "/api/v2/admin/items/current/refresh-metadata":
+			refreshes++
+			w.WriteHeader(http.StatusAccepted)
+			w.Write([]byte(`{"id":"job"}`))
+		case "/api/v2/admin/jobs/job":
+			w.Write([]byte(`{"state":"succeeded"}`))
+		default:
+			t.Errorf("unexpected request: %s", r.URL.Path)
+			w.WriteHeader(http.StatusConflict)
+		}
+	}))
+	defer silo.Close()
+	p := provider.NewProvider()
+	p.Configure(provider.Config{BaseURL: jav.URL, APIKey: "key"})
+	s := &collectionSyncTaskServer{runtime: &runtimeServer{provider: p}, metadataPending: &metadataRefreshBatch{checkedAt: time.Now(), items: []metadataRefreshItem{{contentID: "orphan"}, {contentID: "current"}}}}
+	client := provider.NewSiloClient(silo.URL, "key")
+	_, submitted, err := s.advanceMetadataBatch(t.Context(), client)
+	if err != nil || submitted != 1 || refreshes != 1 || acked != 0 {
+		t.Fatalf("submitted=%d refreshes=%d acked=%d err=%v", submitted, refreshes, acked, err)
+	}
+	_, _, err = s.advanceMetadataBatch(t.Context(), client)
+	if err != nil || acked != 1 || s.metadataPending != nil {
+		t.Fatalf("ack=%d pending=%v err=%v", acked, s.metadataPending, err)
+	}
+}
+
 func TestResolveChangedItemsUsesLocalUniqueIdentity(t *testing.T) {
 	catalog := []provider.CatalogItem{
 		{ContentID: "release", Title: "ABC-123", Type: "movie"},

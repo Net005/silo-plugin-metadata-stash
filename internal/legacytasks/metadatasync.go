@@ -113,6 +113,17 @@ func (s *collectionSyncTaskServer) advanceMetadataBatch(ctx context.Context, cli
 		if submitted >= 50 {
 			break
 		}
+		// Fileless catalog entries survive imports and merges. Silo cannot
+		// refresh them (409), so they must not block every later batch item.
+		paths, err := client.ItemFilePaths(ctx, item.contentID)
+		if err != nil {
+			return time.Time{}, submitted, err
+		}
+		if len(paths) == 0 {
+			item.done = true
+			s.logger().Info("metadata refresh skipped fileless catalog entry", "content_id", item.contentID)
+			continue
+		}
 		jobID, err := client.RefreshItemMetadata(ctx, item.contentID)
 		if err != nil {
 			return time.Time{}, submitted, err
@@ -290,6 +301,14 @@ func (s *collectionSyncTaskServer) syncChangedMetadata(ctx context.Context, sinc
 					return time.Time{}, 0, err
 				}
 				if !exists {
+					continue
+				}
+			} else {
+				paths, err := client.ItemFilePaths(ctx, item.ID)
+				if err != nil {
+					return time.Time{}, 0, err
+				}
+				if len(paths) == 0 {
 					continue
 				}
 			}
