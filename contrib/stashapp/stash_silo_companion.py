@@ -531,8 +531,28 @@ def _sync_silo_watchlist_collection_one(settings, scene, scene_id, desired, coll
     content_id = next(iter(content_ids))
     detail = _silo_get(settings, "/api/v2/catalog/items/" + urllib.parse.quote(content_id, safe=""), profile_id)
     linked_scene = _silo_scene_id(detail)
-    if linked_scene != scene_id:
-        return {"state": "different_scene" if linked_scene else "unverified_scene"}
+    if linked_scene and linked_scene != scene_id:
+        return {"state": "different_scene"}
+    if not linked_scene:
+        # Cached Silo artwork no longer carries the Stash scene ID. Verify all
+        # native files instead of using a title as the final identity proof.
+        stash_paths = {str(row.get("path") or "") for row in scene.get("files") or []}
+        native_paths = set()
+        cursor = ""
+        while True:
+            path = "/api/v2/admin/items/" + urllib.parse.quote(content_id, safe="") + "/files?limit=200"
+            if cursor:
+                path += "&cursor=" + urllib.parse.quote(cursor, safe="")
+            page = _silo_get(settings, path)
+            native_paths.update(str(row.get("file_path") or "") for row in page.get("items") or [])
+            if not (page.get("page") or {}).get("has_more"):
+                break
+            next_cursor = str((page.get("page") or {}).get("next_cursor") or "")
+            if not next_cursor or next_cursor == cursor:
+                return {"state": "unverified_scene"}
+            cursor = next_cursor
+        if not native_paths or "" in native_paths or not native_paths.issubset(stash_paths):
+            return {"state": "unverified_scene"}
     collection_id = str(collection["id"])
     prefix = "/api/v2/admin/collections/" + urllib.parse.quote(collection_id, safe="") + "/items"
     cursor = ""
@@ -623,6 +643,9 @@ def main():
     mode = str(args.get("mode") or "hook").lower()
     if mode == "silo_import":
         result = _import_silo(payload, _settings(payload), dry_run=_bool(args.get("dry_run"), True), cursor=str(args.get("start_cursor") or ""), start_index=args.get("start_index") or 0, start_library_id=str(args.get("start_library_id") or ""))
+    elif mode == "watchlist_sync":
+        scene_id = str(args.get("scene_id") or "")
+        result = _sync_silo_watchlist_collection(payload, _settings(payload), {"id": scene_id, "type": "Scene.Update.Post", "inputFields": ["tag_ids"]})
     elif mode == "scan":
         result = _scan(payload, _settings(payload), dry_run=_bool(args.get("dry_run"), True), start_page=args.get("start_page") or 1, start_index=args.get("start_index") or 0)
     elif mode == "subtitles":

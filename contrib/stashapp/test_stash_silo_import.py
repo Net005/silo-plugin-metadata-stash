@@ -61,7 +61,7 @@ class RealtimeCollectionTests(unittest.TestCase):
 
     def _run(self, desired, current, linked_scene="42"):
         from unittest.mock import Mock
-        scene = {"id": "42", "code": "ATID-705", "title": "", "files": [], "tags": [{"id": "99"}] if desired else []}
+        scene = {"id": "42", "code": "ATID-705", "title": "", "files": [{"path": "/collections/ATID-705.mp4"}], "tags": [{"id": "99"}] if desired else []}
         def silo_get(_settings, path, profile_id=None):
             if path == "/api/v2/admin/plugins/installations":
                 return {"items": [{"plugin_id": "stash.metadata", "global_configs": {"connection": {"stash_saved_filter_prefix": "Stash | "}}}]}
@@ -74,6 +74,8 @@ class RealtimeCollectionTests(unittest.TestCase):
                 return {"items": [{"content_id": "movie:one", "title": "ATID705"}]}
             if path.startswith("/api/v2/catalog/items/"):
                 return {"provider_ids": {"stash": linked_scene}}
+            if path.startswith("/api/v2/admin/items/"):
+                return {"items": [{"file_path": "/collections/ATID-705.mp4"}], "page": {"has_more": False}}
             if path.startswith("/api/v2/admin/collections/7/items?"):
                 return {"items": [{"media_item_id": "movie:one"}] if current else [], "page": {"has_more": False}}
             raise AssertionError(path)
@@ -110,6 +112,11 @@ class RealtimeCollectionTests(unittest.TestCase):
         self.assertEqual(result["state"], "unchanged")
         self.assertIn("library_id=16", silo_get.call_args_list[4].args[1])
         urlopen.assert_not_called()
+
+    def test_cached_artwork_uses_exact_native_file_identity(self):
+        result, writes = self._run(True, False, linked_scene=None)
+        self.assertEqual(result["state"], "added")
+        self.assertEqual(len(writes), 1)
 
     def test_add_and_remove_update_existing_collection(self):
         added, writes = self._run(True, False)

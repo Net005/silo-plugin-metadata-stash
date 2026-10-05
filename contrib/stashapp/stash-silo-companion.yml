@@ -1,6 +1,6 @@
 name: Stash.Silo Companion
 description: Enrich Stash scenes from linked metadata and keep the Silo collection current.
-version: 0.2.8
+version: 0.2.9
 ui:
   javascript:
     - stash_silo_subtitles.js
