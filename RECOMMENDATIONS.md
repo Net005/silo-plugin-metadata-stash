@@ -1,6 +1,6 @@
 # Weekly recommendations
 
-Stash Metadata v0.3.3 builds up to **50 verified items per collection** across all
+Stash Metadata v0.3.4 builds up to **50 verified items per collection** across all
 movie libraries using this plugin. The nine kinds are `for-you`, `top-rated`,
 `revisit`, `favourites`, `watchlist`, `overlooked`, `different`, `recent`, `spotlight`.
 Names use the existing Stash prefix exactly, including trailing spaces.
@@ -9,7 +9,7 @@ Names use the existing Stash prefix exactly, including trailing spaces.
 
 Enable Weekly Recommendations, enter the owner Silo profile ID and save the OpenAI
 key in its secret field. The fixed model is `gpt-6-luna`, reasoning `none` by default.
-Keep Preview only enabled initially. Open this **administrator-only** report page:
+Keep Preview only enabled initially. Open this **administrator-only** report data page:
 
 `/api/v2/plugin-content/plugins/<installation ID>/recommendations`
 
@@ -97,3 +97,5 @@ reports insufficient feedback. Results are activity retrieval, not calibrated en
 probabilities. The engine's tests cover rating eligibility, fifty-item limits, diversity,
 AI ID validation, collection ownership, durable budget state, timezone/DST and companion
 notifications that never trigger paid ranking from an edit hook.
+
+The report page can also be opened from the plugin detail page’s More actions → Stash recommendations. Its public HTML shell contains no library or history data; report reads and actions remain administrator-only. Direct links establish Silo’s short-lived plugin cookie from the existing same-origin Silo login. An expired or locked profile requires signing in/unlocking in Silo first.

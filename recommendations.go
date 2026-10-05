@@ -102,6 +102,7 @@ func (c recommendationConfig) libraryOptions(id string) (rec.Options, error) {
 }
 
 type recommendationReport struct {
+	Phase     string              `json:"phase,omitempty"`
 	Status    string              `json:"status"`
 	Started   time.Time           `json:"started_at"`
 	Finished  time.Time           `json:"finished_at"`
@@ -277,6 +278,14 @@ func recommendationPeriod(now time.Time, c recommendationConfig) string {
 	}
 	return anchor.Format("2006-01-02")
 }
+func recommendationDue(state recommendationState, cfg recommendationConfig, now time.Time) bool {
+	period := recommendationPeriod(now, cfg)
+	if period == "" || state.LastWeek == period {
+		return false
+	}
+	return state.Report.Week != period || state.Report.Status == "running" && !state.LeaseUntil.After(now)
+}
+
 func (s *recommendationServer) poll() {
 	lastPrune := time.Time{}
 	ticker := time.NewTicker(time.Minute)
@@ -287,8 +296,7 @@ func (s *recommendationServer) poll() {
 			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 			state, _, _, err := s.state(ctx, provider.NewSiloClient(base, key), c.Profile, "", false)
 			cancel()
-			period := recommendationPeriod(time.Now(), c)
-			if err == nil && period != "" && state.LastWeek != period && state.Report.Week != period {
+			if err == nil && recommendationDue(state, c, time.Now()) {
 				s.start(c.Preview)
 			} else if !c.Preview && time.Since(lastPrune) > time.Hour {
 				s.mu.Lock()
@@ -529,7 +537,7 @@ func (s *recommendationServer) run(ctx context.Context, preview bool) (runErr er
 	}
 	state.Lease = hex.EncodeToString(token)
 	state.LeaseUntil = now.Add(50 * time.Minute)
-	report := recommendationReport{Status: "running", Started: now, Week: recommendationPeriod(now, cfg), Model: "gpt-6-luna", Preview: preview || cfg.Preview, Libraries: []rec.LibraryReport{}}
+	report := recommendationReport{Phase: "Reading Stash history", Status: "running", Started: now, Week: recommendationPeriod(now, cfg), Model: "gpt-6-luna", Preview: preview || cfg.Preview, Libraries: []rec.LibraryReport{}}
 	state.Report = report
 	record, tag, err = s.save(ctx, client, record, tag, state)
 	if err != nil {
@@ -555,6 +563,13 @@ func (s *recommendationServer) run(ctx context.Context, preview bool) (runErr er
 			s.runtime.task.log.Error("Recommendation final report could not be saved", "error", e)
 		}
 	}()
+	progress := func(phase string) error {
+		report.Phase = phase
+		state.Report = report
+		var e error
+		record, tag, e = s.save(ctx, client, record, tag, state)
+		return e
+	}
 	scenes, err := recommendationScenes(ctx, stash)
 	if err != nil {
 		return err
@@ -562,6 +577,9 @@ func (s *recommendationServer) run(ctx context.Context, preview bool) (runErr er
 	report.Totals = recommendationTotals(scenes)
 	if rec.HistoryDrop(state.Totals, report.Totals) {
 		return fmt.Errorf("Stash scene/activity totals dropped by more than 20%%; previous collections preserved")
+	}
+	if err = progress("Reading archived history and Stash Watchlist"); err != nil {
+		return err
 	}
 	if cfg.Archive {
 		n, e := mergeRecommendationArchive(ctx, art, scenes)
@@ -595,6 +613,9 @@ func (s *recommendationServer) run(ctx context.Context, preview bool) (runErr er
 		if !o.Enabled {
 			continue
 		}
+		if err = progress("Matching library " + lib.ID); err != nil {
+			return err
+		}
 		catalog, e := client.ListRecommendationCatalog(ctx, lib.ID, cfg.Profile)
 		if e != nil {
 			return e
@@ -627,6 +648,7 @@ func (s *recommendationServer) run(ctx context.Context, preview bool) (runErr er
 			r.Warnings = append(r.Warnings, "OpenAI key missing; local ranking used")
 			continue
 		}
+		report.Phase = "Luna ranking library " + r.LibraryID
 		input := rec.LunaInput(*r)
 		maxOut := 24000
 		if cfg.Effort == "low" {
@@ -669,6 +691,9 @@ func (s *recommendationServer) run(ctx context.Context, preview bool) (runErr er
 		}
 	}
 	// All source reads and rankings complete before any visible collection write.
+	if err = progress("Updating collection membership and artwork"); err != nil {
+		return err
+	}
 	if report.Preview {
 		report.Status = "preview_complete"
 		return nil
@@ -790,6 +815,7 @@ func (s *recommendationServer) run(ctx context.Context, preview bool) (runErr er
 	state.Totals = report.Totals
 	state.LastWeek = report.Week
 	state.Dirty = false
+	report.Phase = "Finished"
 	report.Status = "complete"
 	return nil
 }
@@ -802,13 +828,20 @@ func (s *recommendationServer) Handle(ctx context.Context, req *pluginv1.HandleH
 		return &pluginv1.HandleHTTPResponse{StatusCode: int32(status), Headers: map[string]string{"Content-Type": "application/json", "Cache-Control": "no-store"}, Body: b}, nil
 	}
 	path := strings.TrimSuffix(req.Path, "/")
-	if req.Method == "GET" && path == "/recommendations" {
+	if req.Method == "GET" && (path == "/recommendations" || path == "/recommendations/admin") {
 		return recommendationPage(ctx)
 	}
 	switch {
 	case req.Method == "POST" && (path == "/recommendations/run" || path == "/recommendations/preview"):
 		if !cfg.Enabled {
 			return respond(400, map[string]any{"error": "enable recommendations first"})
+		}
+		state, _, _, err := s.state(ctx, client, cfg.Profile, "", false)
+		if err != nil {
+			return respond(503, map[string]any{"error": "recommendation state unavailable"})
+		}
+		if state.LeaseUntil.After(time.Now()) {
+			return respond(409, map[string]any{"status": "worker_reservation_active", "error": "An earlier build still holds its reservation. If interrupted by a restart, it can resume after the reservation expires.", "lease_until": state.LeaseUntil})
 		}
 		if !s.start(path == "/recommendations/preview") {
 			return respond(409, map[string]any{"status": "already_running"})
@@ -819,7 +852,10 @@ func (s *recommendationServer) Handle(ctx context.Context, req *pluginv1.HandleH
 		if err != nil {
 			return respond(503, map[string]any{"error": "recommendation report unavailable"})
 		}
-		return respond(200, map[string]any{"report": state.Report, "monthly_spend_usd": state.Spend, "last_published_week": state.LastWeek, "dirty": state.Dirty})
+		s.mu.Lock()
+		active := s.running
+		s.mu.Unlock()
+		return respond(200, map[string]any{"worker_active_on_this_process": active, "lease_until": state.LeaseUntil, "report": state.Report, "monthly_spend_usd": state.Spend, "last_published_week": state.LastWeek, "dirty": state.Dirty})
 	case req.Method == "POST" && (path == "/recommendations/dirty" || path == "/recommendations/dismiss"):
 		s.mu.Lock()
 		defer s.mu.Unlock()

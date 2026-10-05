@@ -97,3 +97,23 @@ func TestCompressedStateFitsSiloBodyAndReadsLegacy(t *testing.T) {
 		t.Fatal("legacy state failed", err)
 	}
 }
+
+func TestInterruptedWeeklyRunRecoversOnlyAfterLeaseExpiry(t *testing.T) {
+	cfg := defaultRecommendationConfig()
+	now := time.Now()
+	s := emptyRecommendationState()
+	s.Report.Week = recommendationPeriod(now, cfg)
+	s.Report.Status = "running"
+	s.LeaseUntil = now.Add(time.Minute)
+	if recommendationDue(s, cfg, now) {
+		t.Fatal("active reservation was ignored")
+	}
+	s.LeaseUntil = now.Add(-time.Minute)
+	if !recommendationDue(s, cfg, now) {
+		t.Fatal("interrupted weekly run never recovered")
+	}
+	s.LastWeek = s.Report.Week
+	if recommendationDue(s, cfg, now) {
+		t.Fatal("published week reran automatically")
+	}
+}
