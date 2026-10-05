@@ -1,12 +1,12 @@
 {
   "plugin_id": "stash.metadata",
-  "version": "0.2.20",
+  "version": "0.2.21",
   "checksum": "__CHECKSUM__",
   "silo_api_version": "v1",
   "presentation": {
     "display_name": "Stash Metadata",
     "summary": "Use StashApp as Silo's scene metadata and watch provider.",
-    "description_markdown": "StashApp-first scene metadata and playback for Silo, with optional JAVBeacon artwork, playback checkpoints, saved-filter collections, incremental refresh, performer details and safe historical play backfill. The companion maintains the existing Silo WatchList collection.",
+    "description_markdown": "StashApp-first scene metadata and playback for Silo, with optional JAVBeacon artwork, playback checkpoints, saved-filter collections, incremental refresh, performer details and safe historical play backfill. The companion maintains the selected prefixed Stash Watchlist saved-filter collections.",
     "setup_markdown": "Configure the StashApp URL and API key. Add JAVBeacon and Silo admin connections to restore artwork, playback checkpoints, collection sync, metadata refresh and safe backfill. Select Stash Metadata as the Movies metadata and watch provider.",
     "homepage_url": "https://github.com/Net005/silo-plugin-metadata-stash",
     "source_url": "https://github.com/Net005/silo-plugin-metadata-stash",
@@ -90,12 +90,6 @@
     },
     {
       "type": "scheduled_task.v1",
-      "id": "watchlist-collection-sync",
-      "display_name": "Reconcile Stash WatchList collection",
-      "description": "Repair missed Stash tag updates in the existing Silo WatchList collection without using the personal Watchlist."
-    },
-    {
-      "type": "scheduled_task.v1",
       "id": "repair-matched",
       "display_name": "Repair matched Stash metadata",
       "description": "Rehydrate exact already-matched Stash scenes missing cast or metadata without changing scene identity."
@@ -123,6 +117,12 @@
       "id": "match-unmatched",
       "display_name": "Match unmatched Stash scenes",
       "description": "Apply only unique exact Stash matches to unmatched Silo movie items."
+    },
+    {
+      "type": "scheduled_task.v1",
+      "id": "watchlist-collection-sync",
+      "display_name": "Sync Stash Watchlist saved-filter collections",
+      "description": "Reconcile the selected Stash Watchlist saved filter into its existing prefixed collections across all movie libraries. The companion applies tag changes immediately; this task catches missed updates."
     }
   ],
   "global_config_schema": [
@@ -205,12 +205,6 @@
             "control": "ADMIN_FORM_CONTROL_TEXT",
             "required": false,
             "description": "Prefix is used exactly as entered, including trailing spaces. For example, \"Stash | \" produces \"Stash | Favorite performers\"."
-          },
-          {
-            "key": "silo_watchlist_collection_id",
-            "label": "Existing Silo WatchList collection ID, if ambiguous",
-            "control": "ADMIN_FORM_CONTROL_TEXT",
-            "required": false
           },
           {
             "key": "playback_excluded_scene_ids",

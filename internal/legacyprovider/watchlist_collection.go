@@ -12,26 +12,15 @@ import (
 
 // SyncExistingWatchList reconciles only membership of a uniquely identified
 // existing manual collection. It never creates, renames or deletes collections.
-func (c *SiloClient) SyncExistingWatchList(ctx context.Context, libraryID, configuredID string, desired []string, allowRemovals bool, maxChanges int, artwork ...[]CollectionArtwork) (int, bool, string, error) {
+func (c *SiloClient) SyncExistingWatchList(ctx context.Context, libraryID, collectionTitle string, desired []string, allowRemovals bool, maxChanges int, artwork ...[]CollectionArtwork) (int, bool, string, error) {
 	collections, err := c.collections(ctx, libraryID)
 	if err != nil {
 		return 0, false, "", err
 	}
 	matches := []siloCollection{}
 	for _, item := range collections {
-		if item.LibraryID == libraryID && strings.EqualFold(item.Title, "WatchList") && (configuredID == "" || item.ID == configuredID) {
+		if item.LibraryID == libraryID && strings.EqualFold(item.Title, collectionTitle) && strings.HasPrefix(item.Slug, "javbeacon-stash-preset-") {
 			matches = append(matches, item)
-		}
-	}
-	if configuredID == "" {
-		preferred := []siloCollection{}
-		for _, item := range matches {
-			if strings.HasPrefix(item.Slug, "javbeacon-stash-preset-") {
-				preferred = append(preferred, item)
-			}
-		}
-		if len(preferred) > 0 {
-			matches = preferred
 		}
 	}
 	if len(matches) == 0 {

@@ -63,8 +63,10 @@ class RealtimeCollectionTests(unittest.TestCase):
         from unittest.mock import Mock
         scene = {"id": "42", "code": "ATID-705", "title": "", "files": [], "tags": [{"id": "99"}] if desired else []}
         def silo_get(_settings, path, profile_id=None):
+            if path == "/api/v2/admin/plugins/installations":
+                return {"items": [{"plugin_id": "stash.metadata", "global_configs": {"connection": {"stash_saved_filter_prefix": "Stash | "}}}]}
             if path == "/api/v2/admin/collections":
-                return {"items": [{"id": "7", "title": "WatchList", "library_id": "16", "collection_type": "manual"}]}
+                return {"items": [{"id": "7", "title": "Stash | Watchlist", "slug": "javbeacon-stash-preset-3-library-test", "library_id": "16", "collection_type": "manual"}]}
             if path == "/api/v2/profiles":
                 return {"items": [{"id": "profile"}]}
             if path.startswith("/api/v2/catalog?"):
@@ -95,9 +97,10 @@ class RealtimeCollectionTests(unittest.TestCase):
             silo_get.side_effect = [
                 {"items": [{"id": "16", "type": "movies", "enabled": True}]},
                 {"items": [
-                    {"id": "7", "title": "WatchList", "library_id": "16", "collection_type": "manual", "slug": "javbeacon-stash-preset-filter-library-16"},
+                    {"id": "7", "title": "Stash | Watchlist", "slug": "javbeacon-stash-preset-3-library-test", "library_id": "16", "collection_type": "manual", "slug": "javbeacon-stash-preset-filter-library-16"},
                     {"id": "8", "title": "Watchlist", "library_id": "16", "collection_type": "manual", "slug": "javbeacon-watchlist-library-16"},
                 ]},
+                {"items": [{"plugin_id": "stash.metadata", "global_configs": {"connection": {"stash_saved_filter_prefix": "Stash | "}}}]},
                 {"items": [{"id": "profile"}]},
                 {"items": [{"content_id": "movie:one", "title": "ATID705"}]},
                 {"provider_ids": {"stash": "42"}},
@@ -105,7 +108,7 @@ class RealtimeCollectionTests(unittest.TestCase):
             ]
             result = plugin._sync_silo_watchlist_collection({}, settings, self.hook)
         self.assertEqual(result["state"], "unchanged")
-        self.assertIn("library_id=16", silo_get.call_args_list[3].args[1])
+        self.assertIn("library_id=16", silo_get.call_args_list[4].args[1])
         urlopen.assert_not_called()
 
     def test_add_and_remove_update_existing_collection(self):
@@ -187,10 +190,11 @@ class MultiLibraryWatchListTests(unittest.TestCase):
     @patch.object(plugin, "_scene")
     def test_stash_tag_updates_existing_collections_in_two_libraries(self, scene, silo_get, sync_one):
         scene.return_value = {"id": "42", "tags": [{"id": "1355"}]}
-        silo_get.return_value = {"items": [
-            {"id": "7", "title": "WatchList", "library_id": "16", "collection_type": "manual"},
-            {"id": "8", "title": "WatchList", "library_id": "19", "collection_type": "manual"},
+        collections = {"items": [
+            {"id": "7", "title": "Stash | Watchlist", "slug": "javbeacon-stash-preset-3-library-test", "library_id": "16", "collection_type": "manual"},
+            {"id": "8", "title": "Stash | Watchlist", "slug": "javbeacon-stash-preset-3-library-test", "library_id": "19", "collection_type": "manual"},
         ]}
+        silo_get.side_effect = lambda settings, path, profile_id=None: ({"items": [{"plugin_id": "stash.metadata", "global_configs": {"connection": {"stash_saved_filter_prefix": "Stash | "}}}]} if path.endswith("installations") else collections)
         sync_one.side_effect = lambda settings, row, scene_id, desired, collection: {"state": "added", "collection_id": collection["id"]}
         settings = {"silo_url": "http://silo", "silo_api_key": "key", "watchlist_tag_id": "1355", "silo_library_id": "16,19"}
         hook = {"id": "42", "type": "Scene.Update.Post", "inputFields": ["tag_ids"]}

@@ -42,14 +42,13 @@ func (m *Manager) Configure(c Config) {
 	m.tasks.watchListCollectionID = c.WatchListCollectionID
 	m.tasks.mu.Unlock()
 	if c.SiloURL != "" && c.SiloKey != "" && ((c.StashURL != "" && c.StashKey != "") || (c.JAVBeaconURL != "" && c.JAVBeaconKey != "")) {
-		m.collectionOnce.Do(func() { go m.tasks.poll() })
+		m.collectionOnce.Do(func() { go m.tasks.poll(); go m.tasks.pollWatchListCollection() })
 	}
 	if c.JAVBeaconURL != "" && c.JAVBeaconKey != "" && c.SiloURL != "" && c.SiloKey != "" {
 		m.once.Do(func() {
 			go m.tasks.pollMetadata()
 			go m.tasks.pollWatched()
 			go m.tasks.pollRepair()
-			go m.tasks.pollWatchListCollection()
 		})
 	}
 }

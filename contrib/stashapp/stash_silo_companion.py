@@ -474,17 +474,25 @@ def _sync_silo_watchlist_collection(payload, settings, hook):
     desired = any(str(tag.get("id")) == str(settings["watchlist_tag_id"]) for tag in scene.get("tags") or [])
     allowed = set(_silo_movie_libraries(settings))
     collections = _silo_get(settings, "/api/v2/admin/collections").get("items") or []
-    configured_ids = {value.strip() for value in re.split(r"[,;\s]+", str(settings.get("silo_watchlist_collection_id") or "")) if value.strip()}
+    # Use the same prefix as the selected Stash saved-filter importer. Never
+    # maintain a separate unprefixed legacy WatchList collection.
+    installations = _silo_get(settings, "/api/v2/admin/plugins/installations").get("items") or []
+    installation = next((row for row in installations if row.get("plugin_id") == "stash.metadata"), None)
+    if not installation:
+        return {"state": "missing_stash_plugin"}
+    configs = installation.get("global_configs") or {}
+    if isinstance(configs, list):
+        configs = {row["key"]: row.get("value") for row in configs}
+    connection = configs.get("connection") or {}
+    if isinstance(connection, str):
+        connection = json.loads(connection)
+    title = str(connection.get("stash_saved_filter_prefix") or "") + "Watchlist"
     candidates = [row for row in collections if str(row.get("library_id")) in allowed
-                  and str(row.get("title") or "").casefold() == "watchlist"
-                  and (not configured_ids or str(row.get("id")) in configured_ids)]
+                  and str(row.get("title") or "").casefold() == title.casefold()
+                  and str(row.get("slug") or "").startswith("javbeacon-stash-preset-")]
     selected = []
     for library_id in allowed:
         matches = [row for row in candidates if str(row.get("library_id")) == library_id]
-        if not configured_ids:
-            stash_collections = [row for row in matches if str(row.get("slug") or "").startswith("javbeacon-stash-preset-")]
-            if stash_collections:
-                matches = stash_collections
         if len(matches) > 1:
             return {"state": "ambiguous_collection", "library_id": library_id}
         selected.extend(matches)

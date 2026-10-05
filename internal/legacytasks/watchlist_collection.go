@@ -2,6 +2,8 @@ package legacytasks
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
 	provider "github.com/Net005/silo-plugin-metadata-stash/internal/legacyprovider"
@@ -45,15 +47,33 @@ func (s *collectionSyncTaskServer) pollWatchListCollection() {
 
 func (s *collectionSyncTaskServer) syncWatchListCollection(ctx context.Context) (map[string]any, error) {
 	p := s.runtime.provider
-	if !p.Configured() || p.SiloBaseURL() == "" || p.SiloAPIKey() == "" {
-		return map[string]any{"status": "skipped", "reason": "connections not configured"}, nil
+	if p.SiloBaseURL() == "" || p.SiloAPIKey() == "" {
+		return map[string]any{"status": "skipped", "reason": "Silo connection not configured"}, nil
 	}
-	snapshot, err := p.LibrarySync(ctx)
+	selection, prefix, _, _ := p.SavedFilterSettings()
+	if strings.TrimSpace(selection) == "" {
+		return map[string]any{"status": "skipped", "reason": "Stash saved-filter import disabled"}, nil
+	}
+	filters, err := p.StashSavedFilters(ctx, selection)
 	if err != nil {
 		return nil, err
 	}
-	if !snapshot.WatchlistAuthoritative {
-		return map[string]any{"status": "skipped", "reason": "Stash WatchList source unavailable"}, nil
+	snapshot := &provider.LibrarySync{WatchlistAuthoritative: true}
+	title := ""
+	for _, filter := range filters {
+		if !strings.EqualFold(filter.Name, "Watchlist") {
+			continue
+		}
+		if title != "" {
+			return nil, fmt.Errorf("multiple selected Stash Watchlist saved filters")
+		}
+		title = prefix + filter.Name
+		for _, item := range filter.Items {
+			snapshot.Watchlist = append(snapshot.Watchlist, provider.LibrarySyncItem{StashSceneID: item.SceneID, Path: item.Path, Title: item.Title})
+		}
+	}
+	if title == "" {
+		return map[string]any{"status": "skipped", "reason": "Stash Watchlist saved filter not selected"}, nil
 	}
 	client := provider.NewSiloClient(p.SiloBaseURL(), p.SiloAPIKey())
 	client.SetCollectionArtworkResolver(p.ResolveCollectionArtwork)
@@ -79,9 +99,6 @@ func (s *collectionSyncTaskServer) syncWatchListCollection(ctx context.Context) 
 			}
 		}
 		allowRemovals := len(snapshot.Watchlist) == 0 || (relevant > 0 && resolvedRelevant == relevant)
-		s.mu.Lock()
-		collectionID := s.watchListCollectionID
-		s.mu.Unlock()
 		artByID := map[string]provider.CollectionArtwork{}
 		for _, item := range catalog {
 			artByID[item.ContentID] = provider.CollectionArtwork{MediaID: item.ContentID, PosterURL: item.PosterURL, BackdropURL: item.BackdropURL, ReleaseDate: item.ReleaseDate, AddedAt: item.AddedAt}
@@ -92,7 +109,7 @@ func (s *collectionSyncTaskServer) syncWatchListCollection(ctx context.Context) 
 				artwork = append(artwork, art)
 			}
 		}
-		n, complete, _, err := client.SyncExistingWatchList(ctx, library.ID, collectionID, desired, allowRemovals, 200-changed, artwork)
+		n, complete, _, err := client.SyncExistingWatchList(ctx, library.ID, title, desired, allowRemovals, 200-changed, artwork)
 		changed += n
 		if err != nil {
 			return map[string]any{"status": "partial", "changes": changed}, err
