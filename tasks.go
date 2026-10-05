@@ -32,6 +32,13 @@ type scheduledTaskServer struct {
 
 func (s *scheduledTaskServer) Run(ctx context.Context, req *pluginv1.RunScheduledTaskRequest) (*pluginv1.RunScheduledTaskResponse, error) {
 	key := req.GetTaskKey()
+	if key == "watchlist-export-backfill" || strings.HasSuffix(key, ":watchlist-export-backfill") {
+		n, e := s.runtime.backfillWatchlist(ctx)
+		if e != nil {
+			return nil, e
+		}
+		return taskOutput(map[string]any{"status": "complete", "exported": n})
+	}
 	for _, name := range []string{"recommendation-sync", "recommendation-preview"} {
 		if key == name || strings.HasSuffix(key, ":"+name) {
 			if s.runtime.recommendations == nil {

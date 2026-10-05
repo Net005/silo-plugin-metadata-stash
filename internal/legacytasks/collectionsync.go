@@ -41,6 +41,8 @@ type collectionSyncTaskServer struct {
 	metadataSince             time.Time
 	lastCollectionFingerprint string
 	lastCollectionFull        time.Time
+	beforeCollectionSync      func(context.Context) error
+	afterCollectionSync       func(context.Context) error
 }
 
 // log returns s.log, or a discarding no-op logger if it was never set (e.g.
@@ -244,6 +246,14 @@ func (s *collectionSyncTaskServer) poll() {
 }
 
 func (s *collectionSyncTaskServer) sync(ctx context.Context, force bool) (map[string]any, error) {
+	s.mu.Lock()
+	before := s.beforeCollectionSync
+	s.mu.Unlock()
+	if before != nil {
+		if e := before(ctx); e != nil {
+			return nil, e
+		}
+	}
 	stashSelection, stashPrefix, javSelection, javPrefix := s.runtime.provider.SavedFilterSettings()
 	snapshot, err := s.runtime.provider.LibrarySync(ctx)
 	if err != nil && strings.TrimSpace(stashSelection) == "" {

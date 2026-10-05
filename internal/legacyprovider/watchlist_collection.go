@@ -46,7 +46,6 @@ func (c *SiloClient) SyncExistingWatchList(ctx context.Context, libraryID, colle
 		}
 	}
 	changed := 0
-	prefix := "/api/v2/admin/collections/" + url.PathEscape(collection.ID) + "/items/"
 	for position, id := range ordered {
 		if _, exists := members[id]; exists {
 			continue
@@ -54,7 +53,7 @@ func (c *SiloClient) SyncExistingWatchList(ctx context.Context, libraryID, colle
 		if maxChanges > 0 && changed >= maxChanges {
 			return changed, false, collection.ID, nil
 		}
-		if err := c.collectionRequest(ctx, http.MethodPut, prefix+url.PathEscape(id), map[string]int{"position": position}, nil); err != nil {
+		if err := c.guardedCollectionMembership(ctx, collection, id, true, false, position); err != nil {
 			return changed, false, collection.ID, err
 		}
 		changed++
@@ -67,7 +66,7 @@ func (c *SiloClient) SyncExistingWatchList(ctx context.Context, libraryID, colle
 			if maxChanges > 0 && changed >= maxChanges {
 				return changed, false, collection.ID, nil
 			}
-			if err := c.collectionRequest(ctx, http.MethodDelete, prefix+url.PathEscape(id), nil, nil); err != nil {
+			if err := c.guardedCollectionMembership(ctx, collection, id, false, true, 0); err != nil {
 				return changed, false, collection.ID, err
 			}
 			changed++

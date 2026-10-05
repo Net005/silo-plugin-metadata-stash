@@ -14,14 +14,14 @@ import (
 	pluginv1 "github.com/Silo-Server/silo-plugin-sdk/pkg/pluginproto/silo/plugin/v1"
 )
 
-func TestPersonalWatchlistEventsAreIgnored(t *testing.T) {
+func TestWatchlistEventsRetryUntilLocalCollectionConfigured(t *testing.T) {
 	server := &watchSyncServer{runtime: &runtimeServer{client: &stashClient{base: "http://stash.invalid", key: "key"}}}
 	for _, op := range []pluginv1.WatchSyncOperation{
 		pluginv1.WatchSyncOperation_WATCH_SYNC_OPERATION_ADD_TO_WATCHLIST,
 		pluginv1.WatchSyncOperation_WATCH_SYNC_OPERATION_REMOVE_FROM_WATCHLIST,
 	} {
 		got := server.applyOne(context.Background(), &pluginv1.WatchSyncEvent{EventId: "watchlist", Operation: op, ProviderItemKey: "stash:42"})
-		if got.GetStatus() != pluginv1.WatchSyncApplyStatus_WATCH_SYNC_APPLY_STATUS_NO_CHANGE {
+		if got.GetStatus() != pluginv1.WatchSyncApplyStatus_WATCH_SYNC_APPLY_STATUS_RETRY {
 			t.Fatalf("operation %s: status=%s", op, got.GetStatus())
 		}
 	}

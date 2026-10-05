@@ -46,6 +46,14 @@ func (s *collectionSyncTaskServer) pollWatchListCollection() {
 }
 
 func (s *collectionSyncTaskServer) syncWatchListCollection(ctx context.Context) (map[string]any, error) {
+	s.mu.Lock()
+	before := s.beforeCollectionSync
+	s.mu.Unlock()
+	if before != nil {
+		if e := before(ctx); e != nil {
+			return nil, e
+		}
+	}
 	p := s.runtime.provider
 	if p.SiloBaseURL() == "" || p.SiloAPIKey() == "" {
 		return map[string]any{"status": "skipped", "reason": "Silo connection not configured"}, nil

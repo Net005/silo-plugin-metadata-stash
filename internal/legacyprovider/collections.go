@@ -334,8 +334,7 @@ func (c *SiloClient) SyncCollectionsBatch(ctx context.Context, specs []Collectio
 			if _, exists := members[mediaID]; exists {
 				continue
 			}
-			path := "/api/v2/admin/collections/" + url.PathEscape(collection.ID) + "/items/" + url.PathEscape(mediaID)
-			if err := c.collectionRequest(ctx, http.MethodPut, path, map[string]int{"position": position}, nil); err != nil {
+			if err := c.guardedCollectionMembership(ctx, collection, mediaID, true, false, position); err != nil {
 				return changed, false, err
 			}
 			changed++
@@ -350,8 +349,7 @@ func (c *SiloClient) SyncCollectionsBatch(ctx context.Context, specs []Collectio
 			if want[mediaID] {
 				continue
 			}
-			path := "/api/v2/admin/collections/" + url.PathEscape(collection.ID) + "/items/" + url.PathEscape(mediaID)
-			if err := c.collectionRequest(ctx, http.MethodDelete, path, nil, nil); err != nil {
+			if err := c.guardedCollectionMembership(ctx, collection, mediaID, false, true, 0); err != nil {
 				return changed, false, err
 			}
 			changed++

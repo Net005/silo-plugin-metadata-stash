@@ -514,6 +514,16 @@ def _sync_silo_watchlist_collection(payload, settings, hook):
         selected.extend(matches)
     if not selected:
         return {"state": "missing_collection"}
+    # The Go plugin owns the durable outbound journal. Let its protected
+    # reconciler apply incoming tag changes so a late hook cannot overwrite a
+    # user's concurrent local choice or create an add/remove feedback loop.
+    if any((row.get("source_config") or {}).get("stash_watchlist_outbox") for row in selected):
+        installs = _silo_get(settings, "/api/v2/admin/plugins/installations").get("items", [])
+        plugins = [row for row in installs if row.get("plugin_id") == "stash.metadata" and row.get("enabled", True)]
+        if len(plugins) != 1:
+            return {"state": "watchlist_reconciler_unavailable"}
+        result = _silo_post(settings, "/api/v2/plugin-content/plugins/" + str(plugins[0]["id"]) + "/recommendations/watchlist/reconcile", {"scene_id": scene_id})
+        return {"state": "queued_protected_reconcile", "result": result}
     results = [_sync_silo_watchlist_collection_one(settings, scene, scene_id, desired, collection) for collection in selected]
     return results[0] if len(results) == 1 else {"state": "multiple", "results": results}
 

@@ -780,6 +780,19 @@ func (s *recommendationServer) Handle(ctx context.Context, req *pluginv1.HandleH
 		return recommendationPage(ctx)
 	}
 	switch {
+	case req.Method == "POST" && path == "/recommendations/watchlist/reconcile":
+		if s.runtime.legacy == nil {
+			return respond(503, map[string]any{"error": "Watchlist reconciler unavailable"})
+		}
+		go func() {
+			work, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+			s.runtime.legacy.Provider().InvalidateStashSavedFilters()
+			if e := s.runtime.legacy.ReconcileWatchlist(work); e != nil {
+				s.runtime.task.log.Warn("Realtime Watchlist reconciliation failed", "error", e)
+			}
+		}()
+		return respond(202, map[string]any{"status": "queued"})
 	case req.Method == "POST" && (path == "/recommendations/run" || path == "/recommendations/preview"):
 		if !cfg.Enabled {
 			return respond(400, map[string]any{"error": "enable recommendations first"})

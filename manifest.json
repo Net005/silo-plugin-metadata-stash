@@ -1,6 +1,6 @@
 {
   "plugin_id": "stash.metadata",
-  "version": "0.3.11",
+  "version": "0.3.12",
   "checksum": "__CHECKSUM__",
   "silo_api_version": "v1",
   "presentation": {
@@ -59,7 +59,7 @@
       "type": "watch_sync_provider.v1",
       "id": "stash",
       "display_name": "Stash Playback Sync",
-      "description": "Sync Silo plays and watched state directly with StashApp.",
+      "description": "Sync plays and explicit Silo Watchlist actions with Stash; update the prefixed Watchlist collection before exporting its Stash tag.",
       "watch_sync_provider": {
         "auth_methods": [
           "WATCH_SYNC_AUTH_METHOD_API_KEY"
@@ -73,7 +73,9 @@
         "external_id_namespaces": [
           "stash"
         ],
-        "max_batch_size": 25
+        "max_batch_size": 25,
+        "export_watchlist": true,
+        "remove_watchlist": true
       }
     },
     {
@@ -141,6 +143,12 @@
       "id": "recommendations",
       "display_name": "Recommendation reports and controls",
       "description": "Admin-only preview, reports, dismissals and source-change notifications."
+    },
+    {
+      "type": "scheduled_task.v1",
+      "id": "watchlist-export-backfill",
+      "display_name": "Backfill Silo Watchlist changes to Stash",
+      "description": "Retry durable local Watchlist additions/removals and mirror the selected prefixed Watchlist collection to the configured Stash Watchlist tag. Recovery also runs every 15 seconds."
     }
   ],
   "global_config_schema": [
@@ -350,6 +358,13 @@
       "path": "/recommendations/report",
       "methods": [
         "GET"
+      ],
+      "access": "admin"
+    },
+    {
+      "path": "/recommendations/watchlist/reconcile",
+      "methods": [
+        "POST"
       ],
       "access": "admin"
     },

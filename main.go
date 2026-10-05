@@ -38,6 +38,8 @@ type runtimeServer struct {
 	siloBase                                                 string
 	siloKey                                                  string
 	pollOnce                                                 sync.Once
+	watchlistMu                                              sync.Mutex
+	watchlistPollOnce                                        sync.Once
 	task                                                     *scheduledTaskServer
 	legacy                                                   *legacytasks.Manager
 	stashFilters, stashPrefix, releaseFilters, releasePrefix string
@@ -85,12 +87,14 @@ func (s *runtimeServer) Configure(_ context.Context, req *pluginv1.ConfigureRequ
 		s.releasePrefix = literalText(v["saved_filter_prefix"])
 		legacy := s.legacy
 		config := legacytasks.Config{JAVBeaconURL: s.artwork.base, JAVBeaconKey: s.artwork.key, StashURL: s.client.base, StashKey: s.client.key, SiloURL: s.siloBase, SiloKey: s.siloKey, StashFilters: s.stashFilters, StashPrefix: s.stashPrefix, ReleaseFilters: s.releaseFilters, ReleasePrefix: s.releasePrefix}
+		config.BeforeCollectionSync = func(ctx context.Context) error { _, e := s.backfillWatchlist(ctx); return e }
 		config.ExcludedScenes = text(v["playback_excluded_scene_ids"])
 		s.mu.Unlock()
 		if legacy != nil {
 			legacy.Configure(config)
 		}
 		s.pollOnce.Do(func() { go s.pollMatching() })
+		s.watchlistPollOnce.Do(func() { go s.pollWatchlistExports() })
 	}
 	if s.recommendations != nil {
 		s.recommendations.pollOnce.Do(func() { go s.recommendations.poll() })

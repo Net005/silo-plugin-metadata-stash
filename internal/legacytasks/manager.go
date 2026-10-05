@@ -3,6 +3,7 @@ package legacytasks
 import (
 	"context"
 	"sync"
+	"time"
 
 	provider "github.com/Net005/silo-plugin-metadata-stash/internal/legacyprovider"
 	pluginv1 "github.com/Silo-Server/silo-plugin-sdk/pkg/pluginproto/silo/plugin/v1"
@@ -24,6 +25,7 @@ type Config struct {
 	SiloURL, SiloKey                                         string
 	StashFilters, StashPrefix, ReleaseFilters, ReleasePrefix string
 	ExcludedScenes                                           string
+	BeforeCollectionSync                                     func(context.Context) error
 }
 
 func New(log hclog.Logger) *Manager {
@@ -32,6 +34,9 @@ func New(log hclog.Logger) *Manager {
 }
 
 func (m *Manager) Configure(c Config) {
+	m.tasks.mu.Lock()
+	m.tasks.beforeCollectionSync = c.BeforeCollectionSync
+	m.tasks.mu.Unlock()
 	m.provider.Configure(provider.Config{BaseURL: c.JAVBeaconURL, APIKey: c.JAVBeaconKey})
 	m.provider.ConfigureStashConnection(c.StashURL, c.StashKey)
 	m.provider.ConfigureExcludedScenes(c.ExcludedScenes)
@@ -54,3 +59,23 @@ func (m *Manager) Run(ctx context.Context, req *pluginv1.RunScheduledTaskRequest
 }
 
 func (m *Manager) Provider() *provider.Provider { return m.provider }
+
+// Wait for an existing reconciliation before admitting this fresh Stash hook.
+func (m *Manager) ReconcileWatchlist(ctx context.Context) error {
+	for {
+		done, started := m.tasks.startWatchListCollectionSync()
+		if started {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case result := <-done:
+				return result.err
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+}

@@ -209,3 +209,18 @@ class MultiLibraryWatchListTests(unittest.TestCase):
         self.assertEqual(result["state"], "multiple")
         self.assertEqual({entry["collection_id"] for entry in result["results"]}, {"7", "8"})
         self.assertEqual(sync_one.call_count, 2)
+
+class ProtectedWatchListHookTests(unittest.TestCase):
+    @patch.object(plugin, "_sync_silo_watchlist_collection_one")
+    @patch.object(plugin, "_silo_post", return_value={"status": "queued"})
+    @patch.object(plugin, "_silo_get")
+    @patch.object(plugin, "_scene", return_value={"id": "42", "tags": [{"id": "1355"}]})
+    def test_journaled_collection_uses_protected_go_reconciler(self, scene, silo_get, silo_post, sync_one):
+        installs = {"items": [{"id": "15", "plugin_id": "stash.metadata", "global_configs": {"connection": {"stash_saved_filter_prefix": "Stash | "}}}]}
+        collections = {"items": [{"id": "watch", "title": "Stash | Watchlist", "slug": "javbeacon-stash-preset-7-library-16", "library_id": "16", "source_config": {"stash_watchlist_outbox": {"version": 1}}}]}
+        silo_get.side_effect = lambda settings, path, profile_id=None: installs if path.endswith("installations") else collections
+        settings = {"silo_url": "http://silo", "silo_api_key": "key", "watchlist_tag_id": "1355", "silo_library_id": "16"}
+        result = plugin._sync_silo_watchlist_collection({}, settings, {"id": "42", "type": "Scene.Update.Post", "inputFields": ["tag_ids"]})
+        self.assertEqual(result["state"], "queued_protected_reconcile")
+        sync_one.assert_not_called()
+        self.assertEqual(silo_post.call_args.args[1], "/api/v2/plugin-content/plugins/15/recommendations/watchlist/reconcile")

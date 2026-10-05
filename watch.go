@@ -43,6 +43,16 @@ func (s *watchSyncServer) ApplyEvents(ctx context.Context, req *pluginv1.WatchSy
 }
 func (s *watchSyncServer) applyOne(ctx context.Context, e *pluginv1.WatchSyncEvent) *pluginv1.WatchSyncApplyResult {
 	result := &pluginv1.WatchSyncApplyResult{EventId: e.GetEventId(), Status: pluginv1.WatchSyncApplyStatus_WATCH_SYNC_APPLY_STATUS_NO_CHANGE}
+	if e.GetOperation() == pluginv1.WatchSyncOperation_WATCH_SYNC_OPERATION_ADD_TO_WATCHLIST || e.GetOperation() == pluginv1.WatchSyncOperation_WATCH_SYNC_OPERATION_REMOVE_FROM_WATCHLIST {
+		if err := s.runtime.applyWatchlistEvent(ctx, e); err != nil {
+			if err == errOutsideStashWatchlist {
+				return result
+			}
+			return retryResult(e, err.Error())
+		}
+		result.Status = pluginv1.WatchSyncApplyStatus_WATCH_SYNC_APPLY_STATUS_APPLIED
+		return result
+	}
 	switch e.GetOperation() {
 	case pluginv1.WatchSyncOperation_WATCH_SYNC_OPERATION_SCROBBLE_START,
 		pluginv1.WatchSyncOperation_WATCH_SYNC_OPERATION_SCROBBLE_PAUSE,

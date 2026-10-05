@@ -64,3 +64,9 @@ func (p *Provider) stashConnection() (string, string, error) {
 	}
 	return p.stashURL, p.stashAPIKey, nil
 }
+
+func (p *Provider) InvalidateStashSavedFilters() {
+	p.stashFilterMu.Lock()
+	defer p.stashFilterMu.Unlock()
+	p.stashFilterCacheAt = time.Time{}
+}
