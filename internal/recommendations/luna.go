@@ -144,11 +144,14 @@ func lunaPrioritySchema(r LibraryReport) map[string]any {
 	}
 	return map[string]any{"type": "object", "properties": map[string]any{"collections": map[string]any{"type": "object", "properties": props, "required": kinds, "additionalProperties": false}}, "required": []string{"collections"}, "additionalProperties": false}
 }
+
+// Responses may include more than one text segment. Consume one complete JSON
+// object, then validate its entire candidate set before accepting any priorities.
 func applyPriorities(r *LibraryReport, raw []byte) error {
 	var response struct {
 		Collections map[string]map[string]float64 `json:"collections"`
 	}
-	if err := json.Unmarshal(raw, &response); err != nil {
+	if err := json.NewDecoder(bytes.NewReader(raw)).Decode(&response); err != nil {
 		return fmt.Errorf("invalid Luna priorities (%d bytes): %w", len(raw), err)
 	}
 	if len(response.Collections) != len(r.Collections) {

@@ -48,3 +48,13 @@ func TestPrioritiesRejectUnknownOrMissingCandidatesBeforeReordering(t *testing.T
 		t.Fatal("priority ignored")
 	}
 }
+
+func TestPrioritiesConsumeCompleteStructuredObjectWithExtraTextSegment(t *testing.T) {
+	r := LibraryReport{Collections: []Collection{{Kind: "for-you", Candidates: []Pick{{ID: "a"}, {ID: "b"}}}}}
+	if err := applyPriorities(&r, []byte(`{"collections":{"for-you":{"a":10,"b":90}}}ignored extra segment`)); err != nil {
+		t.Fatal(err)
+	}
+	if r.Collections[0].Candidates[0].ID != "b" {
+		t.Fatal("priority ignored")
+	}
+}
