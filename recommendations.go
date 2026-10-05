@@ -571,7 +571,7 @@ func (s *recommendationServer) run(ctx context.Context, preview bool) (runErr er
 			continue
 		}
 		for j := range r.Collections {
-			if len(r.Collections[j].Candidates) == 0 {
+			if len(r.Collections[j].Candidates) == 0 || rec.LocalOnlyKind(r.Collections[j].Kind) {
 				continue
 			}
 			report.Phase = "Luna ranking library " + r.LibraryID + ": " + r.Collections[j].Kind

@@ -10,6 +10,7 @@ require (
 )
 
 require (
+	github.com/esimov/pigo v1.4.6 // indirect
 	github.com/fatih/color v1.13.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/hashicorp/go-plugin v1.7.0 // indirect

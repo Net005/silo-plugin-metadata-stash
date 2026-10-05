@@ -1,6 +1,6 @@
 {
   "plugin_id": "stash.metadata",
-  "version": "0.3.15",
+  "version": "0.3.16",
   "checksum": "__CHECKSUM__",
   "silo_api_version": "v1",
   "presentation": {
@@ -149,6 +149,12 @@
       "id": "watchlist-export-backfill",
       "display_name": "Backfill Silo Watchlist changes to Stash",
       "description": "Retry durable local Watchlist additions/removals and mirror the selected prefixed Watchlist collection to the configured Stash Watchlist tag. Recovery also runs every 15 seconds."
+    },
+    {
+      "id": "nonjav-poster-repair",
+      "type": "scheduled_task.v1",
+      "display_name": "Repair non-JAV poster layouts",
+      "description": "Local poster layout repair in enabled Stash Metadata libraries; preserves manual artwork locks and skips JAV codes. The opt-in worker runs hourly and writes images into Silo storage."
     }
   ],
   "global_config_schema": [
@@ -156,7 +162,7 @@
       "key": "connection",
       "title": "StashApp Connection",
       "description": "Direct StashApp GraphQL connection.",
-      "json_schema": "{\"type\":\"object\",\"properties\":{\"base_url\":{\"type\":\"string\",\"format\":\"uri\",\"minLength\":1},\"api_key\":{\"type\":\"string\",\"minLength\":1},\"silo_base_url\":{\"type\":\"string\",\"format\":\"uri\"},\"silo_api_key\":{\"type\":\"string\"},\"javbeacon_url\":{\"type\":\"string\",\"format\":\"uri\"},\"javbeacon_api_key\":{\"type\":\"string\"},\"stash_saved_filter_selection\":{\"type\":\"string\"},\"stash_saved_filter_prefix\":{\"type\":\"string\"},\"saved_filter_selection\":{\"type\":\"string\"},\"saved_filter_prefix\":{\"type\":\"string\"},\"playback_excluded_scene_ids\":{\"type\":\"string\"}},\"required\":[\"base_url\"],\"additionalProperties\":false}",
+      "json_schema": "{\"type\":\"object\",\"properties\":{\"base_url\":{\"type\":\"string\",\"format\":\"uri\",\"minLength\":1},\"api_key\":{\"type\":\"string\",\"minLength\":1},\"silo_base_url\":{\"type\":\"string\",\"format\":\"uri\"},\"silo_api_key\":{\"type\":\"string\"},\"javbeacon_url\":{\"type\":\"string\",\"format\":\"uri\"},\"javbeacon_api_key\":{\"type\":\"string\"},\"stash_saved_filter_selection\":{\"type\":\"string\"},\"stash_saved_filter_prefix\":{\"type\":\"string\"},\"saved_filter_selection\":{\"type\":\"string\"},\"saved_filter_prefix\":{\"type\":\"string\"},\"playback_excluded_scene_ids\":{\"type\":\"string\"},\"nonjav_poster_repair_enabled\":{\"type\":\"boolean\"},\"nonjav_poster_layout\":{\"type\":\"string\",\"enum\":[\"contain\",\"face\"]}},\"required\":[\"base_url\"],\"additionalProperties\":false}",
       "required": true,
       "admin_form": {
         "fields": [
@@ -232,6 +238,19 @@
             "control": "ADMIN_FORM_CONTROL_TEXT",
             "required": false,
             "description": "Comma-separated Stash scene IDs. Preserves their activity by skipping Silo playback events and completed-play backfill; blank excludes none."
+          },
+          {
+            "key": "nonjav_poster_repair_enabled",
+            "label": "Enable non-JAV poster layout repair",
+            "control": "ADMIN_FORM_CONTROL_CHECKBOX",
+            "description": "Opt-in hourly worker and manual task. Only Stash Metadata libraries and exact Stash file matches; skips manual artwork locks and JAV codes. Requires the recommendation owner profile setting."
+          },
+          {
+            "key": "nonjav_poster_layout",
+            "label": "Non-JAV poster layout",
+            "control": "ADMIN_FORM_CONTROL_TEXT",
+            "default_value": "contain",
+            "description": "contain preserves the whole image and printed titles on a dark blurred 2:3 card. face optionally crops around one confident face; falls back to contain. Face detection does not protect printed text."
           }
         ]
       }
@@ -338,7 +357,7 @@
             "label": "Recommendation defaults (JSON)",
             "control": "ADMIN_FORM_CONTROL_TEXTAREA",
             "required": false,
-            "description": "Overrides defaults: count 500; all nine collections; high_rating 80; low_rating 40; cooldown_days 14; recent_days 90; retain_fraction 0.7; max_entity_fraction 0.3; max_discovery_overlap 2. Set excluded_scenes, excluded_performers, excluded_studios, excluded_tags or cross_library here.",
+            "description": "Overrides defaults: count 500; all fourteen collections; high_rating 80; low_rating 40; cooldown_days 14; recent_days 90; retain_fraction 0.7; max_entity_fraction 0.3; max_discovery_overlap 2. Set excluded_scenes, excluded_performers, excluded_studios, excluded_tags or cross_library here. Added local-only kinds: monthly-spotlight, yearly-spotlight, cast-spotlight, general-spotlight, new-releases. New releases use recent_days and sort by release date.",
             "default_value": "{}"
           },
           {

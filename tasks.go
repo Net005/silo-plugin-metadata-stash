@@ -25,6 +25,7 @@ type scheduledTaskServer struct {
 	mu            sync.Mutex
 	running       bool
 	cursor        string
+	posterMu      sync.Mutex
 	artworkMu     sync.Mutex
 	artworkCursor string
 	artworkRetry  map[string]time.Time
@@ -32,6 +33,19 @@ type scheduledTaskServer struct {
 
 func (s *scheduledTaskServer) Run(ctx context.Context, req *pluginv1.RunScheduledTaskRequest) (*pluginv1.RunScheduledTaskResponse, error) {
 	key := req.GetTaskKey()
+	if key == "nonjav-poster-repair" || strings.HasSuffix(key, ":nonjav-poster-repair") {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
+			v, e := s.repairPosters(ctx)
+			if e != nil {
+				s.log.Warn("Poster repair failed", "error", e)
+			} else {
+				s.log.Info("Poster repair", "summary", v)
+			}
+		}()
+		return taskOutput(map[string]any{"status": "started"})
+	}
 	if key == "watchlist-export-backfill" || strings.HasSuffix(key, ":watchlist-export-backfill") {
 		n, e := s.runtime.backfillWatchlist(ctx)
 		if e != nil {

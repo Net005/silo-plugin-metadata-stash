@@ -35,6 +35,9 @@ type runtimeServer struct {
 	mu                                                       sync.RWMutex
 	client                                                   *stashClient
 	artwork                                                  *artworkClient
+	posterLayout                                             string
+	posterRepair                                             bool
+	posterPollOnce                                           sync.Once
 	siloBase                                                 string
 	siloKey                                                  string
 	pollOnce                                                 sync.Once
@@ -81,6 +84,15 @@ func (s *runtimeServer) Configure(_ context.Context, req *pluginv1.ConfigureRequ
 		if siloKey != "" {
 			s.siloKey = siloKey
 		}
+		s.posterLayout = text(v["nonjav_poster_layout"])
+		if s.posterLayout == "" {
+			s.posterLayout = "contain"
+		}
+		if s.posterLayout != "contain" && s.posterLayout != "face" {
+			s.mu.Unlock()
+			return nil, fmt.Errorf("invalid poster layout")
+		}
+		s.posterRepair, _ = v["nonjav_poster_repair_enabled"].(bool)
 		s.stashFilters = text(v["stash_saved_filter_selection"])
 		s.stashPrefix = literalText(v["stash_saved_filter_prefix"])
 		s.releaseFilters = text(v["saved_filter_selection"])
@@ -92,6 +104,9 @@ func (s *runtimeServer) Configure(_ context.Context, req *pluginv1.ConfigureRequ
 		s.mu.Unlock()
 		if legacy != nil {
 			legacy.Configure(config)
+		}
+		if s.task != nil {
+			s.posterPollOnce.Do(func() { go s.task.pollPosters() })
 		}
 		s.pollOnce.Do(func() { go s.pollMatching() })
 		s.watchlistPollOnce.Do(func() { go s.pollWatchlistExports() })

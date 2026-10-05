@@ -1,7 +1,7 @@
 # Weekly recommendations
 
-Stash Metadata v0.3.8 builds up to **500 verified items per collection** across all
-movie libraries using this plugin. The nine kinds are `for-you`, `top-rated`,
+Stash Metadata v0.3.16 builds up to **500 verified items per collection** across all
+movie libraries using this plugin. The original nine kinds are `for-you`, `top-rated`,
 `revisit`, `favourites`, `watchlist`, `overlooked`, `different`, `recent`, `spotlight`.
 Names use the existing Stash prefix exactly, including trailing spaces.
 
@@ -112,3 +112,25 @@ AI ID validation, collection ownership, durable budget state, timezone/DST and c
 notifications that never trigger paid ranking from an edit hook.
 
 The report page can also be opened from the plugin detail page’s More actions → Stash recommendations. Its public HTML shell contains no library or history data; report reads and actions remain administrator-only. Direct links establish Silo’s short-lived plugin cookie from the existing same-origin Silo login. An expired or locked profile requires signing in/unlocking in Silo first.
+
+## Additional collections
+
+The default selection now includes fourteen kinds, each with up to 500 eligible
+items. The five additional kinds are local-only and add no OpenAI requests:
+
+- `monthly-spotlight` and `yearly-spotlight`: supported cast/studio/series themes
+  selected with the calendar month or year as their rotation seed. They are
+  refreshed by the existing weekly job as availability and feedback change;
+  these are theme periods, not claims that all feedback happened in that period.
+- `cast-spotlight`: several performers with repeated positive feedback and
+  available unwatched scenes. It avoids performers with net negative evidence.
+- `general-spotlight`: a broad mixture of unwatched scenes matching supported
+  cast/studio relationships and favourite performers.
+- `new-releases`: unwatched scenes released within `recent_days`, matching
+  supported preferences or favourite cast. Sorted by release date descending;
+  future releases and unknown release dates are excluded. It uses release date,
+  not import date, and generic genre tags do not establish eligibility.
+
+Existing custom `collections` arrays remain explicit selections: append the new
+kind IDs to enable them. Existing rating, exclusion, diversity and overlap rules
+still apply, so a collection can contain fewer than 500 items.

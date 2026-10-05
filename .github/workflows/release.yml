@@ -32,6 +32,7 @@ jobs:
           go vet ./...
           go test ./...
           python -m unittest discover -s contrib/stashapp -q
+          node --check contrib/tampermonkey/silo-backdrop-hover.user.js
           node --test test_recommendation_page.js contrib/stashapp/test_stash_silo_subtitles.js contrib/stashapp/test_stash_silo_scrubber.js
       - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v4
@@ -67,14 +68,15 @@ jobs:
             os="${target%/*}"; arch="${target#*/}"
             CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath -buildvcs=false -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" -o "dist/silo-plugin-metadata-stash_${GITHUB_REF_NAME}_${os}_${arch}" .
           done
+          cp contrib/tampermonkey/silo-backdrop-hover.user.js dist/
           cp contrib/stashapp/stash-silo-companion.yml contrib/stashapp/stash_silo_companion.py contrib/stashapp/stash_silo_features.py contrib/stashapp/stash_silo_subtitles.js contrib/stashapp/stash_silo_subtitles.css contrib/stashapp/stash_silo_scrubber.js contrib/stashapp/stash_silo_scrubber.css dist/companion/stash-silo-companion/
           (cd dist/companion && zip -r "../stash-silo-companion_${GITHUB_REF_NAME}.zip" stash-silo-companion)
-          (cd dist && sha256sum silo-plugin-metadata-stash_* stash-silo-companion_*.zip > SHA256SUMS)
+          (cd dist && sha256sum silo-plugin-metadata-stash_* stash-silo-companion_*.zip silo-backdrop-hover.user.js > SHA256SUMS)
           python scripts/update-stash-source.py --tag "$GITHUB_REF_NAME" --archive "dist/stash-silo-companion_${GITHUB_REF_NAME}.zip" --output dist/stash-plugin-source.yml
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/silo-plugin-metadata-stash_* dist/stash-silo-companion_*.zip dist/SHA256SUMS dist/stash-plugin-source.yml --title "Stash Metadata $GITHUB_REF_NAME" --generate-notes --latest
+        run: gh release create "$GITHUB_REF_NAME" dist/silo-plugin-metadata-stash_* dist/stash-silo-companion_*.zip dist/SHA256SUMS dist/stash-plugin-source.yml dist/silo-backdrop-hover.user.js --title "Stash Metadata $GITHUB_REF_NAME" --generate-notes --latest
       - name: Update companion package index for the current release
         shell: bash
         run: |

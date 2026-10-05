@@ -11,8 +11,8 @@ import (
 	"time"
 )
 
-var Kinds = []string{"for-you", "top-rated", "revisit", "favourites", "watchlist", "overlooked", "different", "recent", "spotlight"}
-var Titles = map[string]string{"for-you": "For You", "top-rated": "Your Top Rated", "revisit": "Worth Revisiting", "favourites": "From Your Favourites", "watchlist": "Watchlist This Week", "overlooked": "Overlooked Picks", "different": "Something Different", "recent": "Your Recent Direction", "spotlight": "Weekly Spotlight"}
+var Kinds = []string{"for-you", "top-rated", "revisit", "favourites", "watchlist", "overlooked", "different", "recent", "spotlight", "monthly-spotlight", "yearly-spotlight", "cast-spotlight", "general-spotlight", "new-releases"}
+var Titles = map[string]string{"for-you": "For You", "top-rated": "Your Top Rated", "revisit": "Worth Revisiting", "favourites": "From Your Favourites", "watchlist": "Watchlist This Week", "overlooked": "Overlooked Picks", "different": "Something Different", "recent": "Your Recent Direction", "spotlight": "Weekly Spotlight", "monthly-spotlight": "Monthly Spotlight", "yearly-spotlight": "Yearly Spotlight", "cast-spotlight": "Cast Spotlight", "general-spotlight": "Spotlight", "new-releases": "New Releases For You"}
 
 type Entity struct {
 	ID       string   `json:"id"`
@@ -281,7 +281,9 @@ func excluded(s Scene, o Options) bool {
 	}
 	return false
 }
-func discovery(k string) bool { return k != "top-rated" && k != "revisit" && k != "watchlist" }
+func discovery(k string) bool {
+	return !LocalOnlyKind(k) && k != "top-rated" && k != "revisit" && k != "watchlist"
+}
 func Build(library string, local, global []Scene, o Options, watch map[string]bool, previous map[string][]string, exposure map[string]Exposure, dismissed map[string]bool, now time.Time) LibraryReport {
 	p, n := learn(local, o, now)
 	currentGlobal, archivedGlobal := []Scene{}, []Scene{}
@@ -355,13 +357,25 @@ func Build(library string, local, global []Scene, o Options, watch map[string]bo
 		}
 	}
 	for _, kind := range o.Kinds {
+		selectedTheme, selectedName := spotlightKey, spotlightName
+		period := week
+		if kind == "monthly-spotlight" {
+			period = now.Format("2006-01")
+		}
+		if kind == "yearly-spotlight" {
+			period = now.Format("2006")
+		}
+		if kind == "monthly-spotlight" || kind == "yearly-spotlight" {
+			selectedTheme, selectedName = selectSpotlightTheme(keys, themeCounts, themeNames, p, period)
+		}
+		castThemes := supportedCastThemes(keys, themeCounts, p)
 		c := Collection{Kind: kind, Title: Titles[kind], Description: "Weekly Stash recommendations; evidence from ratings, explicit activity and favourites.", Candidates: []Pick{}, Picks: []Pick{}}
-		if kind == "spotlight" {
-			if spotlightKey == "" {
+		if kind == "spotlight" || kind == "monthly-spotlight" || kind == "yearly-spotlight" {
+			if selectedTheme == "" {
 				continue
 			}
-			c.Title += " · " + spotlightName
-			c.Description = "This week's spotlight: " + spotlightName + ". Supported by multiple positively observed scenes."
+			c.Title += " · " + selectedName
+			c.Description = "Spotlight for " + period + ": " + selectedName + ". Supported by multiple positively observed scenes."
 		}
 		for _, s := range rows {
 			isPlayed := played(s)
@@ -473,11 +487,39 @@ func Build(library string, local, global []Scene, o Options, watch map[string]bo
 				}
 				base += 2 * rec
 				reasons = append(reasons, "Related metadata has recent positive activity")
-			case "spotlight":
-				if !contains(features(s), spotlightKey) {
+			case "spotlight", "monthly-spotlight", "yearly-spotlight":
+				if !contains(features(s), selectedTheme) {
 					continue
 				}
-				reasons = append(reasons, "Matches this week's supported theme")
+				reasons = append(reasons, "Matches the supported spotlight theme for "+period)
+			case "cast-spotlight":
+				if len(castThemes) < 2 {
+					continue
+				}
+				matches := false
+				for _, f := range features(s) {
+					if contains(castThemes, f) {
+						matches = true
+					}
+				}
+				if !matches {
+					continue
+				}
+				reasons = append(reasons, "Matches one of several performers supported by positive feedback")
+			case "general-spotlight":
+				if fit <= 0 && !favourite {
+					continue
+				}
+				reasons = append(reasons, "Broad spotlight from supported cast and studio preferences")
+			case "new-releases":
+				released, dateErr := time.Parse("2006-01-02", s.Date)
+				if dateErr != nil {
+					released = eventTime(s.Date)
+				}
+				if released.IsZero() || released.After(now) || now.Sub(released) > time.Duration(o.RecentDays)*24*time.Hour || (!specificPreference(s, p) && !favourite) {
+					continue
+				}
+				reasons = append(reasons, "Unwatched recent release matching supported preferences")
 			}
 			if kind != "top-rated" {
 				base -= math.Log1p(float64(exposure[s.ID].Count)) * .15
@@ -500,6 +542,9 @@ func Build(library string, local, global []Scene, o Options, watch map[string]bo
 		}
 		sort.Slice(c.Candidates, func(i, j int) bool {
 			a, b := c.Candidates[i], c.Candidates[j]
+			if kind == "new-releases" && rows[a.ID].Date != rows[b.ID].Date {
+				return rows[a.ID].Date > rows[b.ID].Date
+			}
 			if a.Score == b.Score {
 				return a.ID < b.ID
 			}
@@ -559,7 +604,7 @@ func Finalize(report *LibraryReport, o Options, previous map[string][]string) {
 				}
 			}
 			studioCap := max(cap, int(math.Ceil(float64(o.Count)*float64(studioPopulation)/float64(max(1, len(c.Candidates))))))
-			if c.Kind != "spotlight" {
+			if c.Kind != "spotlight" && c.Kind != "monthly-spotlight" && c.Kind != "yearly-spotlight" {
 				if p.Studio != "" && studios[p.Studio] >= studioCap {
 					return false
 				}
@@ -581,6 +626,9 @@ func Finalize(report *LibraryReport, o Options, previous map[string][]string) {
 			return true
 		}
 		keep := int(float64(o.Count) * o.Retain)
+		if c.Kind == "new-releases" {
+			keep = 0
+		}
 		for _, id := range previous[c.Kind] {
 			if len(c.Picks) >= keep {
 				break
