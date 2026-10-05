@@ -35,3 +35,28 @@ image locks and restores the lock added by the image API.
 
 The renderer was verified with nonexplicit preview artwork and synthetic images.
 No bulk artwork repair is run as part of installation.
+
+## OpenAI cost comparison (5 October 2026)
+
+The local renderer uses **zero API tokens and $0 OpenAI charges**. CPU, storage
+and transfer are still ordinary server costs. The comparison below is hypothetical
+vision analysis that returns crop coordinates, not image generation or editing.
+
+For a sample request with **1,000 total billed input tokens** (image plus prompt)
+and **200 billed output tokens** (including reasoning), no caching or tools:
+
+| Method | Per cover | 1,000 covers |
+| --- | ---: | ---: |
+| Local Go/Pigo | $0 | $0 |
+| GPT-6 Luna | $0.00020 | $0.20 |
+| GPT-5.6 Luna | $0.00044 | $0.44 |
+
+These are illustrations, not measured image token counts or invoices. Image size,
+detail settings and reasoning change the actual billed tokens. Formula:
+`(input_tokens × input_rate + output_tokens × output_rate) / 1,000,000`.
+Standard short-context rates used are $0.10/$0.50 for GPT-6 Luna and $0.20/$1.20
+for GPT-5.6 Luna, per million input/output tokens. No requests were made for this
+comparison.
+
+Sources: [official pricing](https://developers.openai.com/api/docs/pricing),
+[GPT-5.6 Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna).
