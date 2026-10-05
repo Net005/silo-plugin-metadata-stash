@@ -67,10 +67,10 @@ type Options struct {
 }
 
 func DefaultOptions() Options {
-	return Options{Enabled: true, Count: 250, Kinds: append([]string(nil), Kinds...), High: 80, Low: 40, Cooldown: 14, RecentDays: 90, Retain: .7, MaxEntityFraction: .3, MaxOverlap: 2, CrossLibrary: true}
+	return Options{Enabled: true, Count: 500, Kinds: append([]string(nil), Kinds...), High: 80, Low: 40, Cooldown: 14, RecentDays: 90, Retain: .7, MaxEntityFraction: .3, MaxOverlap: 2, CrossLibrary: true}
 }
 func (o Options) Validate() error {
-	if o.Count < 1 || o.Count > 250 || o.High < 1 || o.High > 100 || o.Low < 0 || o.Low >= o.High || o.Cooldown < 0 || o.RecentDays < 1 || o.Retain < 0 || o.Retain > 1 || o.MaxEntityFraction <= 0 || o.MaxEntityFraction > 1 || o.MaxOverlap < 1 {
+	if o.Count < 1 || o.Count > 500 || o.High < 1 || o.High > 100 || o.Low < 0 || o.Low >= o.High || o.Cooldown < 0 || o.RecentDays < 1 || o.Retain < 0 || o.Retain > 1 || o.MaxEntityFraction <= 0 || o.MaxEntityFraction > 1 || o.MaxOverlap < 1 {
 		return fmt.Errorf("invalid recommendation limits or rating thresholds")
 	}
 	seen := map[string]bool{}

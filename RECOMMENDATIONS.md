@@ -1,6 +1,6 @@
 # Weekly recommendations
 
-Stash Metadata v0.3.8 builds up to **250 verified items per collection** across all
+Stash Metadata v0.3.8 builds up to **500 verified items per collection** across all
 movie libraries using this plugin. The nine kinds are `for-you`, `top-rated`,
 `revisit`, `favourites`, `watchlist`, `overlooked`, `different`, `recent`, `spotlight`.
 Names use the existing Stash prefix exactly, including trailing spaces.
@@ -33,7 +33,7 @@ without another AI call. Existing realtime saved-filter Watchlist sync stays ind
 Defaults JSON supports:
 
 ```json
-{"count":250,"high_rating":80,"low_rating":40,"cooldown_days":14,
+{"count":500,"high_rating":80,"low_rating":40,"cooldown_days":14,
  "recent_days":90,"retain_fraction":0.7,"max_entity_fraction":0.3,
  "max_discovery_overlap":2,"cross_library":true}
 ```

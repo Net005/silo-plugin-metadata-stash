@@ -131,17 +131,17 @@ func containsBytes(b []byte, s string) bool {
 	return false
 }
 
-func TestTwoHundredFiftyVerifiedUniquePicks(t *testing.T) {
+func TestFiveHundredVerifiedUniquePicks(t *testing.T) {
 	o := DefaultOptions()
-	if o.Count != 250 || o.Validate() != nil {
-		t.Fatal("250 default must be valid")
+	if o.Count != 500 || o.Validate() != nil {
+		t.Fatal("500 default must be valid")
 	}
 	r := LibraryReport{Collections: []Collection{{Kind: "for-you"}}}
-	for i := 0; i < 500; i++ {
+	for i := 0; i < 800; i++ {
 		r.Collections[0].Candidates = append(r.Collections[0].Candidates, Pick{ID: fmt.Sprint(i), MediaID: fmt.Sprint(i), Studio: fmt.Sprint(i % 10)})
 	}
 	Finalize(&r, o, nil)
-	if len(r.Collections[0].Picks) != 250 {
+	if len(r.Collections[0].Picks) != 500 {
 		t.Fatal(len(r.Collections[0].Picks))
 	}
 	seen := map[string]bool{}
@@ -151,7 +151,12 @@ func TestTwoHundredFiftyVerifiedUniquePicks(t *testing.T) {
 		}
 		seen[p.ID] = true
 	}
-	o.Count = 251
+	small := LibraryReport{Collections: []Collection{{Kind: "for-you", Candidates: r.Collections[0].Candidates[:37]}}}
+	Finalize(&small, o, nil)
+	if len(small.Collections[0].Picks) != 37 {
+		t.Fatal("small collections must not be padded", len(small.Collections[0].Picks))
+	}
+	o.Count = 501
 	if o.Validate() == nil {
 		t.Fatal("unbounded count accepted")
 	}

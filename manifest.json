@@ -1,6 +1,6 @@
 {
   "plugin_id": "stash.metadata",
-  "version": "0.3.14",
+  "version": "0.3.15",
   "checksum": "__CHECKSUM__",
   "silo_api_version": "v1",
   "presentation": {
@@ -130,7 +130,7 @@
       "type": "scheduled_task.v1",
       "id": "recommendation-sync",
       "display_name": "Build weekly recommendation collections",
-      "description": "Build up to 250 rating-aware recommendations per collection across enabled libraries. Runs weekly using the configured timezone; preserves previous collections on source failure. Final results are in the recommendation report."
+      "description": "Build up to 500 rating-aware recommendations per collection across enabled libraries. Runs weekly using the configured timezone; preserves previous collections on source failure. Final results are in the recommendation report."
     },
     {
       "type": "scheduled_task.v1",
@@ -239,7 +239,7 @@
     {
       "key": "recommendations",
       "title": "Weekly Recommendations",
-      "description": "Weekly recommendations: up to 250 items per collection. GPT-6 Luna organises bounded candidate lists; local evidence validates every selection. Open the admin report page at /api/v2/plugin-content/plugins/<installation ID>/recommendations.",
+      "description": "Weekly recommendations: up to 500 items per collection. GPT-6 Luna organises bounded candidate lists; local evidence validates every selection. Open the admin report page at /api/v2/plugin-content/plugins/<installation ID>/recommendations.",
       "required": false,
       "json_schema": "{\"type\":\"object\",\"properties\":{\"enabled\":{\"type\":\"boolean\",\"default\":false},\"preview_only\":{\"type\":\"boolean\",\"default\":true},\"owner_profile_id\":{\"type\":\"string\"},\"openai_api_key\":{\"type\":\"string\"},\"reasoning_effort\":{\"type\":\"string\",\"default\":\"none\"},\"monthly_cap_usd\":{\"type\":\"number\",\"default\":2},\"day_of_week\":{\"type\":\"integer\",\"default\":0},\"time_of_day\":{\"type\":\"string\",\"default\":\"03:30\"},\"timezone\":{\"type\":\"string\",\"default\":\"Europe/Amsterdam\"},\"use_archived_history\":{\"type\":\"boolean\",\"default\":true},\"defaults_json\":{\"type\":\"string\",\"default\":\"{}\"},\"libraries_json\":{\"type\":\"string\",\"default\":\"{}\"}},\"additionalProperties\":false}",
       "admin_form": {
@@ -338,7 +338,7 @@
             "label": "Recommendation defaults (JSON)",
             "control": "ADMIN_FORM_CONTROL_TEXTAREA",
             "required": false,
-            "description": "Overrides defaults: count 250; all nine collections; high_rating 80; low_rating 40; cooldown_days 14; recent_days 90; retain_fraction 0.7; max_entity_fraction 0.3; max_discovery_overlap 2. Set excluded_scenes, excluded_performers, excluded_studios, excluded_tags or cross_library here.",
+            "description": "Overrides defaults: count 500; all nine collections; high_rating 80; low_rating 40; cooldown_days 14; recent_days 90; retain_fraction 0.7; max_entity_fraction 0.3; max_discovery_overlap 2. Set excluded_scenes, excluded_performers, excluded_studios, excluded_tags or cross_library here.",
             "default_value": "{}"
           },
           {
@@ -346,7 +346,7 @@
             "label": "Per-library overrides (JSON)",
             "control": "ADMIN_FORM_CONTROL_TEXTAREA",
             "required": false,
-            "description": "Map library IDs to overrides, for example {\"18\":{\"count\":250,\"collections\":[\"for-you\",\"top-rated\",\"revisit\",\"spotlight\"]},\"19\":{\"cross_library\":false}}. Set enabled:false to hide owned recommendations in that library.",
+            "description": "Map library IDs to overrides, for example {\"18\":{\"count\":500,\"collections\":[\"for-you\",\"top-rated\",\"revisit\",\"spotlight\"]},\"19\":{\"cross_library\":false}}. Set enabled:false to hide owned recommendations in that library.",
             "default_value": "{}"
           }
         ]
