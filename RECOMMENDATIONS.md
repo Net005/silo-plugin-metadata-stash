@@ -1,6 +1,6 @@
 # Weekly recommendations
 
-Stash Metadata v0.3.4 builds up to **50 verified items per collection** across all
+Stash Metadata v0.3.5 builds up to **250 verified items per collection** across all
 movie libraries using this plugin. The nine kinds are `for-you`, `top-rated`,
 `revisit`, `favourites`, `watchlist`, `overlooked`, `different`, `recent`, `spotlight`.
 Names use the existing Stash prefix exactly, including trailing spaces.
@@ -33,7 +33,7 @@ without another AI call. Existing realtime saved-filter Watchlist sync stays ind
 Defaults JSON supports:
 
 ```json
-{"count":50,"high_rating":80,"low_rating":40,"cooldown_days":14,
+{"count":250,"high_rating":80,"low_rating":40,"cooldown_days":14,
  "recent_days":90,"retain_fraction":0.7,"max_entity_fraction":0.3,
  "max_discovery_overlap":2,"cross_library":true}
 ```
@@ -83,9 +83,13 @@ local ordering. Explanations stay grounded in the local evidence. API requests u
 
 The default **$2/calendar-month cap** is enforced by reserving a conservative request
 cost durably before sending. Unknown request outcomes retain reservations, so retries
-cannot bypass the cap. Preview calls consume budget too. Measured usage and unsettled
-reservations are shown in the report. Pricing constants: Standard short-context input
-$0.10/M, output $0.50/M; cached input discounts are conservatively ignored. No automatic
+cannot bypass the cap. Preview calls consume budget too. Reported token usage, estimated costs and unsettled reservations are shown in the report.
+These are not verified invoice charges. OpenAI’s Costs dashboard is authoritative.
+Standard short-context rates per million tokens: input $0.10, cached input $0.01,
+cache writes $0.125, output $0.50. Requests explicitly use the standard service tier.
+Cache details are applied when returned; old reports lack cache breakdowns.
+Each collection is ranked separately with at most 500 candidates, avoiding oversized
+schemas and long-context pricing. Reservations include the full request and schema. No automatic
 retries, Batch, paid tools or generation. Revisit rates when API pricing changes.
 
 ## Validation

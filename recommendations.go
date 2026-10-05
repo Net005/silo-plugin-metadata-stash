@@ -648,40 +648,60 @@ func (s *recommendationServer) run(ctx context.Context, preview bool) (runErr er
 			r.Warnings = append(r.Warnings, "OpenAI key missing; local ranking used")
 			continue
 		}
-		report.Phase = "Luna ranking library " + r.LibraryID
-		input := rec.LunaInput(*r)
-		maxOut := 24000
-		if cfg.Effort == "low" {
-			maxOut = 32000
-		}
-		reserve := rec.ReserveCost(input, maxOut)
-		if len(input) > 200000 {
-			r.Warnings = append(r.Warnings, "Luna input exceeds bounded request size; local ranking used")
-			continue
-		}
-		if state.Spend[month]+reserve > cfg.MonthlyCap {
-			r.Warnings = append(r.Warnings, "Monthly spending cap reached; local ranking used")
-			continue
-		}
-		state.Spend[month] += reserve
-		report.Usage.Reserved += reserve
-		state.Report = report
-		record, tag, err = s.save(ctx, client, record, tag, state)
-		if err != nil {
-			state.Spend[month] -= reserve
-			report.Usage.Reserved -= reserve
-			return err
-		}
-		usage, e := (rec.Luna{Key: cfg.APIKey, Effort: cfg.Effort}).Organize(ctx, r, maxOut)
-		if usage.Input > 0 || usage.Output > 0 {
-			state.Spend[month] += usage.Cost - reserve
-			report.Usage.Reserved -= reserve
-			report.Usage.Input += usage.Input
-			report.Usage.Output += usage.Output
-			report.Usage.Cost += usage.Cost
-		}
-		if e != nil {
-			r.Warnings = append(r.Warnings, e.Error())
+		for j := range r.Collections {
+			if len(r.Collections[j].Candidates) == 0 {
+				continue
+			}
+			report.Phase = "Luna ranking library " + r.LibraryID + ": " + r.Collections[j].Kind
+			batch := *r
+			batch.Collections = []rec.Collection{r.Collections[j]}
+			maxOut := 16000
+			if cfg.Effort == "low" {
+				maxOut = 24000
+			}
+			input := rec.LunaRequest(batch, cfg.Effort, maxOut)
+			reserve := rec.ReserveCost(input, maxOut)
+			if len(input) > 240000 {
+				r.Warnings = append(r.Warnings, "Luna input exceeds bounded request size; local ranking used")
+				continue
+			}
+			if state.Spend[month]+reserve > cfg.MonthlyCap {
+				r.Warnings = append(r.Warnings, "Monthly spending cap reached; local ranking used")
+				continue
+			}
+			state.Spend[month] += reserve
+			report.Usage.Reserved += reserve
+			state.Report = report
+			record, tag, err = s.save(ctx, client, record, tag, state)
+			if err != nil {
+				state.Spend[month] -= reserve
+				report.Usage.Reserved -= reserve
+				return err
+			}
+			usage, e := (rec.Luna{Key: cfg.APIKey, Effort: cfg.Effort}).Organize(ctx, &batch, maxOut)
+			if usage.Input > 0 || usage.Output > 0 {
+				state.Spend[month] += usage.Cost - reserve
+				report.Usage.Reserved -= reserve
+				report.Usage.Input += usage.Input
+				report.Usage.Output += usage.Output
+				report.Usage.Cached += usage.Cached
+				report.Usage.CacheWrites += usage.CacheWrites
+				report.Usage.Requests += usage.Requests
+				report.Usage.RequestIDs = append(report.Usage.RequestIDs, usage.RequestIDs...)
+				report.Usage.CostBasis = "estimated_standard_token_rates"
+				report.Usage.Cost += usage.Cost
+			}
+			if e != nil {
+				r.Warnings = append(r.Warnings, r.Collections[j].Kind+": "+e.Error())
+			} else {
+				r.Collections[j].Candidates = batch.Collections[0].Candidates
+			}
+
+			state.Report = report
+			record, tag, err = s.save(ctx, client, record, tag, state)
+			if err != nil {
+				return err
+			}
 		}
 		rec.Finalize(r, options[r.LibraryID], state.Previous[r.LibraryID])
 		state.Report = report

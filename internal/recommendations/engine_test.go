@@ -57,6 +57,7 @@ func TestLunaCannotIntroduceUnknownIDsOrPartiallyReorder(t *testing.T) {
 }
 func TestFiftyItemsDiversityOverlapAndRetention(t *testing.T) {
 	o := DefaultOptions()
+	o.Count = 50
 	o.Kinds = []string{"for-you", "different", "recent"}
 	o.MaxEntityFraction = .3
 	report := LibraryReport{}
@@ -86,6 +87,7 @@ func TestFiftyItemsDiversityOverlapAndRetention(t *testing.T) {
 }
 func TestSingleStudioDoesNotArtificiallyLimitCollection(t *testing.T) {
 	o := DefaultOptions()
+	o.Count = 50
 	r := LibraryReport{Collections: []Collection{{Kind: "for-you"}}}
 	for i := 0; i < 100; i++ {
 		r.Collections[0].Candidates = append(r.Collections[0].Candidates, Pick{ID: fmt.Sprint(i), Studio: "dominant"})
@@ -127,4 +129,30 @@ func containsBytes(b []byte, s string) bool {
 		}
 	}
 	return false
+}
+
+func TestTwoHundredFiftyVerifiedUniquePicks(t *testing.T) {
+	o := DefaultOptions()
+	if o.Count != 250 || o.Validate() != nil {
+		t.Fatal("250 default must be valid")
+	}
+	r := LibraryReport{Collections: []Collection{{Kind: "for-you"}}}
+	for i := 0; i < 500; i++ {
+		r.Collections[0].Candidates = append(r.Collections[0].Candidates, Pick{ID: fmt.Sprint(i), MediaID: fmt.Sprint(i), Studio: fmt.Sprint(i % 10)})
+	}
+	Finalize(&r, o, nil)
+	if len(r.Collections[0].Picks) != 250 {
+		t.Fatal(len(r.Collections[0].Picks))
+	}
+	seen := map[string]bool{}
+	for _, p := range r.Collections[0].Picks {
+		if seen[p.ID] {
+			t.Fatal("duplicate")
+		}
+		seen[p.ID] = true
+	}
+	o.Count = 251
+	if o.Validate() == nil {
+		t.Fatal("unbounded count accepted")
+	}
 }
