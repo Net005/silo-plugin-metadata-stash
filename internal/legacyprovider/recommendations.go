@@ -194,3 +194,16 @@ func (c *SiloClient) ListRecommendationCatalog(ctx context.Context, library, pro
 // RecommendationClient is intentionally restricted to the collection API.
 // Its durable state is stored in an admin-only hidden collection source_config,
 // surviving process restarts and binary upgrades without a writable plugin directory.
+
+// DeleteRecommendationRecord validates plugin ownership before removing only
+// an expired hidden report archive, never a recommendation collection.
+func (c *SiloClient) DeleteRecommendationRecord(ctx context.Context, id string) error {
+	r, _, err := c.ReadRecommendationRecord(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !strings.Contains(r.Slug, "-reports-") || len(r.SourceConfig["stash_recommendation_report_archive"]) == 0 {
+		return fmt.Errorf("not a report archive")
+	}
+	return c.collectionRequest(ctx, http.MethodDelete, "/api/v2/admin/collections/"+url.PathEscape(id), nil, nil)
+}

@@ -99,7 +99,7 @@ func (c *SiloClient) collectionRequestETag(ctx context.Context, method, path str
 		return "", fmt.Errorf("silo: collection %s %s: HTTP %d: %s", method, path, resp.StatusCode, strings.TrimSpace(string(raw)))
 	}
 	if target != nil {
-		return resp.Header.Get("ETag"), json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(target)
+		return resp.Header.Get("ETag"), json.NewDecoder(io.LimitReader(resp.Body, 64<<20)).Decode(target)
 	}
 	return resp.Header.Get("ETag"), nil
 }

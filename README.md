@@ -49,3 +49,9 @@ node --test contrib/stashapp/test_stash_silo_subtitles.js contrib/stashapp/test_
 ## Weekly recommendations
 
 See [RECOMMENDATIONS.md](RECOMMENDATIONS.md) for the 50-item weekly GPT-6 Luna collections, settings, reports and spending controls.
+
+### Recommendation report history
+
+The report page uses your signed-in Silo administrator session, renews expired login and plugin credentials, and displays a clear sign-in message for unauthenticated or locked profiles. It does not expose report data publicly. Use **Saved reports** to review any retained run and **JSON report** to download the selected result.
+
+Completed, preview and failed runs retain their ordered picks, scene IDs, titles, reasons, confidence, source statistics and reported token usage for six calendar months. Every run is saved in a separate compressed, hidden Silo record so retention does not inflate the current control document beyond Silo’s write limit. Old report records are pruned during report maintenance and new runs; live recommendation collections and learning history are preserved. The upgrade archives the existing latest report without calling OpenAI or rebuilding collections. Reports already overwritten by earlier versions cannot be recovered from this new archive.

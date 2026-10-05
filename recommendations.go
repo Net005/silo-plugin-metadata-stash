@@ -445,6 +445,9 @@ func (s *recommendationServer) run(ctx context.Context, preview bool) (runErr er
 	state.Lease = hex.EncodeToString(token)
 	state.LeaseUntil = now.Add(50 * time.Minute)
 	report := recommendationReport{Phase: "Reading Stash history", Status: "running", Started: now, Week: recommendationPeriod(now, cfg), Model: "gpt-6-luna", Preview: preview || cfg.Preview, Libraries: []rec.LibraryReport{}}
+	if err = archiveRecommendationReport(ctx, client, cfg.Profile, record.LibraryID, state.Report, now); err != nil {
+		return fmt.Errorf("preserving previous recommendation report: %w", err)
+	}
 	state.Report = report
 	record, tag, err = s.save(ctx, client, record, tag, state)
 	if err != nil {
@@ -468,6 +471,9 @@ func (s *recommendationServer) run(ctx context.Context, preview bool) (runErr er
 		defer cancel()
 		if _, _, e := s.save(cleanup, client, record, tag, state); e != nil {
 			s.runtime.task.log.Error("Recommendation final report could not be saved", "error", e)
+		}
+		if e := archiveRecommendationReport(cleanup, client, cfg.Profile, record.LibraryID, report, time.Now()); e != nil {
+			s.runtime.task.log.Error("Recommendation report archive could not be saved", "error", e)
 		}
 	}()
 	progress := func(phase string) error {
@@ -794,10 +800,31 @@ func (s *recommendationServer) Handle(ctx context.Context, req *pluginv1.HandleH
 		if err != nil {
 			return respond(503, map[string]any{"error": "recommendation report unavailable"})
 		}
+		if e := s.preserveCurrentReport(ctx, client, cfg.Profile, state); e != nil {
+			return respond(503, map[string]any{"error": "Could not preserve recommendation report"})
+		}
 		s.mu.Lock()
 		active := s.running
 		s.mu.Unlock()
 		return respond(200, map[string]any{"worker_active_on_this_process": active, "lease_until": state.LeaseUntil, "report": state.Report, "monthly_spend_usd": state.Spend, "last_published_week": state.LastWeek, "dirty": state.Dirty})
+	case path == "/recommendations/history" && req.Method == "GET":
+		rows, e := recommendationReportHistory(ctx, client, cfg.Profile, time.Now())
+		if e != nil {
+			return respond(503, map[string]any{"error": "Report history unavailable"})
+		}
+		return respond(200, map[string]any{"reports": rows, "retention_months": 6})
+	case path == "/recommendations/history" && req.Method == "POST":
+		var input struct {
+			ID string `json:"report_id"`
+		}
+		if json.Unmarshal(req.Body, &input) != nil || input.ID == "" {
+			return respond(400, map[string]any{"error": "Choose a report"})
+		}
+		report, e := readRecommendationArchivedReport(ctx, client, cfg.Profile, input.ID, time.Now())
+		if e != nil {
+			return respond(404, map[string]any{"error": "Report not found"})
+		}
+		return respond(200, map[string]any{"report": report, "historical": true})
 	case req.Method == "POST" && (path == "/recommendations/dirty" || path == "/recommendations/dismiss"):
 		s.mu.Lock()
 		defer s.mu.Unlock()
