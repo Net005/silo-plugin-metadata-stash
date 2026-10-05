@@ -1,6 +1,6 @@
 # Weekly recommendations
 
-Stash Metadata v0.3.16 builds up to **500 verified items per collection** across all
+Stash Metadata v0.3.17 builds up to **500 verified items per collection** across all
 movie libraries using this plugin. The original nine kinds are `for-you`, `top-rated`,
 `revisit`, `favourites`, `watchlist`, `overlooked`, `different`, `recent`, `spotlight`.
 Names use the existing Stash prefix exactly, including trailing spaces.
@@ -116,7 +116,8 @@ The report page can also be opened from the plugin detail page’s More actions 
 ## Additional collections
 
 The default selection now includes fourteen kinds, each with up to 500 eligible
-items. The five additional kinds are local-only and add no OpenAI requests:
+items. The five additional kinds add no OpenAI requests. Four reuse existing validated
+Luna priorities where available, while new releases retain date ordering:
 
 - `monthly-spotlight` and `yearly-spotlight`: supported cast/studio/series themes
   selected with the calendar month or year as their rotation seed. They are
@@ -134,3 +135,25 @@ items. The five additional kinds are local-only and add no OpenAI requests:
 Existing custom `collections` arrays remain explicit selections: append the new
 kind IDs to enable them. Existing rating, exclusion, diversity and overlap rules
 still apply, so a collection can contain fewer than 500 items.
+
+### Reusing Luna rankings
+
+Monthly/yearly spotlight, cast spotlight and general spotlight reuse priorities
+from relevant existing collections in the same library. Eligibility, positive
+cast evidence, exclusions, diversity and the 500-item limit remain local.
+New releases keep descending release-date order and do not reuse AI ordering.
+
+Validated numeric priorities are retained with selected scenes in durable reports.
+Current priorities take precedence over the previous report's priorities; saved
+priorities expire for reuse after six weeks (report retention remains six months).
+Older reports without numeric priorities are not guessed to be AI rankings.
+Only the exact scene and Silo item mapping can reuse a priority.
+
+Source priorities are converted to within-source percentiles, so unrelated model
+score scales are not compared directly. Covered candidates blend 75% local rank
+with 25% reused priority; saved evidence has half weight when combined with
+current evidence. Only covered slots are reordered: uncovered scenes retain
+their local positions. Final local diversity rules still apply. The report page
+and JSON show coverage, saved coverage and source collection kinds. A priority
+can support several collections without another API call or spending reservation.
+These are bounded ranking improvements, not a claim of measured accuracy gains.

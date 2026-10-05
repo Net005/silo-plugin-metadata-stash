@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// Additional rails reuse local feedback; they never add OpenAI requests.
+// Additional rails do not request dedicated OpenAI rankings; four can reuse validated existing priorities.
 func LocalOnlyKind(k string) bool {
 	switch k {
 	case "monthly-spotlight", "yearly-spotlight", "cast-spotlight", "general-spotlight", "new-releases":

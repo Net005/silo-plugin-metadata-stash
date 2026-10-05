@@ -88,6 +88,7 @@ type Exposure struct {
 	LastWeek string `json:"last_week"`
 }
 type Pick struct {
+	LunaPriority *float64 `json:"luna_priority,omitempty"`
 	ID           string   `json:"id"`
 	MediaID      string   `json:"media_id"`
 	Title        string   `json:"title"`
@@ -99,11 +100,12 @@ type Pick struct {
 	PerformerIDs []string `json:"performer_ids,omitempty"`
 }
 type Collection struct {
-	Kind        string `json:"kind"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Candidates  []Pick `json:"candidates,omitempty"`
-	Picks       []Pick `json:"picks"`
+	RankingReuse *RankingReuse `json:"ranking_reuse,omitempty"`
+	Kind         string        `json:"kind"`
+	Title        string        `json:"title"`
+	Description  string        `json:"description"`
+	Candidates   []Pick        `json:"candidates,omitempty"`
+	Picks        []Pick        `json:"picks"`
 }
 type LibraryReport struct {
 	Matched        int          `json:"matched_scenes"`

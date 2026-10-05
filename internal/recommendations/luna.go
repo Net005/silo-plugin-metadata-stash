@@ -210,6 +210,10 @@ func applyPriorities(r *LibraryReport, raw []byte) error {
 	for i := range r.Collections {
 		c := &r.Collections[i]
 		scores := response.Collections[c.Kind]
+		for j := range c.Candidates {
+			v := scores[c.Candidates[j].ID]
+			c.Candidates[j].LunaPriority = &v
+		}
 		sort.SliceStable(c.Candidates, func(i, j int) bool { return scores[c.Candidates[i].ID] > scores[c.Candidates[j].ID] })
 	}
 	return nil

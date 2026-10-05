@@ -448,6 +448,7 @@ func (s *recommendationServer) run(ctx context.Context, preview bool) (runErr er
 	if err = archiveRecommendationReport(ctx, client, cfg.Profile, record.LibraryID, state.Report, now); err != nil {
 		return fmt.Errorf("preserving previous recommendation report: %w", err)
 	}
+	previousReport := state.Report
 	state.Report = report
 	record, tag, err = s.save(ctx, client, record, tag, state)
 	if err != nil {
@@ -567,11 +568,10 @@ func (s *recommendationServer) run(ctx context.Context, preview bool) (runErr er
 			continue
 		}
 		if cfg.APIKey == "" {
-			r.Warnings = append(r.Warnings, "OpenAI key missing; local ranking used")
-			continue
+			r.Warnings = append(r.Warnings, "OpenAI key missing; local ranking used where saved priorities are unavailable")
 		}
 		for j := range r.Collections {
-			if len(r.Collections[j].Candidates) == 0 || rec.LocalOnlyKind(r.Collections[j].Kind) {
+			if cfg.APIKey == "" || len(r.Collections[j].Candidates) == 0 || rec.LocalOnlyKind(r.Collections[j].Kind) {
 				continue
 			}
 			report.Phase = "Luna ranking library " + r.LibraryID + ": " + r.Collections[j].Kind
@@ -625,6 +625,15 @@ func (s *recommendationServer) run(ctx context.Context, preview bool) (runErr er
 				return err
 			}
 		}
+		var saved *rec.LibraryReport
+		if !previousReport.Started.IsZero() && !previousReport.Started.After(now) && now.Sub(previousReport.Started) <= 42*24*time.Hour {
+			for k := range previousReport.Libraries {
+				if previousReport.Libraries[k].LibraryID == r.LibraryID {
+					saved = &previousReport.Libraries[k]
+				}
+			}
+		}
+		rec.ReuseLunaRankings(r, saved)
 		rec.Finalize(r, options[r.LibraryID], state.Previous[r.LibraryID])
 		state.Report = report
 		record, tag, err = s.save(ctx, client, record, tag, state)
