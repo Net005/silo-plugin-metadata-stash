@@ -42,10 +42,11 @@ type Scene struct {
 	Groups      []struct {
 		Group Entity `json:"group"`
 	} `json:"groups"`
-	Files      []File `json:"files"`
-	MediaID    string `json:"media_id,omitempty"`
-	LibraryID  string `json:"library_id,omitempty"`
-	SiloPlayed bool   `json:"-"`
+	Files       []File `json:"files"`
+	MediaID     string `json:"media_id,omitempty"`
+	LibraryID   string `json:"library_id,omitempty"`
+	SiloPlayed  bool   `json:"-"`
+	HistoryOnly bool   `json:"-"`
 }
 type Options struct {
 	Enabled            bool     `json:"enabled"`
@@ -283,7 +284,18 @@ func excluded(s Scene, o Options) bool {
 func discovery(k string) bool { return k != "top-rated" && k != "revisit" && k != "watchlist" }
 func Build(library string, local, global []Scene, o Options, watch map[string]bool, previous map[string][]string, exposure map[string]Exposure, dismissed map[string]bool, now time.Time) LibraryReport {
 	p, n := learn(local, o, now)
-	gp, _ := learn(global, o, now)
+	currentGlobal, archivedGlobal := []Scene{}, []Scene{}
+	for _, row := range global {
+		if row.HistoryOnly {
+			if row.LibraryID != library {
+				archivedGlobal = append(archivedGlobal, row)
+			}
+		} else {
+			currentGlobal = append(currentGlobal, row)
+		}
+	}
+	gp, _ := learn(currentGlobal, o, now)
+	hp, _ := learn(archivedGlobal, o, now)
 	report := LibraryReport{LibraryID: library, FeedbackScenes: n, Collections: []Collection{}}
 	if n < 10 {
 		report.Warnings = append(report.Warnings, "Sparse local feedback; recommendations have limited confidence")
@@ -375,6 +387,12 @@ func Build(library string, local, global []Scene, o Options, watch map[string]bo
 				fit += .2 * g
 				rec += .2 * r
 				support += min(gn, 3)
+			}
+			if o.CrossLibrary {
+				h, recentHistory, hn := affinities(s, hp)
+				fit += .2 * h
+				rec += .2 * recentHistory
+				support += min(hn, 3)
 			}
 			favourite := false
 			for _, e := range s.Performers {

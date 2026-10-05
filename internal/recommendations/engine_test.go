@@ -156,3 +156,39 @@ func TestTwoHundredFiftyVerifiedUniquePicks(t *testing.T) {
 		t.Fatal("unbounded count accepted")
 	}
 }
+
+func TestRemovedReleaseHistoryInfluencesRichLibraryAndHonoursCrossLibrarySetting(t *testing.T) {
+	o := DefaultOptions()
+	o.Kinds = []string{"for-you"}
+	local := []Scene{{ID: "candidate", MediaID: "available", Studio: &Entity{ID: "target", Name: "Target"}}}
+	for i := 0; i < 20; i++ {
+		local = append(local, Scene{ID: fmt.Sprint(i), MediaID: fmt.Sprint(i), Plays: 1, Studio: &Entity{ID: "other", Name: "Other"}})
+	}
+	archived := Scene{ID: "archive-release:9", HistoryOnly: true, O: 5, Studio: &Entity{ID: "target", Name: "Target"}}
+	now := time.Now()
+	score := func(extra []Scene, cross bool) float64 {
+		opt := o
+		opt.CrossLibrary = cross
+		r := Build("16", local, append(append([]Scene(nil), local...), extra...), opt, nil, nil, nil, nil, now)
+		for _, c := range r.Collections {
+			for _, p := range c.Candidates {
+				if p.ID == "candidate" {
+					return p.Score
+				}
+			}
+		}
+		t.Fatal("candidate absent")
+		return 0
+	}
+	baseline := score(nil, true)
+	if score([]Scene{archived}, true) <= baseline {
+		t.Fatal("archive ignored in rich library")
+	}
+	if score([]Scene{archived}, false) != score(nil, false) {
+		t.Fatal("cross-library setting ignored")
+	}
+	archived.LibraryID = "16"
+	if score([]Scene{archived}, true) != baseline {
+		t.Fatal("assigned archive was double-counted globally")
+	}
+}

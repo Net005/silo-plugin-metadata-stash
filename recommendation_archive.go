@@ -159,7 +159,7 @@ func archiveEntities(scenes []rec.Scene) map[string]map[string]rec.Entity {
 	return out
 }
 func archiveReleaseScene(r recommendationRelease, entities map[string]map[string]rec.Entity) rec.Scene {
-	row := rec.Scene{ID: "archive-release:" + strconv.FormatInt(r.ID, 10), Title: r.Title, Code: r.Code}
+	row := rec.Scene{ID: "archive-release:" + strconv.FormatInt(r.ID, 10), HistoryOnly: true, Title: r.Title, Code: r.Code}
 	lookup := func(kind, name string) rec.Entity { return entities[kind][strings.ToLower(strings.TrimSpace(name))] }
 	if e := lookup("studio", r.Studio); e.ID != "" {
 		row.Studio = &e
