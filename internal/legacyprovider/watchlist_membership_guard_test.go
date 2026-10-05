@@ -19,7 +19,7 @@ func TestInboundWatchlistDoesNotUndoLocalRemoval(t *testing.T) {
 	}))
 	defer server.Close()
 	c := NewSiloClient(server.URL, "key")
-	err := c.guardedCollectionMembership(t.Context(), siloCollection{ID: "watch", SourceConfig: config}, "scene", true, false, 0)
+	err := c.guardedCollectionMembership(t.Context(), siloCollection{ID: "watch", SourceConfig: config}, "scene", true, true, 0)
 	if err == nil || writes != 0 {
 		t.Fatalf("local removal overwritten: %v writes=%d", err, writes)
 	}

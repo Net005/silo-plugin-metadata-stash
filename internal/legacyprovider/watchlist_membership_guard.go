@@ -26,6 +26,12 @@ func (c *SiloClient) guardedCollectionMembership(ctx context.Context, collection
 	if err := c.collectionRequest(ctx, http.MethodGet, path, nil, &current); err != nil {
 		return err
 	}
+	// The caller snapshot can precede a local edit; read membership again.
+	members, err := c.collectionMembers(ctx, collection.ID)
+	if err != nil {
+		return err
+	}
+	_, wasMember = members[media]
 	raw := current.SourceConfig["stash_watchlist_outbox"]
 	var journal map[string]json.RawMessage
 	baseline := map[string]bool{}

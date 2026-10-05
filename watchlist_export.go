@@ -348,9 +348,11 @@ func (s *runtimeServer) backfillWatchlistLocked(ctx context.Context) (int, error
 				return done, e
 			}
 			delete(j.Pending, media)
-			j.Baseline, e = s.watchlistMembers(ctx, row.ID)
-			if e != nil {
-				return done, e
+			// Acknowledge only this intent, preserving concurrent local edits.
+			if intent.Desired {
+				j.Baseline[media] = true
+			} else {
+				delete(j.Baseline, media)
 			}
 			if e = s.saveWatchlistState(ctx, r, j, tag); e != nil {
 				return done, e
