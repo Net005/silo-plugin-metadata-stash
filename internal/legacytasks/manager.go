@@ -21,7 +21,7 @@ type Manager struct {
 type Config struct {
 	JAVBeaconURL, JAVBeaconKey                               string
 	StashURL, StashKey                                       string
-	SiloURL, SiloKey, SiloLibraryID                          string
+	SiloURL, SiloKey                                         string
 	StashFilters, StashPrefix, ReleaseFilters, ReleasePrefix string
 	ExcludedScenes                                           string
 }
@@ -35,10 +35,8 @@ func (m *Manager) Configure(c Config) {
 	m.provider.Configure(provider.Config{BaseURL: c.JAVBeaconURL, APIKey: c.JAVBeaconKey})
 	m.provider.ConfigureStashConnection(c.StashURL, c.StashKey)
 	m.provider.ConfigureExcludedScenes(c.ExcludedScenes)
-	m.provider.ConfigureSiloConnection(c.SiloURL, c.SiloLibraryID, c.SiloKey)
+	m.provider.ConfigureSiloConnection(c.SiloURL, "", c.SiloKey)
 	m.provider.ConfigureSavedFilters(c.StashFilters, c.StashPrefix, c.ReleaseFilters, c.ReleasePrefix)
-	m.tasks.mu.Lock()
-	m.tasks.mu.Unlock()
 	if c.SiloURL != "" && c.SiloKey != "" && ((c.StashURL != "" && c.StashKey != "") || (c.JAVBeaconURL != "" && c.JAVBeaconKey != "")) {
 		m.collectionOnce.Do(func() { go m.tasks.poll(); go m.tasks.pollWatchListCollection() })
 	}

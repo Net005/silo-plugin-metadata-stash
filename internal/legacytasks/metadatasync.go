@@ -249,7 +249,7 @@ func (s *collectionSyncTaskServer) syncChangedMetadata(ctx context.Context, sinc
 	fallback := map[string][]provider.MetadataChange{}
 	checkedPaths := map[string]bool{}
 	for _, change := range feed.Items {
-		libraryID := p.SiloLibraryID()
+		libraryID := ""
 		if change.Path != "" {
 			libraryID = libraryForMetadataPath(change.Path, libraries)
 			if libraryID == "" {

@@ -38,7 +38,6 @@ type runtimeServer struct {
 	pollOnce                                                 sync.Once
 	task                                                     *scheduledTaskServer
 	legacy                                                   *legacytasks.Manager
-	siloLibraryID                                            string
 	stashFilters, stashPrefix, releaseFilters, releasePrefix string
 }
 
@@ -67,13 +66,12 @@ func (s *runtimeServer) Configure(_ context.Context, req *pluginv1.ConfigureRequ
 		if siloKey != "" {
 			s.siloKey = siloKey
 		}
-		s.siloLibraryID = text(v["silo_library_id"])
 		s.stashFilters = text(v["stash_saved_filter_selection"])
 		s.stashPrefix = literalText(v["stash_saved_filter_prefix"])
 		s.releaseFilters = text(v["saved_filter_selection"])
 		s.releasePrefix = literalText(v["saved_filter_prefix"])
 		legacy := s.legacy
-		config := legacytasks.Config{JAVBeaconURL: s.artwork.base, JAVBeaconKey: s.artwork.key, StashURL: s.client.base, StashKey: s.client.key, SiloURL: s.siloBase, SiloKey: s.siloKey, SiloLibraryID: s.siloLibraryID, StashFilters: s.stashFilters, StashPrefix: s.stashPrefix, ReleaseFilters: s.releaseFilters, ReleasePrefix: s.releasePrefix}
+		config := legacytasks.Config{JAVBeaconURL: s.artwork.base, JAVBeaconKey: s.artwork.key, StashURL: s.client.base, StashKey: s.client.key, SiloURL: s.siloBase, SiloKey: s.siloKey, StashFilters: s.stashFilters, StashPrefix: s.stashPrefix, ReleaseFilters: s.releaseFilters, ReleasePrefix: s.releasePrefix}
 		config.ExcludedScenes = text(v["playback_excluded_scene_ids"])
 		s.mu.Unlock()
 		if legacy != nil {

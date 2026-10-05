@@ -1,6 +1,6 @@
 {
   "plugin_id": "stash.metadata",
-  "version": "0.2.23",
+  "version": "0.2.24",
   "checksum": "__CHECKSUM__",
   "silo_api_version": "v1",
   "presentation": {
@@ -130,7 +130,7 @@
       "key": "connection",
       "title": "StashApp Connection",
       "description": "Direct StashApp GraphQL connection.",
-      "json_schema": "{\"type\":\"object\",\"properties\":{\"base_url\":{\"type\":\"string\",\"format\":\"uri\",\"minLength\":1},\"api_key\":{\"type\":\"string\",\"minLength\":1},\"silo_base_url\":{\"type\":\"string\",\"format\":\"uri\"},\"silo_api_key\":{\"type\":\"string\"},\"javbeacon_url\":{\"type\":\"string\",\"format\":\"uri\"},\"javbeacon_api_key\":{\"type\":\"string\"},\"silo_library_id\":{\"type\":\"string\"},\"stash_saved_filter_selection\":{\"type\":\"string\"},\"stash_saved_filter_prefix\":{\"type\":\"string\"},\"saved_filter_selection\":{\"type\":\"string\"},\"saved_filter_prefix\":{\"type\":\"string\"},\"playback_excluded_scene_ids\":{\"type\":\"string\"}},\"required\":[\"base_url\"],\"additionalProperties\":false}",
+      "json_schema": "{\"type\":\"object\",\"properties\":{\"base_url\":{\"type\":\"string\",\"format\":\"uri\",\"minLength\":1},\"api_key\":{\"type\":\"string\",\"minLength\":1},\"silo_base_url\":{\"type\":\"string\",\"format\":\"uri\"},\"silo_api_key\":{\"type\":\"string\"},\"javbeacon_url\":{\"type\":\"string\",\"format\":\"uri\"},\"javbeacon_api_key\":{\"type\":\"string\"},\"stash_saved_filter_selection\":{\"type\":\"string\"},\"stash_saved_filter_prefix\":{\"type\":\"string\"},\"saved_filter_selection\":{\"type\":\"string\"},\"saved_filter_prefix\":{\"type\":\"string\"},\"playback_excluded_scene_ids\":{\"type\":\"string\"}},\"required\":[\"base_url\"],\"additionalProperties\":false}",
       "required": true,
       "admin_form": {
         "fields": [
@@ -171,12 +171,6 @@
             "label": "Silo admin API key",
             "control": "ADMIN_FORM_CONTROL_PASSWORD",
             "secret": true,
-            "required": false
-          },
-          {
-            "key": "silo_library_id",
-            "label": "Silo library ID for changed metadata refresh",
-            "control": "ADMIN_FORM_CONTROL_TEXT",
             "required": false
           },
           {
