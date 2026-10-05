@@ -112,19 +112,14 @@ func (c *SiloClient) ReconcileRecommendation(ctx context.Context, r Recommendati
 
 // SetRecommendationArtwork reuses only a verified member's cached Silo images.
 // No title-based lookup or unrelated external movie artwork is involved.
-func (c *SiloClient) SetRecommendationArtwork(ctx context.Context, r RecommendationRecord, art CollectionArtwork) error {
+func (c *SiloClient) SetRecommendationArtwork(ctx context.Context, r RecommendationRecord, art CollectionArtwork, alternatives ...CollectionArtwork) error {
 	var current siloCollection
 	path := "/api/v2/admin/collections/" + url.PathEscape(r.ID)
 	if err := c.collectionRequest(ctx, http.MethodGet, path, nil, &current); err != nil {
 		return err
 	}
-	var old string
-	_ = json.Unmarshal(current.SourceConfig["stash_recommendation_artwork"], &old)
-	if old == art.MediaID {
-		return nil
-	}
 	if art.PosterURL != "" {
-		if err := c.uploadCollectionArtwork(ctx, r.ID, "poster", art.PosterURL); err != nil {
+		if err := c.SetUniqueCollectionPoster(ctx, r.ID, append([]CollectionArtwork{art}, alternatives...)); err != nil {
 			return err
 		}
 	}

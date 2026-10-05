@@ -151,6 +151,10 @@ func (c *SiloClient) uploadCollectionArtworkFile(ctx context.Context, path, sour
 	if len(image) > maxImageBytes {
 		return fmt.Errorf("artwork exceeds Silo's 10 MB limit")
 	}
+	return c.uploadCollectionArtworkBytes(ctx, path, image)
+}
+
+func (c *SiloClient) uploadCollectionArtworkBytes(ctx context.Context, path string, image []byte) error {
 	contentType := http.DetectContentType(image)
 	ext := map[string]string{"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}[contentType]
 	if ext == "" {
@@ -171,7 +175,7 @@ func (c *SiloClient) uploadCollectionArtworkFile(ctx context.Context, path, sour
 	if err := form.Close(); err != nil {
 		return err
 	}
-	req, err = http.NewRequestWithContext(ctx, http.MethodPut, c.baseURL+path, &body)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, c.baseURL+path, &body)
 	if err != nil {
 		return err
 	}
@@ -207,8 +211,8 @@ func (c *SiloClient) syncCollectionArtwork(ctx context.Context, collection siloC
 	for _, id := range spec.MediaIDs {
 		members[id] = true
 	}
-	if previous.Policy == 2 && previous.Bucket == bucket && (previous.PosterID == "" || members[previous.PosterID]) && (previous.BackdropID == "" || members[previous.BackdropID]) {
-		return false, nil
+	if previous.Policy == 3 && len(current.SourceConfig[uniquePosterKey]) > 0 && previous.Bucket == bucket && (previous.PosterID == "" || members[previous.PosterID]) && (previous.BackdropID == "" || members[previous.BackdropID]) {
+		return false, c.SetUniqueCollectionPoster(ctx, collection.ID, append([]CollectionArtwork{poster}, spec.Artwork...))
 	}
 	if c.collectionArtworkResolver != nil {
 		if poster.StashSceneID != "" {
@@ -229,7 +233,7 @@ func (c *SiloClient) syncCollectionArtwork(ctx context.Context, collection siloC
 		}
 	}
 	if poster.PosterURL != "" {
-		if err := c.uploadCollectionArtwork(ctx, collection.ID, "poster", poster.PosterURL); err != nil {
+		if err := c.SetUniqueCollectionPoster(ctx, collection.ID, append([]CollectionArtwork{poster}, spec.Artwork...)); err != nil {
 			return false, err
 		}
 	}
@@ -251,7 +255,7 @@ func (c *SiloClient) syncCollectionArtwork(ctx context.Context, collection siloC
 	if config == nil {
 		config = map[string]json.RawMessage{}
 	}
-	marker, err := json.Marshal(artworkMarker{Policy: 2, Bucket: bucket, PosterID: poster.MediaID, BackdropID: backdrop.MediaID})
+	marker, err := json.Marshal(artworkMarker{Policy: 3, Bucket: bucket, PosterID: poster.MediaID, BackdropID: backdrop.MediaID})
 	if err != nil {
 		return false, err
 	}

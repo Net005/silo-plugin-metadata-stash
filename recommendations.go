@@ -717,8 +717,14 @@ func (s *recommendationServer) run(ctx context.Context, preview bool) (runErr er
 			if err = client.UpdateRecommendationRecord(ctx, current.ID, t, map[string]any{"title": prefix + col.Title, "description": provider.RecommendationOwner + " " + col.Description, "visibility": "visible", "featured": true, "source_config": current.SourceConfig}); err != nil {
 				return err
 			}
+			artChoices := []provider.CollectionArtwork{}
+			for _, id := range ids {
+				if a, ok := artifacts[r.LibraryID][id]; ok {
+					artChoices = append(artChoices, provider.CollectionArtwork{MediaID: a.ContentID, PosterURL: a.PosterURL, BackdropURL: a.BackdropURL})
+				}
+			}
 			if item, ok := artifacts[r.LibraryID][ids[0]]; ok {
-				if e = client.SetRecommendationArtwork(ctx, current, provider.CollectionArtwork{MediaID: item.ContentID, PosterURL: item.PosterURL, BackdropURL: item.BackdropURL}); e != nil {
+				if e = client.SetRecommendationArtwork(ctx, current, provider.CollectionArtwork{MediaID: item.ContentID, PosterURL: item.PosterURL, BackdropURL: item.BackdropURL}, artChoices...); e != nil {
 					report.Warnings = append(report.Warnings, "Collection artwork caching failed for "+col.Kind+" in library "+r.LibraryID)
 				}
 			}

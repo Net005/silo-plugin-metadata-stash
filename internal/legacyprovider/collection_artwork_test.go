@@ -67,6 +67,14 @@ func TestSyncCollectionArtworkUploadsOncePerWindow(t *testing.T) {
 	// A legacy marker in the same window must not preserve a wrong poster.
 	marker := map[string]json.RawMessage{"javbeacon_artwork": json.RawMessage(`{"bucket":82900,"poster_media_id":"m1"}`)}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v2/admin/collections" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"items": []siloCollection{{ID: "c1", SourceConfig: marker}}})
+			return
+		}
+		if r.URL.Path == "/source-poster" {
+			w.Write(collectionTitleCard("scene", "Member"))
+			return
+		}
 		if r.URL.Path == "/api/v2/admin/collections/c1" {
 			w.Header().Set("ETag", `"art-v1"`)
 			switch r.Method {
@@ -91,7 +99,7 @@ func TestSyncCollectionArtworkUploadsOncePerWindow(t *testing.T) {
 			if r.Method != http.MethodPut {
 				t.Errorf("unexpected method %s", r.Method)
 			}
-			if err := r.ParseMultipartForm(1 << 20); err != nil || r.FormValue("source_url") == "" {
+			if err := r.ParseMultipartForm(1 << 20); err != nil || (r.FormValue("source_url") == "" && r.MultipartForm.File["image"] == nil) {
 				t.Errorf("missing source_url: %v", err)
 			}
 			uploads++
@@ -103,7 +111,7 @@ func TestSyncCollectionArtworkUploadsOncePerWindow(t *testing.T) {
 	}))
 	defer server.Close()
 	client := NewSiloClient(server.URL, "test")
-	spec := CollectionSpec{Kind: "watchlist", LibraryID: "lib", MediaIDs: []string{"m1"}, Artwork: []CollectionArtwork{{MediaID: "m1", PosterURL: "https://art.test/poster", BackdropURL: "https://art.test/backdrop"}}}
+	spec := CollectionSpec{Kind: "watchlist", LibraryID: "lib", MediaIDs: []string{"m1"}, Artwork: []CollectionArtwork{{MediaID: "m1", PosterURL: server.URL + "/source-poster", BackdropURL: "https://art.test/backdrop"}}}
 	now := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
 	marker["javbeacon_artwork"], _ = json.Marshal(artworkMarker{Bucket: now.Unix() / int64(artworkRotation.Seconds()), PosterID: "m1"})
 	for i := 0; i < 2; i++ {

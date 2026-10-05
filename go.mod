@@ -5,6 +5,7 @@ go 1.26.0
 require (
 	github.com/Silo-Server/silo-plugin-sdk v0.15.0
 	github.com/hashicorp/go-hclog v1.6.3
+	golang.org/x/image v0.38.0
 	google.golang.org/protobuf v1.36.12
 )
 
