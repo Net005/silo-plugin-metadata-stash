@@ -177,17 +177,16 @@ func (s *metadataServer) Search(ctx context.Context, req *pluginv1.SearchMetadat
 		if err != nil {
 			return nil, err
 		}
-		if row == nil {
-			return &pluginv1.SearchMetadataResponse{}, nil
-		}
-		result := searchResult(*row)
-		if art := s.runtime.sceneArtwork(ctx, row.ID); art != nil {
-			result.ProviderIds = providerIDsWithRelease(row.ID, art.ReleaseID)
-			if art.PosterPath != "" {
-				result.ImageUrl = backendImagePath(art.PosterPath)
+		if row != nil {
+			result := searchResult(*row)
+			if art := s.runtime.sceneArtwork(ctx, row.ID); art != nil {
+				result.ProviderIds = providerIDsWithRelease(row.ID, art.ReleaseID)
+				if art.PosterPath != "" {
+					result.ImageUrl = backendImagePath(art.PosterPath)
+				}
 			}
+			return &pluginv1.SearchMetadataResponse{Results: []*pluginv1.ProviderSearchResult{result}}, nil
 		}
-		return &pluginv1.SearchMetadataResponse{Results: []*pluginv1.ProviderSearchResult{result}}, nil
 	}
 	if releaseID := legacyReleaseID("", req.GetProviderIds()); releaseID > 0 {
 		release, err := s.fetchLegacy(ctx, releaseID)

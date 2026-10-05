@@ -154,12 +154,41 @@ func (c *stashClient) search(ctx context.Context, query string) ([]scene, error)
 	matches := []scene{}
 	seen := map[string]bool{}
 	for _, term := range terms {
+		var exactRows struct {
+			Title struct {
+				Scenes []scene `json:"scenes"`
+			} `json:"exactTitle"`
+			Code struct {
+				Scenes []scene `json:"scenes"`
+			} `json:"exactCode"`
+		}
+		err := c.graphql(ctx, `query($term:String!) {
+          exactTitle:findScenes(scene_filter:{title:{value:$term,modifier:EQUALS}},filter:{per_page:100}){scenes{`+sceneFields+`}}
+          exactCode:findScenes(scene_filter:{code:{value:$term,modifier:EQUALS}},filter:{per_page:100}){scenes{`+sceneFields+`}}
+        }`, map[string]any{"term": term}, &exactRows)
+		if err != nil {
+			return nil, err
+		}
+		exactFound := false
+		for _, item := range append(exactRows.Title.Scenes, exactRows.Code.Scenes...) {
+			if compact(item.Title) != compact(term) && compact(item.Code) != compact(term) {
+				continue
+			}
+			exactFound = true
+			if !seen[item.ID] {
+				matches = append(matches, item)
+				seen[item.ID] = true
+			}
+		}
+		if exactFound {
+			continue
+		}
 		var data struct {
 			Found struct {
 				Scenes []scene `json:"scenes"`
 			} `json:"findScenes"`
 		}
-		err := c.graphql(ctx, `query($filter:FindFilterType) { findScenes(filter:$filter) { scenes { `+sceneFields+` } } }`, map[string]any{"filter": map[string]any{"q": term, "per_page": 50}}, &data)
+		err = c.graphql(ctx, `query($filter:FindFilterType) { findScenes(filter:$filter) { scenes { `+sceneFields+` } } }`, map[string]any{"filter": map[string]any{"q": term, "per_page": 50}}, &data)
 		if err != nil {
 			return nil, err
 		}

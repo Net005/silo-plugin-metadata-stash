@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	pluginv1 "github.com/Silo-Server/silo-plugin-sdk/pkg/pluginproto/silo/plugin/v1"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -144,5 +145,43 @@ func TestConcurrentSceneMetadataLookupsAreCoalesced(t *testing.T) {
 	wg.Wait()
 	if calls.Load() != 1 {
 		t.Fatalf("scene queries=%d", calls.Load())
+	}
+}
+
+func TestExactTitleSearchFindsReplacementOutsideBroadSearchWindow(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Query string `json:"query"`
+		}
+		json.NewDecoder(r.Body).Decode(&body)
+		if !strings.Contains(body.Query, "exactTitle:findScenes") {
+			t.Error("broad text search should not run after exact title hit")
+		}
+		w.Write([]byte(`{"data":{"exactTitle":{"scenes":[{"id":"39192","title":"All The Way Through","code":"all-the-way-through"}]},"exactCode":{"scenes":[]}}}`))
+	}))
+	defer server.Close()
+	rows, e := (&stashClient{base: server.URL, key: "secret"}).search(t.Context(), "All the way through")
+	if e != nil || len(rows) != 1 || rows[0].ID != "39192" {
+		t.Fatal(rows, e)
+	}
+}
+
+func TestManualSearchContinuesAfterDeletedProviderScene(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Query string `json:"query"`
+		}
+		json.NewDecoder(r.Body).Decode(&body)
+		if strings.Contains(body.Query, "findScene(id:") {
+			w.Write([]byte(`{"data":{"findScene":null}}`))
+			return
+		}
+		w.Write([]byte(`{"data":{"exactTitle":{"scenes":[{"id":"39192","title":"All The Way Through"}]},"exactCode":{"scenes":[]}}}`))
+	}))
+	defer server.Close()
+	s := metadataServer{runtime: &runtimeServer{client: &stashClient{base: server.URL, key: "secret"}}}
+	result, e := s.Search(t.Context(), &pluginv1.SearchMetadataRequest{ItemType: "movie", Query: "All the way through", ProviderIds: providerIDs("1074")})
+	if e != nil || len(result.Results) != 1 || result.Results[0].ProviderIds.AsMap()["stash"] != "39192" {
+		t.Fatal(result, e)
 	}
 }
