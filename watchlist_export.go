@@ -28,10 +28,12 @@ type watchlistActionVersion struct {
 	Desired bool      `json:"desired"`
 }
 type watchlistJournal struct {
-	LastActions map[string]watchlistActionVersion `json:"last_actions,omitempty"`
-	Version     int                               `json:"version"`
-	Baseline    map[string]bool                   `json:"baseline"`
-	Pending     map[string]watchlistIntent        `json:"pending"`
+	NativeBaseline map[string]bool                   `json:"native_baseline,omitempty"`
+	NativeSeeded   bool                              `json:"native_seeded,omitempty"`
+	LastActions    map[string]watchlistActionVersion `json:"last_actions,omitempty"`
+	Version        int                               `json:"version"`
+	Baseline       map[string]bool                   `json:"baseline"`
+	Pending        map[string]watchlistIntent        `json:"pending"`
 }
 type watchlistCollection struct {
 	ID           string                     `json:"id"`
@@ -275,8 +277,49 @@ func (s *runtimeServer) backfillWatchlist(ctx context.Context) (int, error) {
 	defer s.watchlistMu.Unlock()
 	return s.backfillWatchlistLocked(ctx)
 }
+func (s *runtimeServer) nativeWatchlistMembers(ctx context.Context) (map[string]bool, error) {
+	out := map[string]bool{}
+	cursor := ""
+	for page := 0; page < 100; page++ {
+		path := "/api/v2/watchlist?limit=200"
+		if cursor != "" {
+			path += "&cursor=" + url.QueryEscape(cursor)
+		}
+		var data struct {
+			Items []struct {
+				ID   string `json:"content_id"`
+				Type string `json:"type"`
+			} `json:"items"`
+			Page struct {
+				More bool   `json:"has_more"`
+				Next string `json:"next_cursor"`
+			} `json:"page"`
+		}
+		if _, err := s.siloWatchlistRequest(ctx, "GET", path, nil, &data, ""); err != nil {
+			return nil, err
+		}
+		for _, item := range data.Items {
+			if item.Type == "movie" && item.ID != "" {
+				out[item.ID] = true
+			}
+		}
+		if !data.Page.More {
+			return out, nil
+		}
+		if data.Page.Next == "" || data.Page.Next == cursor {
+			return nil, fmt.Errorf("native Watchlist pagination stalled")
+		}
+		cursor = data.Page.Next
+	}
+	return nil, fmt.Errorf("native Watchlist pagination limit")
+}
+
 func (s *runtimeServer) backfillWatchlistLocked(ctx context.Context) (int, error) {
 	rows, e := s.selectedWatchlistCollections(ctx)
+	if e != nil {
+		return 0, e
+	}
+	native, e := s.nativeWatchlistMembers(ctx)
 	if e != nil {
 		return 0, e
 	}
@@ -293,6 +336,8 @@ func (s *runtimeServer) backfillWatchlistLocked(ctx context.Context) (int, error
 		}
 		if j.Version == 0 {
 			j.Version = 1
+			j.NativeBaseline = native
+			j.NativeSeeded = true
 			j.Baseline = members
 			if e = s.saveWatchlistState(ctx, r, j, tag); e != nil {
 				return done, e
@@ -300,6 +345,50 @@ func (s *runtimeServer) backfillWatchlistLocked(ctx context.Context) (int, error
 			continue
 		}
 		changed := false
+		if !j.NativeSeeded {
+			j.NativeBaseline = native
+			j.NativeSeeded = true
+			changed = true
+		} else {
+			deltas := map[string]bool{}
+			for media := range native {
+				if !j.NativeBaseline[media] {
+					deltas[media] = true
+				}
+			}
+			for media := range j.NativeBaseline {
+				if !native[media] {
+					deltas[media] = false
+				}
+			}
+			for media, desired := range deltas {
+				var files struct {
+					Items []struct {
+						Library string `json:"library_id"`
+					} `json:"items"`
+				}
+				if _, e = s.siloWatchlistRequest(ctx, "GET", "/api/v2/admin/items/"+url.PathEscape(media)+"/files?limit=200", nil, &files, ""); e != nil {
+					return done, e
+				}
+				for _, file := range files.Items {
+					if file.Library == row.LibraryID {
+						intent := watchlistIntent{Desired: desired, Changed: time.Now()}
+						j.Pending[media] = intent
+						j.LastActions[media] = watchlistActionVersion{intent.Changed, desired}
+						if desired {
+							j.Baseline[media] = true
+						} else {
+							delete(j.Baseline, media)
+						}
+						break
+					}
+				}
+			}
+			if len(deltas) > 0 {
+				j.NativeBaseline = native
+				changed = true
+			}
+		}
 		for id := range members {
 			if !j.Baseline[id] && j.Pending[id].Changed.IsZero() {
 				j.Pending[id] = watchlistIntent{Desired: true, Changed: time.Now()}
@@ -435,7 +524,7 @@ func (s *runtimeServer) applyWatchlistEvent(ctx context.Context, event *pluginv1
 	return e
 }
 func (s *runtimeServer) pollWatchlistExports() {
-	ticker := time.NewTicker(15 * time.Second)
+	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 	for {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)

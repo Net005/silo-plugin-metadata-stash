@@ -17,6 +17,7 @@ import (
 func TestWatchlistLocalFirstDurableRetryAndNewerActionWins(t *testing.T) {
 	members := map[string]bool{}
 	config := map[string]json.RawMessage{}
+	native := false
 	remote := false
 	fail := true
 	mutations := 0
@@ -24,6 +25,12 @@ func TestWatchlistLocalFirstDurableRetryAndNewerActionWins(t *testing.T) {
 		w.Header().Set("ETag", `"1"`)
 		row := watchlistCollection{ID: "wl", LibraryID: "16", Title: "Stash | Watchlist", Slug: "javbeacon-stash-preset-7-library-16", Description: "Managed by JAVBeacon metadata plugin.", SourceConfig: config}
 		switch r.URL.Path {
+		case "/api/v2/watchlist":
+			if native {
+				fmt.Fprint(w, `{"items":[{"content_id":"local-1","type":"movie"}],"page":{"has_more":false}}`)
+			} else {
+				fmt.Fprint(w, `{"items":[],"page":{"has_more":false}}`)
+			}
 		case "/api/v2/admin/collections":
 			json.NewEncoder(w).Encode(map[string]any{"items": []watchlistCollection{row}})
 		case "/api/v2/admin/collections/wl":
@@ -154,4 +161,14 @@ func TestWatchlistLocalFirstDurableRetryAndNewerActionWins(t *testing.T) {
 	if _, e := rt.backfillWatchlist(t.Context()); e != nil || remote {
 		t.Fatalf("manual collection removal %v", e)
 	}
+	// Native items without IMDb/TMDB IDs are still recovered from local changes.
+	native = true
+	if _, e := rt.backfillWatchlist(t.Context()); e != nil || !remote || !members["local-1"] {
+		t.Fatalf("native add not exported: %v", e)
+	}
+	native = false
+	if _, e := rt.backfillWatchlist(t.Context()); e != nil || remote || members["local-1"] {
+		t.Fatalf("native removal not exported: %v", e)
+	}
+
 }
