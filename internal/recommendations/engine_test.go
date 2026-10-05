@@ -160,7 +160,8 @@ func TestTwoHundredFiftyVerifiedUniquePicks(t *testing.T) {
 func TestRemovedReleaseHistoryInfluencesRichLibraryAndHonoursCrossLibrarySetting(t *testing.T) {
 	o := DefaultOptions()
 	o.Kinds = []string{"for-you"}
-	local := []Scene{{ID: "candidate", MediaID: "available", Studio: &Entity{ID: "target", Name: "Target"}}}
+	rating := 90
+	local := []Scene{{ID: "candidate", MediaID: "available", Rating: &rating, Studio: &Entity{ID: "target", Name: "Target"}}}
 	for i := 0; i < 20; i++ {
 		local = append(local, Scene{ID: fmt.Sprint(i), MediaID: fmt.Sprint(i), Plays: 1, Studio: &Entity{ID: "other", Name: "Other"}})
 	}
