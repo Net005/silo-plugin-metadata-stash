@@ -1,6 +1,6 @@
 # Weekly recommendations
 
-Stash Metadata v0.3.0 builds up to **50 verified items per collection** across all
+Stash Metadata v0.3.1 builds up to **50 verified items per collection** across all
 movie libraries using this plugin. The nine kinds are `for-you`, `top-rated`,
 `revisit`, `favourites`, `watchlist`, `overlooked`, `different`, `recent`, `spotlight`.
 Names use the existing Stash prefix exactly, including trailing spaces.
@@ -77,7 +77,7 @@ in Silo's database. It survives restarts/upgrades. Do not delete it to reset API
 
 Luna receives anonymised entity IDs, scores, ratings, confidence and factual evidence.
 No titles, narratives, images, paths or credentials are sent. Structured output must
-contain exactly the local candidate IDs; unknown/duplicate/omitted IDs fall back to
+assign priorities to exactly the local candidate IDs through required schema properties; unknown/duplicate/omitted IDs fall back to
 local ordering. Explanations stay grounded in the local evidence. API requests use
 `store:false`, no tools, bounded input and bounded output, including reasoning.
 
