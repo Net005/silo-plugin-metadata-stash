@@ -4,7 +4,7 @@
 # pulling this image directly - see README.md - but publishing it to GHCR
 # alongside the raw per-platform binaries (release.yml) gives every consumer
 # a pinned, reproducible artifact to pull from either place.
-FROM golang:1.26-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
 
 WORKDIR /src
 
@@ -14,7 +14,9 @@ RUN go mod download
 COPY . .
 
 ARG VERSION=dev
-RUN CGO_ENABLED=0 go build -trimpath -buildvcs=false \
+ARG TARGETOS
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -buildvcs=false \
     -ldflags="-s -w -X main.version=${VERSION}" \
     -o /out/plugin .
 

@@ -15,7 +15,12 @@ if not re.fullmatch(r"v\d+\.\d+\.\d+", args.tag):
     parser.error("expected a release version tag")
 archive = pathlib.Path(args.archive)
 source = pathlib.Path("stash-plugin-source.yml").read_text()
+companion = pathlib.Path("contrib/stashapp/stash-silo-companion.yml").read_text()
+version = re.search(r"(?m)^version: ([0-9]+\.[0-9]+\.[0-9]+)$", companion)
+if version is None:
+    raise ValueError("companion version is missing")
 values = {
+    "version": version.group(1),
     "date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
     "path": f"https://github.com/Net005/silo-plugin-metadata-stash/releases/download/{args.tag}/{archive.name}",
     "sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),

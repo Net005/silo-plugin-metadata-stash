@@ -1,6 +1,6 @@
 # Weekly recommendations
 
-Stash Metadata v0.3.2 builds up to **50 verified items per collection** across all
+Stash Metadata v0.3.3 builds up to **50 verified items per collection** across all
 movie libraries using this plugin. The nine kinds are `for-you`, `top-rated`,
 `revisit`, `favourites`, `watchlist`, `overlooked`, `different`, `recent`, `spotlight`.
 Names use the existing Stash prefix exactly, including trailing spaces.
