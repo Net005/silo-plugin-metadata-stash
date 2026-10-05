@@ -32,6 +32,30 @@ type scheduledTaskServer struct {
 
 func (s *scheduledTaskServer) Run(ctx context.Context, req *pluginv1.RunScheduledTaskRequest) (*pluginv1.RunScheduledTaskResponse, error) {
 	key := req.GetTaskKey()
+	for _, name := range []string{"recommendation-sync", "recommendation-preview"} {
+		if key == name || strings.HasSuffix(key, ":"+name) {
+			if s.runtime.recommendations == nil {
+				return taskOutput(map[string]any{"status": "not_configured"})
+			}
+			if name == "recommendation-sync" {
+				cfg, base, key, _, _, _ := s.runtime.recommendations.configuration()
+				if !cfg.Enabled {
+					return taskOutput(map[string]any{"status": "disabled"})
+				}
+				state, _, _, err := s.runtime.recommendations.state(ctx, provider.NewSiloClient(base, key), cfg.Profile, "", false)
+				if err != nil {
+					return nil, err
+				}
+				if state.LastWeek == recommendationPeriod(time.Now(), cfg) {
+					return taskOutput(map[string]any{"status": "already_completed_this_week", "detail": "Use the report page Build collections button for an explicit rebuild"})
+				}
+			}
+			if !s.runtime.recommendations.start(name == "recommendation-preview") {
+				return taskOutput(map[string]any{"status": "already_running"})
+			}
+			return taskOutput(map[string]any{"status": "started", "detail": "Read the durable recommendations report for the final result; this acknowledges worker admission only"})
+		}
+	}
 	if key == "cache-artwork" || strings.HasSuffix(key, ":cache-artwork") {
 		// Finish the task RPC before the admin API calls back into ImageResolver.
 		go s.runArtworkRepair()

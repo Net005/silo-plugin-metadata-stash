@@ -42,3 +42,7 @@ go vet ./...
 python3 -m unittest discover -s contrib/stashapp -q
 node --test contrib/stashapp/test_stash_silo_subtitles.js contrib/stashapp/test_stash_silo_scrubber.js
 ```
+
+## Weekly recommendations
+
+See [RECOMMENDATIONS.md](RECOMMENDATIONS.md) for the 50-item weekly GPT-6 Luna collections, settings, reports and spending controls.

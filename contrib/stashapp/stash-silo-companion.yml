@@ -1,6 +1,6 @@
 name: Stash.Silo Companion
-description: Enrich Stash scenes from linked metadata and keep the Silo collection current.
-version: 0.2.9
+description: Enrich linked metadata, keep selected Silo Watchlist collections current and notify weekly recommendations of Stash changes.
+version: 0.2.10
 ui:
   javascript:
     - stash_silo_subtitles.js
@@ -162,5 +162,11 @@ hooks:
       - Scene.Create.Post
       - Scene.Update.Post
       - Scene.Destroy.Post
+    defaultArgs:
+      mode: hook
+  - name: Notify recommendations of performer changes
+    description: Include changed performer favourites in the next weekly recommendation snapshot.
+    triggeredBy:
+      - Performer.Update.Post
     defaultArgs:
       mode: hook

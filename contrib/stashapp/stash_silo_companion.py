@@ -460,6 +460,22 @@ def _silo_post(settings, path, body):
         raise RuntimeError(f"Silo refresh returned HTTP {error.code}") from error
 
 
+def _notify_silo_recommendations(payload, settings, hook):
+    """Mark recommendations stale; never trigger paid ranking from an edit hook."""
+    if not settings.get("silo_url") or not settings.get("silo_api_key"):
+        return {"state": "not_configured"}
+    installs = _silo_get(settings, "/api/v2/admin/plugins/installations").get("items", [])
+    matches = [x for x in installs if x.get("plugin_id") == "stash.metadata" and x.get("enabled", True)]
+    if len(matches) != 1:
+        return {"state": "ambiguous_or_missing_plugin"}
+    try:
+        return _silo_post(settings, "/api/v2/plugin-content/plugins/" + str(matches[0]["id"]) + "/recommendations/dirty", {"scene_id": str(hook.get("id") or "")})
+    except Exception:
+        # Older Silo plugin versions have no route. The weekly full snapshot
+        # remains authoritative, so notification failures cannot break hooks.
+        return {"state": "deferred_to_weekly_snapshot"}
+
+
 def _sync_silo_watchlist_collection(payload, settings, hook):
     # Stash includes the full input on every update, but inputFields records
     # which fields were actually edited. Playback and enrichment hooks are ignored.
@@ -657,6 +673,15 @@ def main():
     elif mode == "hook":
         settings = _settings(payload)
         hook = args.get("hookContext") or {}
+        if settings.get("silo_url") and settings.get("silo_api_key"):
+            try:
+                _notify_silo_recommendations(payload, settings, hook)
+            except Exception:
+                pass
+        if str(hook.get("type") or "").startswith("Performer."):
+            # Performer favourites affect the weekly snapshot; never treat a
+            # performer ID as a scene ID for enrichment or activity hooks.
+            return {"output": {"recommendations": "deferred_to_weekly_snapshot"}}
         scene_id = hook.get("id") or (hook.get("input") or {}).get("id")
         if not scene_id:
             raise RuntimeError("scene hook did not include an ID")

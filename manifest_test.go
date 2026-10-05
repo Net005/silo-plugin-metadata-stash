@@ -39,12 +39,12 @@ func TestManifest(t *testing.T) {
 			tasks[c.ID] = true
 		}
 	}
-	for _, id := range []string{"cache-artwork", "collection-sync", "watchlist-collection-sync", "match-unmatched", "repair-matched", "metadata-refresh", "watched-sync", "play-backfill"} {
+	for _, id := range []string{"cache-artwork", "collection-sync", "watchlist-collection-sync", "match-unmatched", "repair-matched", "metadata-refresh", "watched-sync", "play-backfill", "recommendation-sync", "recommendation-preview"} {
 		if !tasks[id] {
 			t.Errorf("missing scheduled task %s", id)
 		}
 	}
-	if len(tasks) != 8 {
+	if len(tasks) != 10 {
 		t.Errorf("scheduled tasks=%v", tasks)
 	}
 	var schema struct {

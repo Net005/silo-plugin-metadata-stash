@@ -28,6 +28,8 @@ var version string
 const capabilityID = "stash"
 
 type runtimeServer struct {
+	recommendationConfig recommendationConfig
+	recommendations      *recommendationServer
 	runtimedefault.Server
 	manifest                                                 *pluginv1.PluginManifest
 	mu                                                       sync.RWMutex
@@ -46,6 +48,17 @@ func (s *runtimeServer) GetManifest(context.Context, *pluginv1.GetManifestReques
 }
 func (s *runtimeServer) Configure(_ context.Context, req *pluginv1.ConfigureRequest) (*pluginv1.ConfigureResponse, error) {
 	for _, entry := range req.GetConfig() {
+		if entry.GetKey() == "recommendations" {
+			s.mu.Lock()
+			c, err := parseRecommendationConfig(entry.GetValue().AsMap(), s.recommendationConfig)
+			if err != nil {
+				s.mu.Unlock()
+				return nil, err
+			}
+			s.recommendationConfig = c
+			s.mu.Unlock()
+			continue
+		}
 		if entry.GetKey() != "connection" {
 			continue
 		}
@@ -78,6 +91,9 @@ func (s *runtimeServer) Configure(_ context.Context, req *pluginv1.ConfigureRequ
 			legacy.Configure(config)
 		}
 		s.pollOnce.Do(func() { go s.pollMatching() })
+	}
+	if s.recommendations != nil {
+		s.recommendations.pollOnce.Do(func() { go s.recommendations.poll() })
 	}
 	return &pluginv1.ConfigureResponse{}, nil
 }
@@ -422,11 +438,12 @@ func main() {
 		panic(err)
 	}
 	logger := hclog.New(&hclog.LoggerOptions{Name: "stash-metadata", Level: hclog.Info})
-	rs := &runtimeServer{manifest: m, legacy: legacytasks.New(logger)}
+	rs := &runtimeServer{manifest: m, legacy: legacytasks.New(logger), recommendationConfig: defaultRecommendationConfig()}
+	rs.recommendations = &recommendationServer{runtime: rs}
 	ms := &metadataServer{runtime: rs}
 	ws := &watchSyncServer{runtime: rs}
 	rs.task = &scheduledTaskServer{runtime: rs, log: logger}
-	runtime.Serve(runtime.ServeConfig{Logger: logger, Servers: runtime.CapabilityServers{Runtime: rs, MetadataProvider: ms, ImageResolver: ms, WatchSyncProvider: ws, ScheduledTask: rs.task}})
+	runtime.Serve(runtime.ServeConfig{Logger: logger, Servers: runtime.CapabilityServers{Runtime: rs, MetadataProvider: ms, ImageResolver: ms, WatchSyncProvider: ws, ScheduledTask: rs.task, HttpRoutes: rs.recommendations}})
 }
 
 func runtimeMinutes(s scene) int32 {
