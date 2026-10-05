@@ -15,9 +15,10 @@ var Kinds = []string{"for-you", "top-rated", "revisit", "favourites", "watchlist
 var Titles = map[string]string{"for-you": "For You", "top-rated": "Your Top Rated", "revisit": "Worth Revisiting", "favourites": "From Your Favourites", "watchlist": "Watchlist This Week", "overlooked": "Overlooked Picks", "different": "Something Different", "recent": "Your Recent Direction", "spotlight": "Weekly Spotlight"}
 
 type Entity struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Favorite bool   `json:"favorite"`
+	ID       string   `json:"id"`
+	Name     string   `json:"name"`
+	Favorite bool     `json:"favorite"`
+	Aliases  []string `json:"alias_list,omitempty"`
 }
 type File struct {
 	Path     string  `json:"path"`

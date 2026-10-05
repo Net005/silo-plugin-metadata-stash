@@ -1,6 +1,6 @@
 # Weekly recommendations
 
-Stash Metadata v0.3.5 builds up to **250 verified items per collection** across all
+Stash Metadata v0.3.6 builds up to **250 verified items per collection** across all
 movie libraries using this plugin. The nine kinds are `for-you`, `top-rated`,
 `revisit`, `favourites`, `watchlist`, `overlooked`, `different`, `recent`, `spotlight`.
 Names use the existing Stash prefix exactly, including trailing spaces.
@@ -62,8 +62,17 @@ The engine makes only GraphQL **queries** to Stash. It never changes counters, h
 ratings, favourites or tags. Candidates require exact native file-path identity and
 catalog membership; title-only and ambiguous matches are excluded. Non-native IDs
 without a verified native mapping are reported as unmatched.
-Optional JAVBeacon archives union timestamps using unique exact paths or unchanged
-IDs with agreeing title/code. This enrichment is in memory, not a Stash history restore.
+When enabled, JAVBeacon archives union timestamps using unique exact paths, unique
+release codes, or unchanged IDs with agreeing title/code. Counters use the maximum
+of snapshots and deduplicated events, never a sum of overlapping copies. Removed
+releases with available JAVBeacon metadata contribute history-only feedback. Exact
+unique Stash studio/tag names and performer names/aliases link their preferences;
+ambiguous identities are skipped. A unique archived path assigns library-specific
+feedback; otherwise feedback contributes only where cross-library learning is enabled.
+History-only rows have no media ID and cannot be collection candidates. The report
+shows archive counts, removed releases used, and unresolved active snapshots. Archive
+read failures preserve previous collections. This enrichment is in memory, not a
+Stash history restore.
 Source/activity drops over 20% stop publication/pruning when a sufficient prior baseline
 exists. All weekly source reads finish before visible collection writes. Collection
 membership changes are incremental, order changes use ETags, and partial failures

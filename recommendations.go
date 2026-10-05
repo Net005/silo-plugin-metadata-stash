@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"sort"
 	"strings"
 	"sync"
@@ -102,18 +101,19 @@ func (c recommendationConfig) libraryOptions(id string) (rec.Options, error) {
 }
 
 type recommendationReport struct {
-	Phase     string              `json:"phase,omitempty"`
-	Status    string              `json:"status"`
-	Started   time.Time           `json:"started_at"`
-	Finished  time.Time           `json:"finished_at"`
-	Week      string              `json:"week"`
-	Model     string              `json:"model"`
-	Preview   bool                `json:"preview"`
-	Libraries []rec.LibraryReport `json:"libraries"`
-	Warnings  []string            `json:"warnings"`
-	Usage     rec.Usage           `json:"usage"`
-	Totals    map[string]int      `json:"source_totals"`
-	Unmatched int                 `json:"unmatched_scenes"`
+	Phase     string                     `json:"phase,omitempty"`
+	Status    string                     `json:"status"`
+	Started   time.Time                  `json:"started_at"`
+	Finished  time.Time                  `json:"finished_at"`
+	Week      string                     `json:"week"`
+	Model     string                     `json:"model"`
+	Preview   bool                       `json:"preview"`
+	Libraries []rec.LibraryReport        `json:"libraries"`
+	Warnings  []string                   `json:"warnings"`
+	Archive   recommendationArchiveStats `json:"archive"`
+	Usage     rec.Usage                  `json:"usage"`
+	Totals    map[string]int             `json:"source_totals"`
+	Unmatched int                        `json:"unmatched_scenes"`
 }
 type recommendationState struct {
 	Version         int                                `json:"version"`
@@ -319,7 +319,7 @@ func (s *recommendationServer) poll() {
 	}
 }
 
-const recommendationSceneFields = `id title code date created_at rating100 play_count o_counter last_played_at play_history o_history studio { id name } performers { id name favorite } tags { id name } groups { group { id name } } files { path duration }`
+const recommendationSceneFields = `id title code date created_at rating100 play_count o_counter last_played_at play_history o_history studio { id name } performers { id name favorite alias_list } tags { id name } groups { group { id name } } files { path duration }`
 
 func recommendationScenes(ctx context.Context, c *stashClient) ([]rec.Scene, error) {
 	rows := []rec.Scene{}
@@ -400,99 +400,6 @@ func matchRecommendationScenes(scenes []rec.Scene, catalog []provider.CatalogIte
 	return out, items, unmatched
 }
 
-// mergeRecommendationArchive uses only a unique exact path or unchanged
-// scene ID plus agreeing title/code. It unions timestamps; never adds counters.
-func mergeRecommendationArchive(ctx context.Context, art *artworkClient, scenes []rec.Scene) (int, error) {
-	if art == nil || art.base == "" || art.key == "" {
-		return 0, nil
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, art.base+"/api/stash/history/export", nil)
-	if err != nil {
-		return 0, err
-	}
-	req.Header.Set("Authorization", "Bearer "+art.key)
-	resp, err := (&http.Client{Timeout: 60 * time.Second}).Do(req)
-	if err != nil {
-		return 0, fmt.Errorf("archive unavailable")
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return 0, fmt.Errorf("archive HTTP %d", resp.StatusCode)
-	}
-	var a struct {
-		Version int `json:"version"`
-		Scenes  []struct {
-			ID    string `json:"stash_scene_id"`
-			Title string `json:"title"`
-			Code  string `json:"video_id"`
-			Path  string `json:"file_path"`
-		} `json:"scenes"`
-		Events []struct {
-			ID   string `json:"stash_scene_id"`
-			Type string `json:"type"`
-			At   string `json:"occurred_at"`
-		} `json:"events"`
-	}
-	if err = json.NewDecoder(io.LimitReader(resp.Body, 32<<20)).Decode(&a); err != nil {
-		return 0, fmt.Errorf("archive response invalid")
-	}
-	if a.Version != 1 {
-		return 0, fmt.Errorf("unsupported archive version")
-	}
-	byID := map[string]int{}
-	byPath := map[string][]int{}
-	for i, s := range scenes {
-		byID[s.ID] = i
-		for _, f := range s.Files {
-			byPath[f.Path] = append(byPath[f.Path], i)
-		}
-	}
-	targets := map[string]int{}
-	for _, old := range a.Scenes {
-		i, ok := byID[old.ID]
-		if ok && old.Title != "" && strings.EqualFold(old.Title, scenes[i].Title) && (old.Code == "" || scenes[i].Code == "" || strings.EqualFold(old.Code, scenes[i].Code)) {
-			targets[old.ID] = i
-			continue
-		}
-		if ids := byPath[old.Path]; old.Path != "" && len(ids) == 1 {
-			targets[old.ID] = ids[0]
-		}
-	}
-	added := 0
-	for _, e := range a.Events {
-		i, ok := targets[e.ID]
-		if !ok {
-			continue
-		}
-		at, err := time.Parse(time.RFC3339, e.At)
-		if err != nil || at.After(time.Now()) {
-			continue
-		}
-		target := &scenes[i].PlayHistory
-		if e.Type == "orgasm" {
-			target = &scenes[i].OHistory
-		} else if e.Type != "play" {
-			continue
-		}
-		found := false
-		for _, raw := range *target {
-			t, _ := time.Parse(time.RFC3339, raw)
-			if t.Equal(at) {
-				found = true
-				break
-			}
-		}
-		if !found {
-			*target = append(*target, at.UTC().Format(time.RFC3339))
-			added++
-		}
-	}
-	for i := range scenes {
-		scenes[i].Plays = max(scenes[i].Plays, len(scenes[i].PlayHistory))
-		scenes[i].O = max(scenes[i].O, len(scenes[i].OHistory))
-	}
-	return added, nil
-}
 func recommendationTotals(rows []rec.Scene) map[string]int {
 	out := map[string]int{"scenes": len(rows)}
 	for _, x := range rows {
@@ -581,12 +488,14 @@ func (s *recommendationServer) run(ctx context.Context, preview bool) (runErr er
 	if err = progress("Reading archived history and Stash Watchlist"); err != nil {
 		return err
 	}
+	historyOnly := []rec.Scene{}
 	if cfg.Archive {
-		n, e := mergeRecommendationArchive(ctx, art, scenes)
+		var stats recommendationArchiveStats
+		var e error
+		scenes, historyOnly, stats, e = mergeRecommendationArchive(ctx, art, scenes, libs)
+		report.Archive = stats
 		if e != nil {
-			report.Warnings = append(report.Warnings, e.Error()+"; using current Stash history")
-		} else if n > 0 {
-			report.Warnings = append(report.Warnings, fmt.Sprintf("%d uniquely matched archived events included for ranking only", n))
+			return fmt.Errorf("JAVBeacon archive required but unavailable: %w", e)
 		}
 	}
 	watch := map[string]bool{}
@@ -630,7 +539,14 @@ func (s *recommendationServer) run(ctx context.Context, preview bool) (runErr er
 		_ = unmatched
 		artifacts[lib.ID] = items
 		options[lib.ID] = o
-		r := rec.Build(lib.ID, local, scenes, o, watch, state.Previous[lib.ID], state.Exposure[lib.ID], state.Dismissed[lib.ID], now)
+		learningLocal := append([]rec.Scene(nil), local...)
+		for _, old := range historyOnly {
+			if old.LibraryID == lib.ID {
+				learningLocal = append(learningLocal, old)
+			}
+		}
+		learningGlobal := append(append([]rec.Scene(nil), scenes...), historyOnly...)
+		r := rec.Build(lib.ID, learningLocal, learningGlobal, o, watch, state.Previous[lib.ID], state.Exposure[lib.ID], state.Dismissed[lib.ID], now)
 		r.Matched = len(local)
 		r.Evaluation = rec.Evaluate(local, o, now)
 		report.Libraries = append(report.Libraries, r)
