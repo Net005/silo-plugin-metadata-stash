@@ -74,7 +74,7 @@ jobs:
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/silo-plugin-metadata-stash_* dist/stash-silo-companion_*.zip dist/SHA256SUMS dist/stash-plugin-source.yml --title "Stash.Metadata $GITHUB_REF_NAME" --generate-notes --latest
+        run: gh release create "$GITHUB_REF_NAME" dist/silo-plugin-metadata-stash_* dist/stash-silo-companion_*.zip dist/SHA256SUMS dist/stash-plugin-source.yml --title "Stash Metadata $GITHUB_REF_NAME" --generate-notes --latest
       - name: Update companion package index for the current release
         shell: bash
         run: |

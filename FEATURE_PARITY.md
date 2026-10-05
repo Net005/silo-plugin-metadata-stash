@@ -1,8 +1,8 @@
 # JAVBeacon Silo plugin feature parity
 
-Stash.Metadata uses StashApp for primary scene metadata. JAVBeacon remains an optional source for features tied to its release index and playback engine. Full parity for those features requires JAVBeacon v1.0.285 or newer, its URL and API key, and a Silo admin URL and API key where noted.
+Stash Metadata uses StashApp for primary scene metadata. JAVBeacon remains an optional source for features tied to its release index and playback engine. Full parity for those features requires JAVBeacon v1.0.285 or newer, its URL and API key, and a Silo admin URL and API key where noted.
 
-| Old Silo plugin behavior | Stash.Metadata replacement |
+| Old Silo plugin behavior | Stash Metadata replacement |
 | --- | --- |
 | JAVBeacon release metadata, Stash gap filling | Direct Stash metadata; the Stash companion fills missing fields from indexed JAVBeacon releases. Backend-only releases retain a metadata and artwork fallback by exact old release ID. |
 | Resized portrait cover, original cover and screenshot backdrops | Exact linked release uses JAVBeacon's 1000×1500 conformed cover; original cover, cached screenshots and Stash scene screenshot remain backdrop candidates. |

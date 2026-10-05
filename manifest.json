@@ -1,13 +1,13 @@
 {
   "plugin_id": "stash.metadata",
-  "version": "0.2.19",
+  "version": "0.2.20",
   "checksum": "__CHECKSUM__",
   "silo_api_version": "v1",
   "presentation": {
-    "display_name": "Stash.Metadata",
+    "display_name": "Stash Metadata",
     "summary": "Use StashApp as Silo's scene metadata and watch provider.",
     "description_markdown": "StashApp-first scene metadata and playback for Silo, with optional JAVBeacon artwork, playback checkpoints, saved-filter collections, incremental refresh, performer details and safe historical play backfill. The companion maintains the existing Silo WatchList collection.",
-    "setup_markdown": "Configure the StashApp URL and API key. Add JAVBeacon and Silo admin connections to restore artwork, playback checkpoints, collection sync, metadata refresh and safe backfill. Select Stash.Metadata as the Movies metadata and watch provider.",
+    "setup_markdown": "Configure the StashApp URL and API key. Add JAVBeacon and Silo admin connections to restore artwork, playback checkpoints, collection sync, metadata refresh and safe backfill. Select Stash Metadata as the Movies metadata and watch provider.",
     "homepage_url": "https://github.com/Net005/silo-plugin-metadata-stash",
     "source_url": "https://github.com/Net005/silo-plugin-metadata-stash",
     "support_url": "https://github.com/Net005/silo-plugin-metadata-stash/issues",
