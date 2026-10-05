@@ -88,13 +88,38 @@ func TestImageResolverRoutesCanonicalAndSchemeLessArtwork(t *testing.T) {
 	}
 }
 
-func TestArtworkFallbackUsesStashScreenshot(t *testing.T) {
+func TestArtworkFallbackUsesIndependentStashPosterRoute(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 	}))
 	defer backend.Close()
 	art, err := (&artworkClient{base: backend.URL, key: "key"}).fetch(t.Context(), "42")
-	if err != nil || art != nil {
+	if err != nil || art == nil || art.PosterPath != "/api/v1/integrations/silo/stash/scenes/42/cover?variant=poster" {
 		t.Fatalf("artwork=%v err=%v", art, err)
+	}
+}
+
+func TestUnlinkedStashCoverStillUsesPosterCropAndRawBackdrop(t *testing.T) {
+	stash := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"data":{"findScene":{"id":"42","title":"AKBS-010","paths":{"screenshot":"/scene/42/screenshot"}}}}`))
+	}))
+	defer stash.Close()
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNotFound) }))
+	defer backend.Close()
+	runtime := &runtimeServer{client: &stashClient{base: stash.URL, key: "key"}, artwork: &artworkClient{base: backend.URL, key: "art-key"}}
+	server := &metadataServer{runtime: runtime}
+	want := "stash://backend/api/v1/integrations/silo/stash/scenes/42/cover?variant=poster"
+	metadata, err := server.GetMetadata(t.Context(), &pluginv1.GetMetadataRequest{ProviderId: "stash:42", ItemType: "movie"})
+	if err != nil || metadata.GetItem().GetPosterPath() != want {
+		t.Fatalf("metadata=%v err=%v", metadata, err)
+	}
+	images, err := server.GetImages(t.Context(), &pluginv1.GetImagesRequest{ProviderId: "stash:42", ItemType: "movie"})
+	if err != nil || len(images.GetImages()) != 2 || images.Images[0].Url != want || images.Images[1].Url != coverPath("42") {
+		t.Fatalf("images=%v err=%v", images, err)
+	}
+	resolved := server.resolveImageURL(runtime.client, want)
+	u, err := url.Parse(resolved)
+	if err != nil || u.Host != strings.TrimPrefix(backend.URL, "http://") || u.Query().Get("variant") != "poster" || u.Query().Get("api_key") != "art-key" {
+		t.Fatalf("resolved image: %v %v", u, err)
 	}
 }

@@ -47,7 +47,9 @@ func (c *artworkClient) fetch(ctx context.Context, sceneID string) (*sceneArtwor
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, nil
+		// Artwork cropping does not require a JAVBeacon release. Its scene
+		// endpoint can transform the original Stash cover independently.
+		return &sceneArtwork{SceneID: sceneID, PosterPath: "/api/v1/integrations/silo/stash/scenes/" + url.PathEscape(sceneID) + "/cover?variant=poster"}, nil
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("JAVBeacon artwork HTTP %d", resp.StatusCode)
@@ -59,7 +61,7 @@ func (c *artworkClient) fetch(ctx context.Context, sceneID string) (*sceneArtwor
 	if art.SceneID != sceneID {
 		return nil, fmt.Errorf("JAVBeacon artwork scene ID mismatch")
 	}
-	if !validArtworkPath(art.PosterPath) {
+	if !validArtworkReference(art.PosterPath) {
 		art.PosterPath = ""
 	}
 	paths := make([]string, 0, len(art.BackdropPaths))
@@ -102,7 +104,7 @@ func validArtworkReference(raw string) bool {
 }
 
 func backendImagePath(path string) string {
-	if !validArtworkPath(path) {
+	if !validArtworkReference(path) {
 		return ""
 	}
 	return "stash://backend" + path
