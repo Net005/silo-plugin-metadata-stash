@@ -40,7 +40,6 @@ type runtimeServer struct {
 	legacy                                                   *legacytasks.Manager
 	siloLibraryID                                            string
 	stashFilters, stashPrefix, releaseFilters, releasePrefix string
-	watchListCollectionID                                    string
 }
 
 func (s *runtimeServer) GetManifest(context.Context, *pluginv1.GetManifestRequest) (*pluginv1.GetManifestResponse, error) {
@@ -73,9 +72,8 @@ func (s *runtimeServer) Configure(_ context.Context, req *pluginv1.ConfigureRequ
 		s.stashPrefix = literalText(v["stash_saved_filter_prefix"])
 		s.releaseFilters = text(v["saved_filter_selection"])
 		s.releasePrefix = literalText(v["saved_filter_prefix"])
-		s.watchListCollectionID = text(v["silo_watchlist_collection_id"])
 		legacy := s.legacy
-		config := legacytasks.Config{JAVBeaconURL: s.artwork.base, JAVBeaconKey: s.artwork.key, StashURL: s.client.base, StashKey: s.client.key, SiloURL: s.siloBase, SiloKey: s.siloKey, SiloLibraryID: s.siloLibraryID, StashFilters: s.stashFilters, StashPrefix: s.stashPrefix, ReleaseFilters: s.releaseFilters, ReleasePrefix: s.releasePrefix, WatchListCollectionID: s.watchListCollectionID}
+		config := legacytasks.Config{JAVBeaconURL: s.artwork.base, JAVBeaconKey: s.artwork.key, StashURL: s.client.base, StashKey: s.client.key, SiloURL: s.siloBase, SiloKey: s.siloKey, SiloLibraryID: s.siloLibraryID, StashFilters: s.stashFilters, StashPrefix: s.stashPrefix, ReleaseFilters: s.releaseFilters, ReleasePrefix: s.releasePrefix}
 		config.ExcludedScenes = text(v["playback_excluded_scene_ids"])
 		s.mu.Unlock()
 		if legacy != nil {

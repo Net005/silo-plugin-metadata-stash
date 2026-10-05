@@ -23,7 +23,6 @@ type Config struct {
 	StashURL, StashKey                                       string
 	SiloURL, SiloKey, SiloLibraryID                          string
 	StashFilters, StashPrefix, ReleaseFilters, ReleasePrefix string
-	WatchListCollectionID                                    string
 	ExcludedScenes                                           string
 }
 
@@ -39,7 +38,6 @@ func (m *Manager) Configure(c Config) {
 	m.provider.ConfigureSiloConnection(c.SiloURL, c.SiloLibraryID, c.SiloKey)
 	m.provider.ConfigureSavedFilters(c.StashFilters, c.StashPrefix, c.ReleaseFilters, c.ReleasePrefix)
 	m.tasks.mu.Lock()
-	m.tasks.watchListCollectionID = c.WatchListCollectionID
 	m.tasks.mu.Unlock()
 	if c.SiloURL != "" && c.SiloKey != "" && ((c.StashURL != "" && c.StashKey != "") || (c.JAVBeaconURL != "" && c.JAVBeaconKey != "")) {
 		m.collectionOnce.Do(func() { go m.tasks.poll(); go m.tasks.pollWatchListCollection() })

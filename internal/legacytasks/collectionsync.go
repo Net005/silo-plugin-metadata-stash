@@ -41,7 +41,6 @@ type collectionSyncTaskServer struct {
 	metadataSince             time.Time
 	lastCollectionFingerprint string
 	lastCollectionFull        time.Time
-	watchListCollectionID     string
 }
 
 // log returns s.log, or a discarding no-op logger if it was never set (e.g.
