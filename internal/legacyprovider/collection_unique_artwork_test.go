@@ -9,8 +9,10 @@ import (
 	"image/draw"
 	"image/jpeg"
 	"image/png"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -148,5 +150,104 @@ func TestCurrentArtworkComparisonSurvivesLossyResizing(t *testing.T) {
 	}
 	if SameArtworkImage(source.Bytes(), solidPoster(color.RGBA{180, 20, 30, 255})) {
 		t.Fatal("unrelated image accepted")
+	}
+}
+
+func TestSmallCollectionGetsRealCoverWithoutChangingUserCollections(t *testing.T) {
+	for _, managed := range []bool{true, false} {
+		t.Run(map[bool]string{true: "managed", false: "user"}[managed], func(t *testing.T) {
+			red := solidPoster(color.RGBA{190, 20, 30, 255})
+			blue := solidPoster(color.RGBA{10, 40, 190, 255})
+			markers := map[string]map[string]json.RawMessage{"small": {}, "large": {}}
+			uploaded := map[string][]byte{}
+			urls := map[string]string{}
+			thumbs := map[string]string{}
+			var server *httptest.Server
+			row := func(id string) siloCollection {
+				n := 2
+				slug, description := "", ""
+				if id == "large" {
+					n = 74
+					if managed {
+						slug = "stash-recommendations-large"
+						description = RecommendationOwner
+					}
+				}
+				return siloCollection{ID: id, Title: id, ItemCount: n, Slug: slug, Description: description, PosterURL: urls[id], PosterThumbhash: thumbs[id], SourceConfig: markers[id]}
+			}
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("ETag", `"1"`)
+				switch r.URL.Path {
+				case "/red":
+					w.Write(red)
+				case "/blue":
+					w.Write(blue)
+				case "/api/v2/admin/collections":
+					json.NewEncoder(w).Encode(map[string]any{"items": []siloCollection{row("small"), row("large")}})
+				case "/api/v2/admin/collections/large/items":
+					json.NewEncoder(w).Encode(map[string]any{"items": []map[string]any{{"media_item_id": "red-member", "position": 0}, {"media_item_id": "blue-member", "position": 1}}})
+				case "/api/v2/admin/items/blue-member/images":
+					json.NewEncoder(w).Encode(map[string]any{"current": map[string]string{"poster_url": server.URL + "/blue"}})
+				case "/api/v2/admin/collections/small/poster", "/api/v2/admin/collections/large/poster":
+					id := "small"
+					if strings.Contains(r.URL.Path, "/large/") {
+						id = "large"
+					}
+					r.ParseMultipartForm(1 << 20)
+					f, _, err := r.FormFile("image")
+					if err != nil {
+						t.Fatal(err)
+					}
+					defer f.Close()
+					uploaded[id], _ = io.ReadAll(f)
+					urls[id] = server.URL + "/" + id + "-cached"
+					thumbs[id] = id + "-hash"
+				case "/api/v2/admin/collections/small", "/api/v2/admin/collections/large":
+					id := "small"
+					if strings.HasSuffix(r.URL.Path, "/large") {
+						id = "large"
+					}
+					if r.Method == "GET" {
+						json.NewEncoder(w).Encode(row(id))
+					} else {
+						var update struct {
+							SourceConfig map[string]json.RawMessage `json:"source_config"`
+						}
+						json.NewDecoder(r.Body).Decode(&update)
+						markers[id] = update.SourceConfig
+					}
+				default:
+					t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+				}
+			}))
+			defer server.Close()
+			urls["large"] = server.URL + "/red"
+			thumbs["large"] = "original-red"
+			digest, _ := pixelDigest(red)
+			sig, _ := posterSignature(red)
+			markers["large"][uniquePosterKey] = mustJSON(uniquePosterMarker{Policy: 1, MediaID: "red-member", SourceDigest: digest, PosterURL: urls["large"], PosterThumbhash: thumbs["large"], Signature: sig})
+			err := NewSiloClient(server.URL, "key").SetUniqueCollectionPoster(t.Context(), "small", []CollectionArtwork{{MediaID: "red-member", PosterURL: server.URL + "/red"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if managed {
+				if !bytes.Equal(uploaded["small"], red) || !bytes.Equal(uploaded["large"], blue) {
+					t.Fatal("did not give small shelf its real member cover")
+				}
+			} else if uploaded["large"] != nil || bytes.Equal(uploaded["small"], red) {
+				t.Fatal("changed user artwork or duplicated its cover")
+			}
+		})
+	}
+}
+
+func TestLegacyManagedPosterReservationWithoutImageURL(t *testing.T) {
+	marker := uniquePosterMarker{Policy: 1, MediaID: "member", SourceDigest: "digest", Signature: []byte{1}}
+	managed := siloCollection{Slug: "stash-recommendations-old", Description: RecommendationOwner}
+	if !posterMarkerMatches(marker, managed) {
+		t.Fatal("legacy reservation lost")
+	}
+	if posterMarkerMatches(marker, siloCollection{}) {
+		t.Fatal("claimed user artwork")
 	}
 }

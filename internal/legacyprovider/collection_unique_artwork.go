@@ -52,7 +52,13 @@ func posterMarkerMatches(m uniquePosterMarker, r siloCollection) bool {
 	if m.PosterThumbhash != "" && r.PosterThumbhash != "" {
 		return m.PosterThumbhash == r.PosterThumbhash
 	}
-	return m.PosterURL != "" && m.PosterURL == r.PosterURL
+	if m.PosterURL != "" {
+		return m.PosterURL == r.PosterURL
+	}
+	// Older plugin versions wrote empty URLs because Silo admin detail omits
+	// them. Retain these known managed reservations until the cover is updated
+	// with a stable thumbnail hash; never apply this migration to user shelves.
+	return m.PosterThumbhash == "" && m.SourceDigest != "" && len(m.Signature) > 0 && strings.HasPrefix(r.Slug, "stash-recommendations-") && strings.HasPrefix(r.Description, RecommendationOwner)
 }
 
 // pixelDigest ignores file metadata/encoding and hashes decoded image pixels.
@@ -216,6 +222,10 @@ func (c *SiloClient) posterBytes(ctx context.Context, u string) ([]byte, error) 
 func (c *SiloClient) SetUniqueCollectionPoster(ctx context.Context, id string, candidates []CollectionArtwork) error {
 	collectionPosterMu.Lock()
 	defer collectionPosterMu.Unlock()
+	return c.setUniqueCollectionPoster(ctx, id, candidates, true, true)
+}
+
+func (c *SiloClient) setUniqueCollectionPoster(ctx context.Context, id string, candidates []CollectionArtwork, rebalance, composition bool) error {
 	rows, e := c.collections(ctx)
 	if e != nil {
 		return e
@@ -337,7 +347,65 @@ func (c *SiloClient) SetUniqueCollectionPoster(ctx context.Context, id string, c
 		digest = d
 		break
 	}
+	if data == nil && failures == 0 && rebalance && current.ItemCount > 0 {
+		// Small shelves have fewer artwork choices. Move a larger managed
+		// shelf to another verified member before using a generated fallback.
+		blocked := map[string]bool{}
+		for _, a := range candidates {
+			blocked[a.MediaID] = true
+		}
+		for _, a := range candidates {
+			for _, owner := range rows {
+				if owner.ID == id || owner.ItemCount <= current.ItemCount || !strings.HasPrefix(owner.Slug, "stash-recommendations-") || !strings.HasPrefix(owner.Description, RecommendationOwner) {
+					continue
+				}
+				var mark uniquePosterMarker
+				_ = json.Unmarshal(owner.SourceConfig[uniquePosterKey], &mark)
+				if mark.MediaID != a.MediaID || !posterMarkerMatches(mark, owner) {
+					continue
+				}
+				members, err := c.collectionMembers(ctx, owner.ID)
+				if err != nil {
+					return err
+				}
+				ids := []string{}
+				for mid := range members {
+					if !blocked[mid] && !strings.HasPrefix(mid, "movie-tmdb-") {
+						ids = append(ids, mid)
+					}
+				}
+				sort.Slice(ids, func(i, j int) bool { return members[ids[i]] < members[ids[j]] })
+				alternatives := []CollectionArtwork{}
+				for _, mid := range ids {
+					var images struct {
+						Current struct {
+							PosterURL string `json:"poster_url"`
+						} `json:"current"`
+					}
+					if err = c.collectionRequest(ctx, http.MethodGet, "/api/v2/admin/items/"+url.PathEscape(mid)+"/images", nil, &images); err != nil {
+						return err
+					}
+					if images.Current.PosterURL != "" {
+						alternatives = append(alternatives, CollectionArtwork{MediaID: mid, PosterURL: images.Current.PosterURL})
+					}
+					if len(alternatives) >= 20 {
+						break
+					}
+				}
+				if len(alternatives) == 0 {
+					continue
+				}
+				if err = c.setUniqueCollectionPoster(ctx, owner.ID, alternatives, false, false); err != nil {
+					continue
+				}
+				return c.setUniqueCollectionPoster(ctx, id, candidates, false, true)
+			}
+		}
+	}
 	if data == nil {
+		if !composition {
+			return fmt.Errorf("no unclaimed member cover available")
+		}
 		// Source outages preserve existing artwork; exhaustion of shared artwork
 		// produces a distinct, honest card, never an unrelated movie poster.
 		if failures > 0 {

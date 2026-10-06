@@ -38,6 +38,7 @@ type CollectionArtwork struct {
 const collectionOwner = "Managed by JAVBeacon metadata plugin."
 
 type siloCollection struct {
+	ItemCount       int                        `json:"item_count"`
 	ID              string                     `json:"id"`
 	Title           string                     `json:"title"`
 	CollectionType  string                     `json:"collection_type"`
