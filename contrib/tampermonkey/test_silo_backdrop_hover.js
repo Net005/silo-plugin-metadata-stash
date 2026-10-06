@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createSiloFileReader } = require('./silo-backdrop-hover.user.js');
+const { createSiloFileReader, stashOrigin, sceneID } = require('./silo-backdrop-hover.user.js');
 const storage = data => ({ getItem: k => data[k] || null, setItem: (k,v) => data[k]=v });
 const result = (status,data) => ({ status, ok: status>=200 && status<300, json: async()=>data });
 test('expired browser token refreshes once and retries with fresh authentication', async()=>{
@@ -25,4 +25,13 @@ test('paginated lookup keeps selected library files and rejects stalled cursor',
   calls++;return result(200,{items:[{library_id:'21',file_path:'/scene'+calls}],page:{has_more:true,next_cursor:'same'}});
  }});
  await assert.rejects(reader('item'),/pagination stalled/);assert.equal(calls,2);
+});
+
+test('server configuration rejects credentials and scene URLs from other hosts', () => {
+ assert.equal(stashOrigin('https://stash.example.invalid/'), 'https://stash.example.invalid');
+ assert.throws(() => stashOrigin('https://user:password@stash.example.invalid'), /without credentials/);
+ assert.throws(() => stashOrigin('https://stash.example.invalid/graphql'), /without credentials/);
+ assert.equal(sceneID('42', ''), '42');
+ assert.equal(sceneID('https://stash.example.invalid/scenes/42?q=1', 'https://stash.example.invalid'), '42');
+ assert.equal(sceneID('https://other.example.invalid/scenes/42', 'https://stash.example.invalid'), null);
 });

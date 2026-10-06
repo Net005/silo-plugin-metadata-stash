@@ -2,9 +2,12 @@
 
 Install `silo-backdrop-hover.user.js` using Tampermonkey → Create a new script → replace the editor contents → Save.
 
+Before saving, replace the example `@match` line with your Silo URL pattern **in your local Tampermonkey editor only**. Private server addresses are configured locally and must not be committed to this repository. The `@connect *` declaration supports your chosen Stash host; requests are restricted in code to the configured Stash origin. Tampermonkey may ask permission for that host.
+
 Open a Silo movie, then use the Tampermonkey menu **Backdrop hover: settings / delay / API keys**.
 
 - Set **Hover delay** in milliseconds. Default: **400 ms**, matching the Stash companion.
+- Enter your **Stash server URL** (origin only, without a path).
 - Enter your **Stash API key**. It is kept in Tampermonkey storage, not embedded in the script.
 - Enter your **Silo admin API key** if the current Silo session cannot read the item's file paths. The script first tries the existing browser access token. If the browser access token expires, it uses Silo’s normal refresh endpoint once and saves the renewed session tokens. A configured API key is never replaced or refreshed.
 - **Thumbnail interval** defaults to **700 ms**, matching the companion fallback.
@@ -31,3 +34,5 @@ only after a video or thumbnail preview is visible. It restores the overview on
 mouse leave, failed playback, tab hiding, navigation or disabling the script.
 The space is retained to avoid layout jumps; title, metadata and playback controls
 remain visible.
+
+Version 1.0.3 removes deployment-specific domains. Enter the Stash URL locally after updating; existing API keys and hover preferences are retained.

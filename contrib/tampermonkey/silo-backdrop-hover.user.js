@@ -1,12 +1,12 @@
 // ==UserScript==
 // @name         Silo Stash Backdrop Hover
 // @namespace    https://github.com/Net005/silo-plugin-metadata-stash
-// @version      1.0.2
+// @version      1.0.3
 // @downloadURL  https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @updateURL    https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @description  Muted Stash preview in Silo movie backdrops, with configurable delay and thumbnail fallback.
 // @match        https://silo.example.invalid/*
-// @connect      stash.example.invalid
+// @connect      *
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_registerMenuCommand
@@ -15,8 +15,21 @@
 // ==/UserScript==
 (function () {
   'use strict';
-  const STASH = 'https://stash.example.invalid';
-  const DEFAULTS = { enabled: true, delay: 400, cycle: 700, stashKey: '', siloKey: '' };
+  const DEFAULTS = { enabled: true, delay: 400, cycle: 700, stashURL: '', stashKey: '', siloKey: '' };
+  function stashOrigin(value) {
+    let url;
+    try { url = new URL(value); } catch { throw new Error('Enter your Stash server URL in Backdrop hover settings.'); }
+    if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || url.search || url.hash || !['', '/'].includes(url.pathname)) throw new Error('Enter a Stash server origin, such as https://stash.example.invalid, without credentials or a path.');
+    return url.origin;
+  }
+  function sceneID(value, origin) {
+    const text = value.trim();
+    if (/^\d+$/.test(text)) return text;
+    try {
+      const url = new URL(text);
+      return url.origin === stashOrigin(origin) ? /^\/scenes\/(\d+)\/?$/.exec(url.pathname)?.[1] || null : null;
+    } catch { return null; }
+  }
   function parseCues(text, base) {
     const lines = text.split(/\r?\n/), out = [];
     for (let i = 0; i < lines.length; i++) {
@@ -79,7 +92,7 @@
       throw new Error('Too many Silo file pages. Assign a Stash scene ID in the script menu.');
     };
   }
-  if (typeof module !== 'undefined' && module.exports) { module.exports = { parseCues, exactScene, createSiloFileReader }; return; }
+  if (typeof module !== 'undefined' && module.exports) { module.exports = { parseCues, exactScene, createSiloFileReader, stashOrigin, sceneID }; return; }
   let settings = { ...DEFAULTS, ...GM_getValue('settings', {}) };
   let current = null;
   const overviewStyle = document.createElement('style');
@@ -101,16 +114,20 @@
       <label><input name="enabled" type="checkbox"> Enable preview</label>
       <label>Hover delay (milliseconds)<input name="delay" type="number" min="0" max="30000" step="100" style="display:block;width:100%"></label>
       <label>Thumbnail interval (milliseconds)<input name="cycle" type="number" min="100" max="10000" step="100" style="display:block;width:100%"></label>
+      <label>Stash server URL<input name="stashURL" type="url" placeholder="https://stash.example.invalid" style="display:block;width:100%"></label>
       <label>Stash API key<input name="stashKey" type="password" autocomplete="off" style="display:block;width:100%"></label>
       <label>Silo admin API key (optional if your browser session works)<input name="siloKey" type="password" autocomplete="off" style="display:block;width:100%"></label>
       <small>Keys stay in Tampermonkey storage. Silo is read only; Stash is read only. 400 ms matches the companion’s default. Hover the background outside the title, poster and buttons.</small>
       <div><button value="save">Save</button> <button value="cancel">Cancel</button></div></form>`;
     Object.assign(dialog.style, { background: '#20242b', color: '#fff', padding: '24px', border: '1px solid #69717e', borderRadius: '12px' });
     const form = dialog.querySelector('form');
-    for (const name of ['delay', 'cycle', 'stashKey', 'siloKey']) form.elements[name].value = settings[name];
+    for (const name of ['delay', 'cycle', 'stashURL', 'stashKey', 'siloKey']) form.elements[name].value = settings[name];
     form.elements.enabled.checked = settings.enabled;
     dialog.addEventListener('close', () => {
-      if (dialog.returnValue === 'save') save({ enabled: form.elements.enabled.checked, delay: Number(form.elements.delay.value), cycle: Number(form.elements.cycle.value), stashKey: form.elements.stashKey.value.trim(), siloKey: form.elements.siloKey.value.trim() });
+      if (dialog.returnValue === 'save') {
+        try { stashOrigin(form.elements.stashURL.value.trim()); } catch (error) { notice(error.message); dialog.remove(); return; }
+        save({ enabled: form.elements.enabled.checked, delay: Number(form.elements.delay.value), cycle: Number(form.elements.cycle.value), stashURL: form.elements.stashURL.value.trim(), stashKey: form.elements.stashKey.value.trim(), siloKey: form.elements.siloKey.value.trim() });
+      }
       dialog.remove();
     });
     document.body.append(dialog); dialog.showModal();
@@ -120,13 +137,14 @@
     const id = itemID(); if (!id) return notice('Open a Silo movie first.');
     const value = prompt('Stash scene ID (or scene URL). Leave empty to use automatic exact file matching.', GM_getValue('scene:' + id, ''));
     if (value === null) return;
-    const match = value.trim().match(/^(?:https:\/\/stash\.example\.invalid\/scenes\/)?(\d+)(?:[?#].*)?$/);
-    if (value.trim() && !match) return notice('Enter a numeric Stash scene ID or its Stash scene URL.');
-    GM_setValue('scene:' + id, match?.[1] || ''); dispose(); reconcile();
+    const assigned = sceneID(value, settings.stashURL);
+    if (value.trim() && !assigned) return notice('Enter a numeric scene ID or a scene URL on your configured Stash server.');
+    GM_setValue('scene:' + id, assigned || ''); dispose(); reconcile();
   });
   function allowed(raw) {
-    const url = new URL(raw, STASH);
-    if (url.origin !== STASH) throw new Error('Preview resource is not on your Stash server.');
+    const origin = stashOrigin(settings.stashURL);
+    const url = new URL(raw, origin);
+    if (url.origin !== origin) throw new Error('Preview resource is not on your Stash server.');
     return url.href;
   }
   function stashRequest(url, responseType, body) {
@@ -142,7 +160,7 @@
     });
   }
   async function gql(query, variables) {
-    const result = await stashRequest(STASH + '/graphql', 'json', { query, variables });
+    const result = await stashRequest(stashOrigin(settings.stashURL) + '/graphql', 'json', { query, variables });
     if (result.errors?.length) throw new Error('Stash lookup failed. Check the API key and scene ID.');
     return result.data;
   }
