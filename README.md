@@ -75,3 +75,8 @@ A Silo item can also exist in ordinary Movies or another Stash library; those
 other files cannot block an exact match in the selected library. File pagination
 and the requirement for one verified Stash scene remain enforced. No play/O
 counters are written by Watchlist recovery.
+
+If a queued Watchlist item's files leave that library during a scan, the action
+is parked in the durable `inactive_library_actions` journal. Other matching
+items continue syncing. The parked action resumes when the library has a file
+again; a newer local action takes precedence.

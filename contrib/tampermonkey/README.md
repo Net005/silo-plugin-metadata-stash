@@ -25,3 +25,9 @@ signed S3 avatar URL is not a Stash scene ID and is unrelated to preview lookup.
 After updating the script, reload Silo. If your login cannot refresh, sign in again
 or configure a valid Silo admin API key; non-admin sessions still require an admin
 key or a manual scene assignment.
+
+Version 1.0.2 hides the story/overview (including its expand/translate controls)
+only after a video or thumbnail preview is visible. It restores the overview on
+mouse leave, failed playback, tab hiding, navigation or disabling the script.
+The space is retained to avoid layout jumps; title, metadata and playback controls
+remain visible.

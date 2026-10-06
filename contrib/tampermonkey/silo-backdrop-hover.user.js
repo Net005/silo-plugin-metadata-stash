@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Silo Stash Backdrop Hover
 // @namespace    https://github.com/Net005/silo-plugin-metadata-stash
-// @version      1.0.1
+// @version      1.0.2
 // @downloadURL  https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @updateURL    https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @description  Muted Stash preview in Silo movie backdrops, with configurable delay and thumbnail fallback.
@@ -82,6 +82,9 @@
   if (typeof module !== 'undefined' && module.exports) { module.exports = { parseCues, exactScene, createSiloFileReader }; return; }
   let settings = { ...DEFAULTS, ...GM_getValue('settings', {}) };
   let current = null;
+  const overviewStyle = document.createElement('style');
+  overviewStyle.textContent = '.item-detail-hero[data-stash-hover-preview] .detail-hero-description{visibility:hidden!important;pointer-events:none!important}';
+  document.head.append(overviewStyle);
   const itemID = () => /^\/item\/([^/]+)$/.exec(location.pathname)?.[1];
   const delay = () => Math.max(0, Math.min(30000, Number(settings.delay) || 0));
   function notice(message) {
@@ -170,7 +173,8 @@
     let hovering = false, alive = true, generation = 0, timer = null, cycleTimer = null, pathsPromise = null, previewBlob = null, cuePromise = null, cueIndex = 0;
     const resources = new Set(), images = new Map();
     const valid = n => alive && hovering && generation === n && current?.id === id && !document.hidden;
-    function stop() { hovering = false; generation++; clearTimeout(timer); clearTimeout(cycleTimer); video.pause(); layer.style.display = 'none'; }
+    function previewVisible(visible) { hero.toggleAttribute('data-stash-hover-preview', visible); layer.style.display = visible ? 'block' : 'none'; }
+    function stop() { hovering = false; generation++; clearTimeout(timer); clearTimeout(cycleTimer); video.pause(); previewVisible(false); }
     async function image(url) {
       if (!images.has(url)) images.set(url, (async () => {
         const blob = await stashRequest(url, 'blob'), src = URL.createObjectURL(blob); resources.add(src);
@@ -188,7 +192,7 @@
         const cue = cues[cueIndex++ % cues.length], img = await image(cue.url); if (!valid(n)) return;
         const box = backdrop.getBoundingClientRect(), scale = Math.min(box.width / cue.w, box.height / cue.h);
         Object.assign(frame.style, { left: (box.width - cue.w * scale) / 2 + 'px', top: (box.height - cue.h * scale) / 2 + 'px', width: cue.w * scale + 'px', height: cue.h * scale + 'px', backgroundImage: `url("${img.src}")`, backgroundSize: `${img.naturalWidth * scale}px ${img.naturalHeight * scale}px`, backgroundPosition: `-${cue.x * scale}px -${cue.y * scale}px`, display: 'block' });
-        video.style.display = 'none'; layer.style.display = 'block'; cycleTimer = setTimeout(() => step().catch(fail), Math.max(100, Number(settings.cycle) || 700));
+        video.style.display = 'none'; previewVisible(true); cycleTimer = setTimeout(() => step().catch(fail), Math.max(100, Number(settings.cycle) || 700));
       };
       await step();
     }
@@ -206,7 +210,7 @@
           if (video.src !== src) video.src = src;
           video.currentTime = 0; await video.play();
           if (!valid(n)) { video.pause(); return; }
-          frame.style.display = 'none'; video.style.display = 'block'; layer.style.display = 'block'; return;
+          frame.style.display = 'none'; video.style.display = 'block'; previewVisible(true); return;
         } catch { video.pause(); }
       }
       await sprite(paths, n);

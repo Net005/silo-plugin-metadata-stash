@@ -31,6 +31,7 @@ type watchlistJournal struct {
 	NativeBaseline map[string]bool                   `json:"native_baseline,omitempty"`
 	NativeSeeded   bool                              `json:"native_seeded,omitempty"`
 	LastActions    map[string]watchlistActionVersion `json:"last_actions,omitempty"`
+	Inactive       map[string]watchlistIntent        `json:"inactive_library_actions,omitempty"`
 	Version        int                               `json:"version"`
 	Baseline       map[string]bool                   `json:"baseline"`
 	Pending        map[string]watchlistIntent        `json:"pending"`
@@ -181,6 +182,9 @@ func (s *runtimeServer) watchlistState(ctx context.Context, id string) (watchlis
 	if j.Pending == nil {
 		j.Pending = map[string]watchlistIntent{}
 	}
+	if j.Inactive == nil {
+		j.Inactive = map[string]watchlistIntent{}
+	}
 	return r, j, tag, e
 }
 func (s *runtimeServer) saveWatchlistState(ctx context.Context, r watchlistCollection, j watchlistJournal, tag string) error {
@@ -323,6 +327,10 @@ func (s *runtimeServer) backfillWatchlistLocked(ctx context.Context) (int, error
 	if e != nil {
 		return 0, e
 	}
+	s.mu.RLock()
+	base, key := s.siloBase, s.siloKey
+	s.mu.RUnlock()
+	fileClient := provider.NewSiloClient(base, key)
 	done := 0
 	tagID := ""
 	for _, row := range rows {
@@ -409,12 +417,55 @@ func (s *runtimeServer) backfillWatchlistLocked(ctx context.Context) (int, error
 				return done, e
 			}
 		}
+		// File scans can move a shared item out of a library while an intent is
+		// queued. Retain it durably without blocking every other library. Resume
+		// it if a file returns, unless a newer local action superseded it.
+		for media, intent := range j.Inactive {
+			paths, err := fileClient.ItemFilePathsForLibrary(ctx, media, row.LibraryID)
+			if err != nil {
+				return done, err
+			}
+			if len(paths) == 0 {
+				continue
+			}
+			if current, ok := j.Pending[media]; !ok || current.Changed.Before(intent.Changed) {
+				j.Pending[media] = intent
+			}
+			delete(j.Inactive, media)
+			if e = s.saveWatchlistState(ctx, r, j, tag); e != nil {
+				return done, e
+			}
+			r, j, tag, e = s.watchlistState(ctx, row.ID)
+			if e != nil {
+				return done, e
+			}
+		}
 		for media, intent := range j.Pending {
+			paths, err := fileClient.ItemFilePathsForLibrary(ctx, media, row.LibraryID)
+			if err != nil {
+				return done, err
+			}
+			if len(paths) == 0 {
+				j.Inactive[media] = intent
+				delete(j.Pending, media)
+				if e = s.saveWatchlistState(ctx, r, j, tag); e != nil {
+					return done, e
+				}
+				r, j, tag, e = s.watchlistState(ctx, row.ID)
+				if e != nil {
+					return done, e
+				}
+				continue
+			}
+			delete(j.Inactive, media)
 			if e = s.applyLocalWatchlist(ctx, row.ID, media, intent.Desired); e != nil {
 				return done, e
 			}
 			if intent.SceneID == "" {
-				intent.SceneID, e = s.resolveWatchlistScene(ctx, media, row.LibraryID)
+				intent.SceneID, e = s.stash().sceneIDForExactPaths(ctx, paths)
+				if e == nil && intent.SceneID == "" {
+					e = fmt.Errorf("no exact Stash Watchlist file match")
+				}
 				if e != nil {
 					return done, e
 				}
