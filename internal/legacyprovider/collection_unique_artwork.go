@@ -19,8 +19,10 @@ import (
 	"strings"
 	"sync"
 
+	xdraw "golang.org/x/image/draw"
 	"golang.org/x/image/font"
-	"golang.org/x/image/font/basicfont"
+	"golang.org/x/image/font/gofont/goregular"
+	"golang.org/x/image/font/opentype"
 	"golang.org/x/image/math/fixed"
 	_ "golang.org/x/image/webp"
 )
@@ -149,7 +151,7 @@ func (c *SiloClient) posterBytes(ctx context.Context, u string) ([]byte, error) 
 
 // Unique posters are reserved across ALL Silo collections, including user
 // collections (which are inspected but never edited). Membership is unchanged.
-// If no unclaimed member image exists, a collection-specific title card is used.
+// If no unclaimed member image exists, a collection-specific composition of member artwork is used.
 func (c *SiloClient) SetUniqueCollectionPoster(ctx context.Context, id string, candidates []CollectionArtwork) error {
 	collectionPosterMu.Lock()
 	defer collectionPosterMu.Unlock()
@@ -280,7 +282,44 @@ func (c *SiloClient) SetUniqueCollectionPoster(ctx context.Context, id string, c
 		if failures > 0 {
 			return fmt.Errorf("collection poster sources unavailable (%d)", failures)
 		}
-		data = collectionTitleCard(current.ID, current.Title)
+		var sources [][]byte
+		for _, a := range candidates {
+			if a.PosterURL == "" {
+				continue
+			}
+			b, err := c.posterBytes(ctx, a.PosterURL)
+			if err != nil {
+				continue
+			}
+			if _, err = pixelDigest(b); err != nil {
+				continue
+			}
+			sources = append(sources, b)
+			if len(sources) == 2 {
+				break
+			}
+		}
+		if len(sources) == 0 && len(candidates) > 0 {
+			return fmt.Errorf("collection member artwork unavailable")
+		}
+		for attempt := 0; attempt < 32; attempt++ {
+			data = collectionMemberCard(fmt.Sprintf("%s:%d", current.ID, attempt), current.Title, sources)
+			sig, _ := posterSignature(data)
+			duplicate := false
+			for _, other := range signatures {
+				if samePoster(sig, other) {
+					duplicate = true
+					break
+				}
+			}
+			if !duplicate {
+				break
+			}
+			data = nil
+		}
+		if data == nil {
+			return fmt.Errorf("cannot reserve distinct collection artwork")
+		}
 		digest, _ = pixelDigest(data)
 		if previous.Policy == 1 && previous.MediaID == "" && previous.SourceDigest == digest && previous.PosterURL == current.PosterURL {
 			return nil
@@ -302,44 +341,70 @@ func (c *SiloClient) SetUniqueCollectionPoster(ctx context.Context, id string, c
 	_, e = c.collectionRequestETag(ctx, http.MethodPatch, path, map[string]any{"source_config": latest.SourceConfig}, nil, tag)
 	return e
 }
+
+// Member artwork stays fully visible: fit rather than crop, with a title band.
+// A stable collection-specific accent distinguishes otherwise identical shelves.
 func collectionTitleCard(id, title string) []byte {
+	return collectionMemberCard(id, title, nil)
+}
+func collectionMemberCard(id, title string, sources [][]byte) []byte {
 	im := image.NewRGBA(image.Rect(0, 0, 500, 750))
 	h := sha256.Sum256([]byte(id))
-	draw.Draw(im, im.Bounds(), &image.Uniform{color.RGBA{20 + h[0]/5, 20 + h[1]/5, 24 + h[2]/5, 255}}, image.Point{}, draw.Src)
-	// Large, readable text rendered at 3x; the ID distinguishes identically named
-	// collections from different libraries as well as providing a unique motif.
-	small := image.NewRGBA(image.Rect(0, 0, 166, 250))
-	draw.Draw(small, small.Bounds(), &image.Uniform{color.Transparent}, image.Point{}, draw.Src)
-	d := font.Drawer{Dst: small, Src: image.White, Face: basicfont.Face7x13}
-	words := strings.Fields(title)
+	bg := color.RGBA{18, 22, 30, 255}
+	accent := color.RGBA{70 + h[0]/2, 70 + h[1]/2, 70 + h[2]/2, 255}
+	draw.Draw(im, im.Bounds(), &image.Uniform{bg}, image.Point{}, draw.Src)
+	n := min(2, len(sources))
+	for i := 0; i < n; i++ {
+		src, _, err := image.Decode(bytes.NewReader(sources[i]))
+		if err != nil {
+			continue
+		}
+		panel := image.Rect(20+i*460/n, 20, 20+(i+1)*460/n-8, 550)
+		bounds := src.Bounds()
+		w, height := panel.Dx(), panel.Dy()
+		if w*bounds.Dy() > height*bounds.Dx() {
+			w = height * bounds.Dx() / bounds.Dy()
+		} else {
+			height = w * bounds.Dy() / bounds.Dx()
+		}
+		x, y := panel.Min.X+(panel.Dx()-w)/2, panel.Min.Y+(panel.Dy()-height)/2
+		xdraw.CatmullRom.Scale(im, image.Rect(x, y, x+w, y+height), src, bounds, draw.Src, nil)
+	}
+	draw.Draw(im, image.Rect(0, 565, 500, 750), &image.Uniform{color.RGBA{accent.R / 2, accent.G / 2, accent.B / 2, 255}}, image.Point{}, draw.Src)
+	draw.Draw(im, image.Rect(24, 575, 476, 581), &image.Uniform{accent}, image.Point{}, draw.Src)
+	parsed, _ := opentype.Parse(goregular.TTF)
+	face, _ := opentype.NewFace(parsed, &opentype.FaceOptions{Size: 36, DPI: 72, Hinting: font.HintingFull})
+	defer face.Close()
+	d := font.Drawer{Dst: im, Src: image.White, Face: face}
+	// Provider prefix is already visible beneath the card in Silo.
+	if prefix, rest, ok := strings.Cut(title, " | "); ok && len(prefix) < 20 {
+		title = rest
+	}
+	lines := []string{}
 	line := ""
-	y := 90
-	for _, word := range words {
-		if len(line)+len(word) > 19 {
-			d.Dot = fixed.P(10, y)
-			d.DrawString(line)
-			y += 19
-			line = ""
-		}
-		if line != "" {
-			line += " "
-		}
-		line += word
-	}
-	d.Dot = fixed.P(10, y)
-	d.DrawString(line)
-	d.Dot = fixed.P(10, 225)
-	d.DrawString(id)
-	for y := 0; y < 750; y++ {
-		for x := 0; x < 498; x++ {
-			p := small.RGBAAt(x/3, y/3)
-			if p.A > 0 {
-				im.SetRGBA(x, y, p)
-			}
+	for _, word := range strings.Fields(title) {
+		test := strings.TrimSpace(line + " " + word)
+		if line != "" && d.MeasureString(test).Ceil() > 444 {
+			lines = append(lines, line)
+			line = word
+		} else {
+			line = test
 		}
 	}
-	for n, v := range h {
-		draw.Draw(im, image.Rect(12+n*15, 710, 24+n*15, 710+int(v)/8), &image.Uniform{color.RGBA{150, 170, 190, 255}}, image.Point{}, draw.Src)
+	if line != "" {
+		lines = append(lines, line)
+	}
+	for i, line := range lines {
+		if i >= 3 {
+			break
+		}
+		// Bound unusually long words without writing outside the card.
+		for d.MeasureString(line).Ceil() > 444 && len([]rune(line)) > 1 {
+			r := []rune(line)
+			line = string(r[:len(r)-2]) + "…"
+		}
+		d.Dot = fixed.P(28, 634+i*44)
+		d.DrawString(line)
 	}
 	var out bytes.Buffer
 	_ = png.Encode(&out, im)

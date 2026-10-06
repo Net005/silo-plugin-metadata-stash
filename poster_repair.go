@@ -186,7 +186,9 @@ func (s *scheduledTaskServer) repairSelectedPosters(ctx context.Context, library
 				studioName = row.Studio.Name
 			}
 			isJAV := javPosterCode.MatchString(strings.TrimSpace(row.Code))
-			if !isJAV && !enabled {
+			// Automatic JAV repair remains paused pending review of the bulk previews.
+			// Only an explicitly scoped repair can change a JAV poster.
+			if (isJAV && len(ids) == 0) || (!isJAV && !enabled) {
 				skipped++
 				continue
 			}

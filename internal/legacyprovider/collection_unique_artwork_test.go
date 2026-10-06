@@ -97,3 +97,22 @@ func TestUniquePosterAcrossCollectionsAndDifferentMemberIDs(t *testing.T) {
 	}
 }
 func mustJSON(v any) json.RawMessage { b, _ := json.Marshal(v); return b }
+
+func TestCollectionCompositionRetainsBothMemberImages(t *testing.T) {
+	red := solidPoster(color.RGBA{190, 20, 30, 255})
+	blue := solidPoster(color.RGBA{10, 40, 190, 255})
+	data := collectionMemberCard("collection", "Stash | Your Top Rated", [][]byte{red, blue})
+	im, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if im.Bounds().Dx() != 500 || im.Bounds().Dy() != 750 {
+		t.Fatal("not a portrait cover")
+	}
+	if color.RGBAModel.Convert(im.At(125, 275)).(color.RGBA) != (color.RGBA{190, 20, 30, 255}) || color.RGBAModel.Convert(im.At(355, 275)).(color.RGBA) != (color.RGBA{10, 40, 190, 255}) {
+		t.Fatal("member images missing")
+	}
+	if !bytes.Equal(data, collectionMemberCard("collection", "Stash | Your Top Rated", [][]byte{red, blue})) {
+		t.Fatal("unstable composition")
+	}
+}
