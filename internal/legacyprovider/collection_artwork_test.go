@@ -64,11 +64,12 @@ func TestCollectionArtworkResolvesExactStashSource(t *testing.T) {
 
 func TestSyncCollectionArtworkUploadsOncePerWindow(t *testing.T) {
 	uploads := 0
+	thumbhash := ""
 	// A legacy marker in the same window must not preserve a wrong poster.
 	marker := map[string]json.RawMessage{"javbeacon_artwork": json.RawMessage(`{"bucket":82900,"poster_media_id":"m1"}`)}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/v2/admin/collections" {
-			_ = json.NewEncoder(w).Encode(map[string]any{"items": []siloCollection{{ID: "c1", SourceConfig: marker}}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"items": []siloCollection{{ID: "c1", PosterThumbhash: thumbhash, SourceConfig: marker}}})
 			return
 		}
 		if r.URL.Path == "/source-poster" {
@@ -79,7 +80,7 @@ func TestSyncCollectionArtworkUploadsOncePerWindow(t *testing.T) {
 			w.Header().Set("ETag", `"art-v1"`)
 			switch r.Method {
 			case http.MethodGet:
-				_ = json.NewEncoder(w).Encode(siloCollection{ID: "c1", SourceConfig: marker})
+				_ = json.NewEncoder(w).Encode(siloCollection{ID: "c1", PosterThumbhash: thumbhash, SourceConfig: marker})
 			case http.MethodPatch:
 				if r.Header.Get("If-Match") != `"art-v1"` {
 					t.Errorf("missing If-Match")
@@ -101,6 +102,9 @@ func TestSyncCollectionArtworkUploadsOncePerWindow(t *testing.T) {
 			}
 			if err := r.ParseMultipartForm(1 << 20); err != nil || (r.FormValue("source_url") == "" && r.MultipartForm.File["image"] == nil) {
 				t.Errorf("missing source_url: %v", err)
+			}
+			if r.URL.Path == "/api/v2/admin/collections/c1/poster" {
+				thumbhash = "cached-poster"
 			}
 			uploads++
 			w.WriteHeader(http.StatusNoContent)
