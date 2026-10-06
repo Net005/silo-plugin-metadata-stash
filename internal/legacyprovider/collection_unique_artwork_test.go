@@ -244,6 +244,7 @@ func TestSmallCollectionGetsRealCoverWithoutChangingUserCollections(t *testing.T
 func TestLegacyManagedPosterReservationWithoutImageURL(t *testing.T) {
 	marker := uniquePosterMarker{Policy: 1, MediaID: "member", SourceDigest: "digest", Signature: []byte{1}}
 	managed := siloCollection{Slug: "stash-recommendations-old", Description: RecommendationOwner}
+	marker.PosterURL = "https://example.invalid/expired?signature=old"
 	if !posterMarkerMatches(marker, managed) {
 		t.Fatal("legacy reservation lost")
 	}

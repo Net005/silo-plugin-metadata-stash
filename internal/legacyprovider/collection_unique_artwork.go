@@ -52,10 +52,10 @@ func posterMarkerMatches(m uniquePosterMarker, r siloCollection) bool {
 	if m.PosterThumbhash != "" && r.PosterThumbhash != "" {
 		return m.PosterThumbhash == r.PosterThumbhash
 	}
-	if m.PosterURL != "" {
-		return m.PosterURL == r.PosterURL
+	if m.PosterURL != "" && m.PosterURL == r.PosterURL {
+		return true
 	}
-	// Older plugin versions wrote empty URLs because Silo admin detail omits
+	// Older plugin versions wrote empty or expiring signed URLs because Silo admin detail omits
 	// them. Retain these known managed reservations until the cover is updated
 	// with a stable thumbnail hash; never apply this migration to user shelves.
 	return m.PosterThumbhash == "" && m.SourceDigest != "" && len(m.Signature) > 0 && strings.HasPrefix(r.Slug, "stash-recommendations-") && strings.HasPrefix(r.Description, RecommendationOwner)
