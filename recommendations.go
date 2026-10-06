@@ -842,6 +842,19 @@ func (s *recommendationServer) Handle(ctx context.Context, req *pluginv1.HandleH
 		return recommendationPage(ctx)
 	}
 	switch {
+	case req.Method == "POST" && path == "/recommendations/posters/repair":
+		var input struct {
+			Library string   `json:"library_id"`
+			IDs     []string `json:"item_ids"`
+		}
+		if json.Unmarshal(req.Body, &input) != nil || input.Library == "" || len(input.IDs) == 0 || len(input.IDs) > 20 {
+			return respond(400, map[string]any{"error": "Provide a Stash Metadata library and 1–20 item IDs"})
+		}
+		result, e := s.runtime.task.repairSelectedPosters(ctx, input.Library, input.IDs)
+		if e != nil {
+			return respond(503, map[string]any{"error": e.Error()})
+		}
+		return respond(200, result)
 	case req.Method == "POST" && path == "/recommendations/watchlist/reconcile":
 		if s.runtime.legacy == nil {
 			return respond(503, map[string]any{"error": "Watchlist reconciler unavailable"})

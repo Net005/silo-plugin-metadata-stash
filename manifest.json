@@ -1,6 +1,6 @@
 {
   "plugin_id": "stash.metadata",
-  "version": "0.3.24",
+  "version": "0.3.25",
   "checksum": "__CHECKSUM__",
   "silo_api_version": "v1",
   "presentation": {
@@ -153,8 +153,8 @@
     {
       "id": "nonjav-poster-repair",
       "type": "scheduled_task.v1",
-      "display_name": "Repair non-JAV poster layouts",
-      "description": "Local poster layout repair in enabled Stash Metadata libraries; preserves manual artwork locks and skips JAV codes. The opt-in worker runs hourly and writes images into Silo storage."
+      "display_name": "Repair Stash poster layouts",
+      "description": "Local JAV DVD/Blu-ray front-cover repair and configured non-JAV poster layouts in enabled Stash Metadata libraries. Runs hourly and stores repaired posters in Silo storage."
     }
   ],
   "global_config_schema": [
@@ -438,6 +438,14 @@
       "navigable": true,
       "navigation_label": "Stash recommendations",
       "navigation_kind": "admin"
+    },
+    {
+      "path": "/recommendations/posters/repair",
+      "methods": [
+        "POST"
+      ],
+      "access": "admin",
+      "id": "poster-repair"
     }
   ]
 }

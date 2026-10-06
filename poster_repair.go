@@ -73,6 +73,10 @@ func applyRenderedPoster(ctx context.Context, base, key, id string, data []byte)
 }
 
 func (s *scheduledTaskServer) repairPosters(ctx context.Context) (map[string]any, error) {
+	return s.repairSelectedPosters(ctx, "", nil)
+}
+
+func (s *scheduledTaskServer) repairSelectedPosters(ctx context.Context, library string, ids []string) (map[string]any, error) {
 	if !s.posterMu.TryLock() {
 		return map[string]any{"status": "already_running"}, nil
 	}
@@ -82,7 +86,7 @@ func (s *scheduledTaskServer) repairPosters(ctx context.Context) (map[string]any
 	profile := s.runtime.recommendationConfig.Profile
 	stash := s.runtime.client
 	s.runtime.mu.RUnlock()
-	if !enabled {
+	if !enabled && !stash.configured() {
 		return map[string]any{"status": "disabled"}, nil
 	}
 	if base == "" || key == "" || profile == "" || !stash.configured() {
@@ -99,6 +103,9 @@ func (s *scheduledTaskServer) repairPosters(ctx context.Context) (map[string]any
 	}
 	applied, skipped := 0, 0
 	for _, lib := range libs {
+		if library != "" && lib.ID != library {
+			continue
+		}
 		slug := "stash-recommendations-poster-layout-" + lib.ID
 		var record provider.RecommendationRecord
 		for _, r := range records {
@@ -131,7 +138,15 @@ func (s *scheduledTaskServer) repairPosters(ctx context.Context) (map[string]any
 		if state.Items == nil {
 			state.Items = map[string]posterMarker{}
 		}
-		items, next, err := client.ListMatchedCatalogPage(ctx, lib.ID, state.Cursor)
+		var items []provider.CatalogItem
+		var next string
+		if library != "" {
+			for _, id := range ids {
+				items = append(items, provider.CatalogItem{ContentID: id})
+			}
+		} else {
+			items, next, err = client.ListMatchedCatalogPage(ctx, lib.ID, state.Cursor)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -146,7 +161,7 @@ func (s *scheduledTaskServer) repairPosters(ctx context.Context) (map[string]any
 				skipped++
 				continue
 			}
-			paths, e := client.ItemFilePaths(ctx, item.ContentID)
+			paths, e := client.ItemFilePathsForLibrary(ctx, item.ContentID, lib.ID)
 			if e != nil {
 				return nil, e
 			}
@@ -162,7 +177,7 @@ func (s *scheduledTaskServer) repairPosters(ctx context.Context) (map[string]any
 			if e != nil {
 				return nil, e
 			}
-			if row == nil || row.Paths.Screenshot == "" || javPosterCode.MatchString(strings.TrimSpace(row.Code)) {
+			if row == nil || row.Paths.Screenshot == "" {
 				skipped++
 				continue
 			}
@@ -170,15 +185,20 @@ func (s *scheduledTaskServer) repairPosters(ctx context.Context) (map[string]any
 			if row.Studio != nil {
 				studioName = row.Studio.Name
 			}
-			if art := s.runtime.sceneArtwork(ctx, sceneID); art != nil && art.ReleaseID > 0 {
+			isJAV := javPosterCode.MatchString(strings.TrimSpace(row.Code))
+			if !isJAV && !enabled {
 				skipped++
 				continue
 			}
-			fingerprint := fmt.Sprintf("layout-v1|%s|%s|%s|%s|%s|%s", mode, row.ID, row.Title, row.Date, row.Paths.Screenshot, studioName)
+			if art := s.runtime.sceneArtwork(ctx, sceneID); !isJAV && art != nil && art.ReleaseID > 0 {
+				skipped++
+				continue
+			}
+			fingerprint := fmt.Sprintf("layout-v2|%t|%s|%s|%s|%s|%s|%s", isJAV, mode, row.ID, row.Title, row.Date, row.Paths.Screenshot, studioName)
 			fp := sha256.Sum256([]byte(fingerprint))
 			source := hex.EncodeToString(fp[:])
 			old := state.Items[item.ContentID]
-			if old.Source == source && time.Since(old.Checked) < 7*24*time.Hour {
+			if library == "" && old.Source == source && time.Since(old.Checked) < 7*24*time.Hour {
 				skipped++
 				continue
 			}
@@ -199,7 +219,7 @@ func (s *scheduledTaskServer) repairPosters(ctx context.Context) (map[string]any
 			hash := sha256.Sum256(raw)
 			digest := hex.EncodeToString(hash[:])
 			stored := old.Stored
-			if old.Source != source || old.Hash != digest {
+			if library != "" || old.Source != source || old.Hash != digest {
 				// Recheck locks immediately before publication; never replace a manual
 				// image selected while this worker downloaded the source.
 				if e = siloProfileRequest(ctx, base, key, profile, http.MethodGet, "/api/v2/catalog/items/"+url.PathEscape(item.ContentID), nil, &detail); e != nil {
@@ -213,17 +233,29 @@ func (s *scheduledTaskServer) repairPosters(ctx context.Context) (map[string]any
 				if row.Studio != nil {
 					footer = row.Studio.Name + " / " + footer
 				}
-				rendered, e := poster.RenderScenePoster(raw, row.Title, footer, mode)
+				var rendered []byte
+				if isJAV {
+					var changed bool
+					rendered, changed, e = poster.RenderJAVPoster(raw)
+					if e == nil && !changed {
+						state.Items[item.ContentID] = posterMarker{Source: source, Hash: digest, Checked: time.Now().UTC()}
+						skipped++
+						continue
+					}
+				} else {
+					rendered, e = poster.RenderScenePoster(raw, row.Title, footer, mode)
+				}
 				if e != nil {
 					return nil, e
 				}
 				stored, e = applyRenderedPoster(ctx, base, key, item.ContentID, rendered)
-				// The admin image API locks artwork. Restore only the lock it added,
-				// using the existing cleanup helper semantics and a fresh current read.
+				// Restore the artwork lock only when the API actually returns the
+				// complete lock list. An omitted field is not an empty list; never
+				// clear unknown existing metadata locks.
 				cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 				var current cacheArtworkItem
 				lockErr := siloProfileRequest(cleanup, base, key, profile, http.MethodGet, "/api/v2/catalog/items/"+url.PathEscape(item.ContentID), nil, &current)
-				if lockErr == nil {
+				if lockErr == nil && current.LockedFields != nil {
 					locks := []int{}
 					for _, n := range current.LockedFields {
 						if n != artworkLockField {
@@ -259,7 +291,9 @@ func (s *scheduledTaskServer) repairPosters(ctx context.Context) (map[string]any
 				return map[string]any{"status": "partial", "applied": applied, "skipped": skipped}, nil
 			}
 		}
-		state.Cursor = next
+		if library == "" {
+			state.Cursor = next
+		}
 		record.SourceConfig["poster_layout"], _ = json.Marshal(state)
 		if err = client.UpdateRecommendationRecord(ctx, record.ID, tag, map[string]any{"source_config": record.SourceConfig}); err != nil {
 			return nil, err
