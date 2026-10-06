@@ -104,6 +104,7 @@ func TestInterruptedWeeklyRunRecoversOnlyAfterLeaseExpiry(t *testing.T) {
 	s := emptyRecommendationState()
 	s.Report.Week = recommendationPeriod(now, cfg)
 	s.Report.Status = "running"
+	s.Report.Fingerprint = recommendationFingerprint(cfg)
 	s.LeaseUntil = now.Add(time.Minute)
 	if recommendationDue(s, cfg, now) {
 		t.Fatal("active reservation was ignored")
@@ -113,7 +114,49 @@ func TestInterruptedWeeklyRunRecoversOnlyAfterLeaseExpiry(t *testing.T) {
 		t.Fatal("interrupted weekly run never recovered")
 	}
 	s.LastWeek = s.Report.Week
+	s.Report.Status = "complete"
+	s.LastFingerprint = recommendationFingerprint(cfg)
 	if recommendationDue(s, cfg, now) {
 		t.Fatal("published week reran automatically")
+	}
+}
+
+func TestLegacyCountMigratesAndUpdatedConfigurationRebuildsThisWeek(t *testing.T) {
+	cfg, err := parseRecommendationConfig(map[string]any{"defaults_json": `{"count":250}`, "libraries_json": `{"18":{"count":250},"19":{"count":50},"20":{"count":250,"keep_legacy_250_count":true}}`}, recommendationConfig{})
+	if err != nil || cfg.Options.Count != 500 {
+		t.Fatalf("defaults=%d err=%v", cfg.Options.Count, err)
+	}
+	for id, want := range map[string]int{"18": 500, "19": 50, "20": 250} {
+		o, err := cfg.libraryOptions(id)
+		if err != nil || o.Count != want {
+			t.Fatalf("library %s count=%d err=%v", id, o.Count, err)
+		}
+	}
+	now := time.Now()
+	s := emptyRecommendationState()
+	s.LastWeek = recommendationPeriod(now, cfg)
+	if recommendationCurrent(s, cfg, now) || !recommendationDue(s, cfg, now) {
+		t.Fatal("old completed week prevented upgraded rebuild")
+	}
+	s.LastFingerprint = recommendationFingerprint(cfg)
+	s.Report.Fingerprint = s.LastFingerprint
+	s.Report.Status = "complete"
+	if !recommendationCurrent(s, cfg, now) || recommendationDue(s, cfg, now) {
+		t.Fatal("current build reruns without changes")
+	}
+	cfg.Options.High++
+	if recommendationCurrent(s, cfg, now) || !recommendationDue(s, cfg, now) {
+		t.Fatal("changed settings prevented rebuild")
+	}
+	s.LeaseUntil = now.Add(time.Minute)
+	if recommendationDue(s, cfg, now) {
+		t.Fatal("upgrade bypassed active worker reservation")
+	}
+	s.LeaseUntil = now.Add(-time.Minute)
+	s.Report.Week = s.LastWeek
+	s.Report.Fingerprint = recommendationFingerprint(cfg)
+	s.Report.Status = "failed"
+	if recommendationDue(s, cfg, now) {
+		t.Fatal("failed generation retried each minute")
 	}
 }

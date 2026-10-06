@@ -78,6 +78,7 @@ func parseRecommendationConfig(v map[string]any, old recommendationConfig) (reco
 	if c.Enabled && c.Profile == "" {
 		return c, fmt.Errorf("recommendation owner profile ID is required")
 	}
+	c.Options = migrateRecommendationCount(c.Options)
 	if err := c.Options.Validate(); err != nil {
 		return c, err
 	}
@@ -97,11 +98,37 @@ func (c recommendationConfig) libraryOptions(id string) (rec.Options, error) {
 			return o, fmt.Errorf("library %s options: %w", id, err)
 		}
 	}
-	o = o.WithWatchlistPeriods()
+	o = migrateRecommendationCount(o).WithWatchlistPeriods()
 	return o, o.Validate()
 }
 
+// Retire the previous shipped 250-item limit while preserving custom lower
+// limits and an explicit opt-out for installations that intentionally want 250.
+func migrateRecommendationCount(o rec.Options) rec.Options {
+	if o.Count == 250 && !o.KeepLegacyCount {
+		o.Count = 500
+	}
+	return o
+}
+
+func recommendationFingerprint(c recommendationConfig) string {
+	raw, _ := json.Marshal(struct {
+		Revision  string
+		Profile   string
+		Options   rec.Options
+		Libraries map[string]json.RawMessage
+		Archive   bool
+	}{"watchlist-periods-500-v1", c.Profile, c.Options, c.Libraries, c.Archive})
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
+}
+func recommendationCurrent(state recommendationState, c recommendationConfig, now time.Time) bool {
+	return state.Report.Status == "complete" && state.Report.Fingerprint == state.LastFingerprint && state.LastWeek == recommendationPeriod(now, c) && state.LastFingerprint == recommendationFingerprint(c)
+}
+
 type recommendationReport struct {
+	Fingerprint string `json:"configuration_fingerprint,omitempty"`
+
 	Phase     string                     `json:"phase,omitempty"`
 	Status    string                     `json:"status"`
 	Started   time.Time                  `json:"started_at"`
@@ -281,10 +308,12 @@ func recommendationPeriod(now time.Time, c recommendationConfig) string {
 }
 func recommendationDue(state recommendationState, cfg recommendationConfig, now time.Time) bool {
 	period := recommendationPeriod(now, cfg)
-	if period == "" || state.LastWeek == period {
+	if period == "" || state.LeaseUntil.After(now) || recommendationCurrent(state, cfg, now) {
 		return false
 	}
-	return state.Report.Week != period || state.Report.Status == "running" && !state.LeaseUntil.After(now)
+	// Retry interrupted work once its lease expires. Do not repeatedly charge
+	// for a failed or preview run with unchanged settings; manual retry stays available.
+	return state.Report.Week != period || state.Report.Fingerprint != recommendationFingerprint(cfg) || state.Report.Status == "running"
 }
 
 func (s *recommendationServer) poll() {
@@ -445,7 +474,7 @@ func (s *recommendationServer) run(ctx context.Context, preview bool) (runErr er
 	}
 	state.Lease = hex.EncodeToString(token)
 	state.LeaseUntil = now.Add(50 * time.Minute)
-	report := recommendationReport{Phase: "Reading Stash history", Status: "running", Started: now, Week: recommendationPeriod(now, cfg), Model: "gpt-6-luna", Preview: preview || cfg.Preview, Libraries: []rec.LibraryReport{}}
+	report := recommendationReport{Fingerprint: recommendationFingerprint(cfg), Phase: "Reading Stash history", Status: "running", Started: now, Week: recommendationPeriod(now, cfg), Model: "gpt-6-luna", Preview: preview || cfg.Preview, Libraries: []rec.LibraryReport{}}
 	if err = archiveRecommendationReport(ctx, client, cfg.Profile, record.LibraryID, state.Report, now); err != nil {
 		return fmt.Errorf("preserving previous recommendation report: %w", err)
 	}
@@ -555,6 +584,7 @@ func (s *recommendationServer) run(ctx context.Context, preview bool) (runErr er
 		}
 		learningGlobal := append(append([]rec.Scene(nil), scenes...), historyOnly...)
 		r := rec.Build(lib.ID, learningLocal, learningGlobal, o, watch, state.Previous[lib.ID], state.Exposure[lib.ID], state.Dismissed[lib.ID], now)
+		r.Target = o.Count
 		r.Matched = len(local)
 		r.Evaluation = rec.Evaluate(local, o, now)
 		report.Libraries = append(report.Libraries, r)
@@ -772,6 +802,7 @@ func (s *recommendationServer) run(ctx context.Context, preview bool) (runErr er
 	}
 	state.Totals = report.Totals
 	state.LastWeek = report.Week
+	state.LastFingerprint = report.Fingerprint
 	state.Dirty = false
 	report.Phase = "Finished"
 	report.Status = "complete"

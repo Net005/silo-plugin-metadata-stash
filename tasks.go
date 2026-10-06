@@ -93,7 +93,10 @@ func (s *scheduledTaskServer) Run(ctx context.Context, req *pluginv1.RunSchedule
 				if err != nil {
 					return nil, err
 				}
-				if state.LastWeek == recommendationPeriod(time.Now(), cfg) {
+				if state.LeaseUntil.After(time.Now()) {
+					return taskOutput(map[string]any{"status": "already_running", "lease_until": state.LeaseUntil, "detail": "Read the recommendation report for worker progress; no duplicate worker was started"})
+				}
+				if recommendationCurrent(state, cfg, time.Now()) {
 					return taskOutput(map[string]any{"status": "already_completed_this_week", "detail": "Use the report page Build collections button for an explicit rebuild"})
 				}
 			}

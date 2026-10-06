@@ -49,6 +49,7 @@ type Scene struct {
 	HistoryOnly bool   `json:"-"`
 }
 type Options struct {
+	KeepLegacyCount    bool     `json:"keep_legacy_250_count"`
 	WatchlistPeriods   bool     `json:"watchlist_periods"`
 	Enabled            bool     `json:"enabled"`
 	Count              int      `json:"count"`
@@ -109,6 +110,7 @@ type Collection struct {
 	Picks        []Pick        `json:"picks"`
 }
 type LibraryReport struct {
+	Target         int          `json:"target_items_per_collection"`
 	Matched        int          `json:"matched_scenes"`
 	Evaluation     Evaluation   `json:"evaluation"`
 	LibraryID      string       `json:"library_id"`

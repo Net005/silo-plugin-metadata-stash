@@ -1,6 +1,6 @@
 {
   "plugin_id": "stash.metadata",
-  "version": "0.3.22",
+  "version": "0.3.23",
   "checksum": "__CHECKSUM__",
   "silo_api_version": "v1",
   "presentation": {
@@ -357,7 +357,7 @@
             "label": "Recommendation defaults (JSON)",
             "control": "ADMIN_FORM_CONTROL_TEXTAREA",
             "required": false,
-            "description": "Overrides defaults: count 500; all sixteen collections; high_rating 80; low_rating 40; cooldown_days 14; recent_days 90; retain_fraction 0.7; max_entity_fraction 0.3; max_discovery_overlap 2. Set excluded_scenes, excluded_performers, excluded_studios, excluded_tags or cross_library here. Watchlist periods use 7/30/365-day activity windows and reuse saved AI rankings without dedicated requests. watchlist_periods defaults to true: a selected watchlist also enables monthly-watchlist and yearly-watchlist. Explicit count/per-library overrides remain in effect. Added local-only kinds: monthly-watchlist, yearly-watchlist, monthly-spotlight, yearly-spotlight, cast-spotlight, general-spotlight, new-releases. New releases use recent_days and sort by release date.",
+            "description": "Overrides defaults: count 500; all sixteen collections; high_rating 80; low_rating 40; cooldown_days 14; recent_days 90; retain_fraction 0.7; max_entity_fraction 0.3; max_discovery_overlap 2. Set excluded_scenes, excluded_performers, excluded_studios, excluded_tags or cross_library here. Watchlist periods use 7/30/365-day activity windows and reuse saved AI rankings without dedicated requests. watchlist_periods defaults to true: a selected watchlist also enables monthly-watchlist and yearly-watchlist. Legacy count:250 overrides migrate to 500; use keep_legacy_250_count:true to retain 250 intentionally. Other custom limits remain in effect. Reports show effective target limits. Added local-only kinds: monthly-watchlist, yearly-watchlist, monthly-spotlight, yearly-spotlight, cast-spotlight, general-spotlight, new-releases. New releases use recent_days and sort by release date.",
             "default_value": "{}"
           },
           {

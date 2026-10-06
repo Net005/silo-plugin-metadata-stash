@@ -1,6 +1,6 @@
 # Weekly recommendations
 
-Stash Metadata v0.3.22 builds up to **500 verified items per collection** across all
+Stash Metadata v0.3.23 builds up to **500 verified items per collection** across all
 movie libraries using this plugin. The original nine kinds are `for-you`, `top-rated`,
 `revisit`, `favourites`, `watchlist`, `overlooked`, `different`, `recent`, `spotlight`.
 Names use the existing Stash prefix exactly, including trailing spaces.
@@ -189,9 +189,10 @@ prior and excludes scenes already counted in the local library. Low ratings, sce
 and entity exclusions and dismissals still prevent selection.
 
 The default target is **up to 500**, subject to available Watchlist matches and
-selection constraints. Explicit lower `count` overrides remain respected: change
-old `count:250` defaults or library overrides to `count:500` to request the larger
-collections. Three periods share a separate overlap budget: unselected candidates
+selection constraints. The previous shipped `count:250` defaults and per-library overrides now migrate
+to 500 automatically. Set `keep_legacy_250_count:true` alongside `count:250` to
+retain that limit intentionally. Other custom lower limits remain respected.
+Report `target_items_per_collection` records the effective limit for each library. Three periods share a separate overlap budget: unselected candidates
 are preferred, and a scene can occur in at most two periods when the pool is large
 enough. Small pools permit more overlap instead of producing empty collections.
 Per-studio/performer diversity limits still apply. An exact 500 or fully disjoint
@@ -209,3 +210,13 @@ preferences retain most ranking weight; uncovered entries retain their local
 order. Report `ranking_reuse` fields show actual coverage. The existing OpenAI
 monthly cap and scheduled requests for other collections are unchanged; the old
 weekly Watchlist no longer consumes its own model request.
+
+
+Version 0.3.23 fingerprints the ranking revision and effective configuration.
+Updating from an old build or changing recommendation settings makes this week's
+result eligible for a rebuild, even when the scheduled task previously completed.
+Active durable leases still block duplicate workers; interrupted workers become
+eligible when their leases expire. A failed build with unchanged configuration
+is not retried every minute (use Run Now for an explicit retry). The task status
+still acknowledges admission only; the durable report contains final success,
+failure, effective limits and actual published counts.
