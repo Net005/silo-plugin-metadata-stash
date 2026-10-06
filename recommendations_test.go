@@ -160,3 +160,28 @@ func TestLegacyCountMigratesAndUpdatedConfigurationRebuildsThisWeek(t *testing.T
 		t.Fatal("failed generation retried each minute")
 	}
 }
+
+func TestStateStorageKeepsPicksAndPrioritiesWithoutMutatingShortlists(t *testing.T) {
+	priority := 91.0
+	s := emptyRecommendationState()
+	original := rec.Pick{ID: "scene", MediaID: "media", Title: "Full selected title", Reasons: []string{"Positive feedback"}, LunaPriority: &priority}
+	s.Report.Libraries = []rec.LibraryReport{{LibraryID: "16", Collections: []rec.Collection{{Kind: "for-you", Candidates: []rec.Pick{original, {ID: "unranked", Title: "Transient"}}, Picks: []rec.Pick{original}}}}}
+	raw, err := encodeRecommendationState(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := decodeRecommendationState(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := decoded.Report.Libraries[0].Collections[0]
+	if len(c.Candidates) != 1 || c.Candidates[0].ID != "scene" || c.Candidates[0].MediaID != "media" || *c.Candidates[0].LunaPriority != 91 {
+		t.Fatal("reuse priority lost")
+	}
+	if c.Picks[0].Title != original.Title || len(c.Picks[0].Reasons) != 1 {
+		t.Fatal("selected explanation lost")
+	}
+	if len(s.Report.Libraries[0].Collections[0].Candidates) != 2 || s.Report.Libraries[0].Collections[0].Candidates[0].Title != original.Title {
+		t.Fatal("live shortlist mutated")
+	}
+}

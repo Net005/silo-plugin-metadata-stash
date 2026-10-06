@@ -228,12 +228,33 @@ func (s *recommendationServer) save(ctx context.Context, c *provider.SiloClient,
 
 // Persist compressed reports so large multi-library plans fit Silo's 1 MiB body limit.
 func encodeRecommendationState(state recommendationState) ([]byte, error) {
+	// Shortlists are transient ranking inputs. Persist only verified AI priorities
+	// for future reuse; retain every selected pick and its explanation in full.
+	// Copy the slices so progress saves never alter the active ranking inputs.
+	state.Report.Libraries = append([]rec.LibraryReport(nil), state.Report.Libraries...)
+	for i := range state.Report.Libraries {
+		lib := &state.Report.Libraries[i]
+		lib.Collections = append([]rec.Collection(nil), lib.Collections...)
+		for j := range lib.Collections {
+			col := &lib.Collections[j]
+			priorities := []rec.Pick{}
+			for _, candidate := range col.Candidates {
+				if candidate.LunaPriority != nil {
+					priorities = append(priorities, rec.Pick{ID: candidate.ID, MediaID: candidate.MediaID, LunaPriority: candidate.LunaPriority})
+				}
+			}
+			col.Candidates = priorities
+		}
+	}
 	raw, err := json.Marshal(state)
 	if err != nil {
 		return nil, err
 	}
 	var buf bytes.Buffer
-	z := gzip.NewWriter(&buf)
+	z, err := gzip.NewWriterLevel(&buf, gzip.BestCompression)
+	if err != nil {
+		return nil, err
+	}
 	if _, err = z.Write(raw); err != nil {
 		return nil, err
 	}
