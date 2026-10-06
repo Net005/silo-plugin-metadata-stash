@@ -118,7 +118,7 @@ func recommendationFingerprint(c recommendationConfig) string {
 		Options   rec.Options
 		Libraries map[string]json.RawMessage
 		Archive   bool
-	}{"watchlist-periods-500-compact-luna-batches-integer-retry-v6", c.Profile, c.Options, c.Libraries, c.Archive})
+	}{"watchlist-periods-500-compact-luna-batches-integer-retry-v7", c.Profile, c.Options, c.Libraries, c.Archive})
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:])
 }
@@ -1013,5 +1013,5 @@ func retryRecommendationResponse(err error, usage rec.Usage) bool {
 		return false
 	}
 	msg := err.Error()
-	return strings.Contains(msg, "Luna candidate set mismatch") || strings.Contains(msg, "Luna status incomplete (max_output_tokens;")
+	return strings.Contains(msg, "Luna candidate set mismatch") || strings.Contains(msg, "Luna status incomplete (max_output_tokens;") || strings.HasPrefix(msg, "invalid Luna priorities (") || msg == "Luna omitted collections" || msg == "Luna priority or candidate invalid"
 }
