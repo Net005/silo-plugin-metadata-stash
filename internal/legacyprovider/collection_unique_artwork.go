@@ -137,6 +137,17 @@ func samePoster(a, b []byte) bool {
 	}
 	return sum <= 5*len(a) && large <= len(a)/20
 }
+
+// SameArtworkImage compares decoded picture content across cache resizing and
+// lossy encoding. It is used only to retain an already selected artwork source.
+func SameArtworkImage(a, b []byte) bool {
+	x, err := posterSignature(a)
+	if err != nil {
+		return false
+	}
+	y, err := posterSignature(b)
+	return err == nil && samePoster(x, y)
+}
 func (c *SiloClient) posterBytes(ctx context.Context, u string) ([]byte, error) {
 	p, e := url.Parse(u)
 	if e != nil || p.Host == "" || (p.Scheme != "http" && p.Scheme != "https") {

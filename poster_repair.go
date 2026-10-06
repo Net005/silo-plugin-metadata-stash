@@ -169,7 +169,7 @@ func (s *scheduledTaskServer) repairSelectedPosters(ctx context.Context, library
 			var row *scene
 			var sharedArtwork []byte
 			if e != nil && library != "" && len(ids) > 0 && e.Error() == "multiple Stash scenes match playback files" {
-				row, sharedArtwork, e = stash.sharedJacketForParts(ctx, paths)
+				row, sharedArtwork, e = stash.sharedJacketForParts(ctx, paths, detail.PosterURL)
 				if row != nil {
 					sceneID = row.ID
 				}
