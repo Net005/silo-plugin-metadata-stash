@@ -166,14 +166,24 @@ func (s *scheduledTaskServer) repairSelectedPosters(ctx context.Context, library
 				return nil, e
 			}
 			sceneID, e := stash.sceneIDForExactPaths(ctx, paths)
+			var row *scene
+			var sharedArtwork []byte
+			if e != nil && library != "" && len(ids) > 0 && e.Error() == "multiple Stash scenes match playback files" {
+				row, sharedArtwork, e = stash.sharedJacketForParts(ctx, paths)
+				if row != nil {
+					sceneID = row.ID
+				}
+			}
 			if e != nil {
-				return nil, e
+				return nil, fmt.Errorf("poster item %s: %w", item.ContentID, e)
 			}
 			if sceneID == "" {
 				skipped++
 				continue
 			}
-			row, e := stash.findScene(ctx, sceneID)
+			if row == nil {
+				row, e = stash.findScene(ctx, sceneID)
+			}
 			if e != nil {
 				return nil, e
 			}
@@ -204,19 +214,22 @@ func (s *scheduledTaskServer) repairSelectedPosters(ctx context.Context, library
 				skipped++
 				continue
 			}
-			imageURL := stash.imageURL(row.Paths.Screenshot)
-			req, e := http.NewRequestWithContext(ctx, http.MethodGet, imageURL, nil)
-			if e != nil {
-				return nil, e
-			}
-			resp, e := (&http.Client{Timeout: 30 * time.Second}).Do(req)
-			if e != nil {
-				return nil, e
-			}
-			raw, e := io.ReadAll(io.LimitReader(resp.Body, 16<<20+1))
-			resp.Body.Close()
-			if e != nil || resp.StatusCode != 200 || len(raw) > 16<<20 {
-				return nil, fmt.Errorf("poster source unavailable or oversized")
+			raw := sharedArtwork
+			if len(raw) == 0 {
+				imageURL := stash.imageURL(row.Paths.Screenshot)
+				req, e := http.NewRequestWithContext(ctx, http.MethodGet, imageURL, nil)
+				if e != nil {
+					return nil, e
+				}
+				resp, e := (&http.Client{Timeout: 30 * time.Second}).Do(req)
+				if e != nil {
+					return nil, e
+				}
+				raw, e = io.ReadAll(io.LimitReader(resp.Body, 16<<20+1))
+				resp.Body.Close()
+				if e != nil || resp.StatusCode != 200 || len(raw) > 16<<20 {
+					return nil, fmt.Errorf("poster source unavailable or oversized")
+				}
 			}
 			hash := sha256.Sum256(raw)
 			digest := hex.EncodeToString(hash[:])
