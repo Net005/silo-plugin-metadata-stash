@@ -23,6 +23,16 @@ func TestJAVJacketShapesAndFrontPanel(t *testing.T) {
 				im.Set(x, y, c)
 			}
 		}
+		// Add a back-panel barcode to the jacket fixture.
+		for y := shape.h * 85 / 100; y < shape.h*93/100; y++ {
+			for x := shape.w / 10; x < shape.w*3/10; x++ {
+				c := color.White
+				if (x/2)%2 == 0 {
+					c = color.Black
+				}
+				im.Set(x, y, c)
+			}
+		}
 		var raw bytes.Buffer
 		png.Encode(&raw, im)
 		out, ok, err := RenderJAVPoster(raw.Bytes())

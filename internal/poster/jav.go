@@ -27,13 +27,15 @@ func RenderJAVPoster(raw []byte) ([]byte, bool, error) {
 	}
 	b := im.Bounds()
 	frontWidth := int(math.Round(float64(b.Dx()) * 0.474))
-	if ratio >= 1.72 {
-		seam := jacketSeam(im)
-		if seam == 0 {
-			return nil, false, nil
-		}
+	seam := jacketSeam(im)
+	barcode := jacketBarcode(im)
+	if ratio >= 1.72 && !barcode || seam == 0 && !barcode {
+		return nil, false, nil
+	}
+	if seam != 0 {
 		frontWidth = b.Max.X - seam
 	}
+
 	front := posterCrop(im, image.Rect(b.Max.X-frontWidth, b.Min.Y, b.Max.X, b.Max.Y))
 	const w, h = 1000, 1500
 	scale := math.Min(float64(w)/float64(frontWidth), float64(h)/float64(b.Dy()))
@@ -74,4 +76,55 @@ func jacketSeam(im image.Image) int {
 		}
 	}
 	return best
+}
+
+// A jacket back panel has repeated black/white barcode edges near its bottom.
+// This second signal distinguishes wider jackets from 16:9 scene photographs.
+func jacketBarcode(im image.Image) bool {
+	b := im.Bounds()
+	span := max(30, b.Dx()/5)
+	dy := max(3, b.Dy()/50)
+	edges := func(y, start int) []int {
+		result := []int{}
+		prev := -1
+		for x := start; x < start+span; x++ {
+			r, g, bl, _ := im.At(x, y).RGBA()
+			v := int((r + g + bl) / 771)
+			binary := -1
+			if v < 65 {
+				binary = 0
+			} else if v > 185 {
+				binary = 1
+			}
+			if binary < 0 {
+				continue
+			}
+			if prev >= 0 && prev != binary {
+				result = append(result, x)
+			}
+			prev = binary
+		}
+		return result
+	}
+	for y := b.Min.Y + b.Dy()*65/100; y < b.Max.Y-dy; y += max(1, b.Dy()/100) {
+		for x := b.Min.X; x+span < b.Min.X+b.Dx()*48/100; x += max(1, span/5) {
+			a, c := edges(y, x), edges(y+dy, x)
+			if len(a) < 12 || len(c) < 12 {
+				continue
+			}
+			matched := 0
+			for _, edge := range a {
+				for _, other := range c {
+					if int(math.Abs(float64(edge-other))) <= 1 {
+						matched++
+						break
+					}
+				}
+			}
+			if matched*100 >= len(a)*80 {
+				return true
+			}
+		}
+	}
+	return false
 }
