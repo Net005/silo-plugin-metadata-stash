@@ -187,7 +187,14 @@ func TestSmallCollectionGetsRealCoverWithoutChangingUserCollections(t *testing.T
 				case "/api/v2/admin/collections/large/items":
 					json.NewEncoder(w).Encode(map[string]any{"items": []map[string]any{{"media_item_id": "red-member", "position": 0}, {"media_item_id": "blue-member", "position": 1}}})
 				case "/api/v2/admin/items/blue-member/images":
-					json.NewEncoder(w).Encode(map[string]any{"current": map[string]string{"poster_url": server.URL + "/blue"}})
+					json.NewEncoder(w).Encode(map[string]any{"current": map[string]string{"poster_url": "stash/movies/blue-member/poster.webp"}})
+				case "/api/v2/profiles":
+					json.NewEncoder(w).Encode(map[string]any{"items": []map[string]string{{"id": "profile"}}})
+				case "/api/v2/catalog/items/blue-member":
+					if r.Header.Get("X-Profile-Id") != "profile" {
+						t.Error("missing profile header")
+					}
+					json.NewEncoder(w).Encode(map[string]string{"content_id": "blue-member", "poster_url": server.URL + "/blue"})
 				case "/api/v2/admin/collections/small/poster", "/api/v2/admin/collections/large/poster":
 					id := "small"
 					if strings.Contains(r.URL.Path, "/large/") {
