@@ -281,6 +281,12 @@ func (c *SiloClient) itemFilePaths(ctx context.Context, contentID, libraryID str
 		if err != nil {
 			return nil, err
 		}
+		// A removed item has no files in the requested library. Preserve its
+		// queued Watchlist action as inactive instead of blocking recovery.
+		if resp.StatusCode == http.StatusNotFound && libraryID != "" {
+			resp.Body.Close()
+			return nil, nil
+		}
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 			resp.Body.Close()

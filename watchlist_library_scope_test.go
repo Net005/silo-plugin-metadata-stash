@@ -47,6 +47,12 @@ func TestWatchlistResolveExcludesOrdinaryMovieFilesAndPagesSelectedLibrary(t *te
 }
 
 func TestWatchlistParksMissingLibraryIntentAndContinues(t *testing.T) {
+	for _, deleted := range []bool{false, true} {
+		t.Run(fmt.Sprintf("deleted=%v", deleted), func(t *testing.T) { testWatchlistInactiveRetry(t, deleted) })
+	}
+}
+
+func testWatchlistInactiveRetry(t *testing.T, deleted bool) {
 	journal := watchlistJournal{Version: 1, NativeSeeded: true, Baseline: map[string]bool{"gone": true, "valid": true}, Pending: map[string]watchlistIntent{"gone": {Desired: true}, "valid": {Desired: true}}}
 	config := map[string]json.RawMessage{}
 	config[watchlistJournalKey], _ = json.Marshal(journal)
@@ -73,6 +79,8 @@ func TestWatchlistParksMissingLibraryIntentAndContinues(t *testing.T) {
 		case "/api/v2/admin/items/gone/files":
 			if back {
 				fmt.Fprint(w, `{"items":[{"library_id":"16","file_path":"/stash/scene.mp4"}]}`)
+			} else if deleted {
+				http.NotFound(w, r)
 			} else {
 				fmt.Fprint(w, `{"items":[{"library_id":"3","file_path":"/movies/unrelated.mkv"}]}`)
 			}
