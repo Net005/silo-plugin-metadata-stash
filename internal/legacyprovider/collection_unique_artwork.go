@@ -370,12 +370,13 @@ func (c *SiloClient) setUniqueCollectionPoster(ctx context.Context, id string, c
 				}
 				ids := []string{}
 				for mid := range members {
-					if !blocked[mid] && !strings.HasPrefix(mid, "movie-tmdb-") {
+					if !blocked[mid] && !usedIDs[mid] && !strings.HasPrefix(mid, "movie-tmdb-") {
 						ids = append(ids, mid)
 					}
 				}
 				sort.Slice(ids, func(i, j int) bool { return members[ids[i]] < members[ids[j]] })
 				alternatives := []CollectionArtwork{}
+				profileID := ""
 				for _, mid := range ids {
 					var images struct {
 						Current struct {
@@ -385,10 +386,23 @@ func (c *SiloClient) setUniqueCollectionPoster(ctx context.Context, id string, c
 					if err = c.collectionRequest(ctx, http.MethodGet, "/api/v2/admin/items/"+url.PathEscape(mid)+"/images", nil, &images); err != nil {
 						return err
 					}
+					// Admin artwork can be an S3 storage key, not a fetchable URL.
+					if images.Current.PosterURL != "" && !strings.HasPrefix(images.Current.PosterURL, "https://") && !strings.HasPrefix(images.Current.PosterURL, "http://") {
+						if profileID == "" {
+							profileID, err = c.PrimaryProfileID(ctx)
+							if err != nil {
+								return err
+							}
+						}
+						images.Current.PosterURL, _, err = c.ItemArtwork(ctx, profileID, mid)
+						if err != nil {
+							return err
+						}
+					}
 					if images.Current.PosterURL != "" {
 						alternatives = append(alternatives, CollectionArtwork{MediaID: mid, PosterURL: images.Current.PosterURL})
 					}
-					if len(alternatives) >= 20 {
+					if len(alternatives) >= 500 {
 						break
 					}
 				}
