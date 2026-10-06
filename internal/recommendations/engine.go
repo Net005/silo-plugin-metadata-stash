@@ -11,8 +11,8 @@ import (
 	"time"
 )
 
-var Kinds = []string{"for-you", "top-rated", "revisit", "favourites", "watchlist", "overlooked", "different", "recent", "spotlight", "monthly-spotlight", "yearly-spotlight", "cast-spotlight", "general-spotlight", "new-releases"}
-var Titles = map[string]string{"for-you": "For You", "top-rated": "Your Top Rated", "revisit": "Worth Revisiting", "favourites": "From Your Favourites", "watchlist": "Watchlist This Week", "overlooked": "Overlooked Picks", "different": "Something Different", "recent": "Your Recent Direction", "spotlight": "Weekly Spotlight", "monthly-spotlight": "Monthly Spotlight", "yearly-spotlight": "Yearly Spotlight", "cast-spotlight": "Cast Spotlight", "general-spotlight": "Spotlight", "new-releases": "New Releases For You"}
+var Kinds = []string{"for-you", "top-rated", "revisit", "favourites", "watchlist", "monthly-watchlist", "yearly-watchlist", "overlooked", "different", "recent", "spotlight", "monthly-spotlight", "yearly-spotlight", "cast-spotlight", "general-spotlight", "new-releases"}
+var Titles = map[string]string{"for-you": "For You", "top-rated": "Your Top Rated", "revisit": "Worth Revisiting", "favourites": "From Your Favourites", "watchlist": "Watchlist This Week", "monthly-watchlist": "Watchlist This Month", "yearly-watchlist": "Watchlist This Year", "overlooked": "Overlooked Picks", "different": "Something Different", "recent": "Your Recent Direction", "spotlight": "Weekly Spotlight", "monthly-spotlight": "Monthly Spotlight", "yearly-spotlight": "Yearly Spotlight", "cast-spotlight": "Cast Spotlight", "general-spotlight": "Spotlight", "new-releases": "New Releases For You"}
 
 type Entity struct {
 	ID       string   `json:"id"`
@@ -49,6 +49,7 @@ type Scene struct {
 	HistoryOnly bool   `json:"-"`
 }
 type Options struct {
+	WatchlistPeriods   bool     `json:"watchlist_periods"`
 	Enabled            bool     `json:"enabled"`
 	Count              int      `json:"count"`
 	Kinds              []string `json:"collections"`
@@ -67,7 +68,7 @@ type Options struct {
 }
 
 func DefaultOptions() Options {
-	return Options{Enabled: true, Count: 500, Kinds: append([]string(nil), Kinds...), High: 80, Low: 40, Cooldown: 14, RecentDays: 90, Retain: .7, MaxEntityFraction: .3, MaxOverlap: 2, CrossLibrary: true}
+	return Options{WatchlistPeriods: true, Enabled: true, Count: 500, Kinds: append([]string(nil), Kinds...), High: 80, Low: 40, Cooldown: 14, RecentDays: 90, Retain: .7, MaxEntityFraction: .3, MaxOverlap: 2, CrossLibrary: true}
 }
 func (o Options) Validate() error {
 	if o.Count < 1 || o.Count > 500 || o.High < 1 || o.High > 100 || o.Low < 0 || o.Low >= o.High || o.Cooldown < 0 || o.RecentDays < 1 || o.Retain < 0 || o.Retain > 1 || o.MaxEntityFraction <= 0 || o.MaxEntityFraction > 1 || o.MaxOverlap < 1 {
@@ -284,9 +285,10 @@ func excluded(s Scene, o Options) bool {
 	return false
 }
 func discovery(k string) bool {
-	return !LocalOnlyKind(k) && k != "top-rated" && k != "revisit" && k != "watchlist"
+	return !LocalOnlyKind(k) && k != "top-rated" && k != "revisit" && !WatchlistKind(k)
 }
 func Build(library string, local, global []Scene, o Options, watch map[string]bool, previous map[string][]string, exposure map[string]Exposure, dismissed map[string]bool, now time.Time) LibraryReport {
+	o = o.WithWatchlistPeriods()
 	p, n := learn(local, o, now)
 	currentGlobal, archivedGlobal := []Scene{}, []Scene{}
 	for _, row := range global {
@@ -379,6 +381,14 @@ func Build(library string, local, global []Scene, o Options, watch map[string]bo
 			c.Title += " · " + selectedName
 			c.Description = "Spotlight for " + period + ": " + selectedName + ". Supported by multiple positively observed scenes."
 		}
+		var preference watchPreferences
+		if WatchlistKind(kind) {
+			preference = newWatchPreferences(kind, local, append(currentGlobal, archivedGlobal...), o, now)
+			c.Description = fmt.Sprintf("Current Stash Watchlist ranked from a %d-day activity window, ratings, favourite cast, studios, cast combinations, series and duration; refreshed weekly. Generic tags have reduced weight. Saved AI rankings are reused without new requests.", preference.days)
+			if themes := preference.themes(); len(themes) > 0 {
+				c.Description += " Supported themes: " + strings.Join(themes, ", ") + "."
+			}
+		}
 		for _, s := range rows {
 			isPlayed := played(s)
 			cool := !lastPlay(s).IsZero() && now.Sub(lastPlay(s)) < time.Duration(o.Cooldown)*24*time.Hour
@@ -390,7 +400,7 @@ func Build(library string, local, global []Scene, o Options, watch map[string]bo
 				if !isPlayed || cool || !(s.O > 0 || s.Plays > 1 || rated(s) && *s.Rating >= o.High) {
 					continue
 				}
-			} else if kind == "watchlist" {
+			} else if WatchlistKind(kind) {
 				if !watch[s.ID] {
 					continue
 				}
@@ -467,9 +477,10 @@ func Build(library string, local, global []Scene, o Options, watch map[string]bo
 				if !favourite && !supported {
 					continue
 				}
-			case "watchlist":
-				reasons = append(reasons, "In Stash Watchlist")
-				base += .5
+			case "watchlist", "monthly-watchlist", "yearly-watchlist":
+				var preferenceReasons []string
+				base, preferenceReasons, support = preference.rank(s, favourite, rating)
+				reasons = append(reasons, preferenceReasons...)
 			case "overlooked":
 				added := eventTime(s.CreatedAt)
 				if added.IsZero() || now.Sub(added) < 180*24*time.Hour || base <= 0 {
@@ -584,6 +595,19 @@ func Build(library string, local, global []Scene, o Options, watch map[string]bo
 // overlap and count limits remain enforced locally.
 func Finalize(report *LibraryReport, o Options, previous map[string][]string) {
 	overlap := map[string]int{}
+	watchOverlap := map[string]int{}
+	watchUnion := map[string]bool{}
+	for _, c := range report.Collections {
+		if WatchlistKind(c.Kind) {
+			for _, p := range c.Candidates {
+				watchUnion[p.ID] = true
+			}
+		}
+	}
+	watchCap := 2
+	if len(watchUnion) < int(math.Ceil(1.5*float64(o.Count))) {
+		watchCap = 3
+	}
 	for i := range report.Collections {
 		c := &report.Collections[i]
 		eligible := map[string]Pick{}
@@ -594,8 +618,12 @@ func Finalize(report *LibraryReport, o Options, previous map[string][]string) {
 		studios := map[string]int{}
 		performers := map[string]int{}
 		c.Picks = []Pick{}
+		if WatchlistKind(c.Kind) {
+			// Lower overlap before applying caps; retain local/AI order within each tier.
+			sort.SliceStable(c.Candidates, func(i, j int) bool { return watchOverlap[c.Candidates[i].ID] < watchOverlap[c.Candidates[j].ID] })
+		}
 		add := func(p Pick) bool {
-			if chosen[p.ID] || len(c.Picks) >= o.Count || discovery(c.Kind) && overlap[p.ID] >= o.MaxOverlap {
+			if chosen[p.ID] || len(c.Picks) >= o.Count || discovery(c.Kind) && overlap[p.ID] >= o.MaxOverlap || WatchlistKind(c.Kind) && watchOverlap[p.ID] >= watchCap {
 				return false
 			}
 			cap := max(1, int(math.Ceil(float64(o.Count)*o.MaxEntityFraction)))
@@ -616,6 +644,9 @@ func Finalize(report *LibraryReport, o Options, previous map[string][]string) {
 					}
 				}
 			}
+			if WatchlistKind(c.Kind) {
+				watchOverlap[p.ID]++
+			}
 			chosen[p.ID] = true
 			c.Picks = append(c.Picks, p)
 			if discovery(c.Kind) {
@@ -628,7 +659,7 @@ func Finalize(report *LibraryReport, o Options, previous map[string][]string) {
 			return true
 		}
 		keep := int(float64(o.Count) * o.Retain)
-		if c.Kind == "new-releases" {
+		if c.Kind == "new-releases" || WatchlistKind(c.Kind) {
 			keep = 0
 		}
 		for _, id := range previous[c.Kind] {

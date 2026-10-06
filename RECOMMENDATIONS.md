@@ -1,6 +1,6 @@
 # Weekly recommendations
 
-Stash Metadata v0.3.17 builds up to **500 verified items per collection** across all
+Stash Metadata v0.3.22 builds up to **500 verified items per collection** across all
 movie libraries using this plugin. The original nine kinds are `for-you`, `top-rated`,
 `revisit`, `favourites`, `watchlist`, `overlooked`, `different`, `recent`, `spotlight`.
 Names use the existing Stash prefix exactly, including trailing spaces.
@@ -115,7 +115,7 @@ The report page can also be opened from the plugin detail page’s More actions 
 
 ## Additional collections
 
-The default selection now includes fourteen kinds, each with up to 500 eligible
+The default selection now includes sixteen kinds, each with up to 500 eligible
 items. The five additional kinds add no OpenAI requests. Four reuse existing validated
 Luna priorities where available, while new releases retain date ordering:
 
@@ -157,3 +157,55 @@ their local positions. Final local diversity rules still apply. The report page
 and JSON show coverage, saved coverage and source collection kinds. A priority
 can support several collections without another API call or spending reservation.
 These are bounded ranking improvements, not a claim of measured accuracy gains.
+
+
+## Personalised Watchlist periods
+
+The selected **current Stash Watchlist saved filter** is the only membership source
+for these three collections. Archived JAVBeacon watch/O history informs preferences
+but never introduces missing releases or entries outside the current Watchlist.
+Candidates must have a verified item in the corresponding Silo library. Prefixes,
+weekly scheduling, six-month report retention and rating/exclusion rules are retained.
+
+| Collection kind | Title | Dated activity window |
+| --- | --- | --- |
+| `watchlist` | Watchlist This Week | 7 days |
+| `monthly-watchlist` | Watchlist This Month | 30 days |
+| `yearly-watchlist` | Watchlist This Year | 365 days |
+
+All three refresh weekly. Windows describe preference evidence, not release dates
+or refresh schedules. The weekly collection favours recent interests, the monthly
+collection mixes recent and established preferences, and the yearly collection puts
+more weight on long-term taste. Undated ratings and aggregate play/O counts remain
+long-term signals; they are never assigned invented event dates. Sparse recent
+history reduces the recent weighting and is disclosed in each pick's explanation.
+
+Content fit uses performers, studios/labels, series, supported performer pairs and
+short/medium/long durations. Pair features require history of the same combination;
+individual favourite performers alone do not establish a pair preference. Common
+tags receive less weight in proportion to their prevalence; duration and tags have
+less weight than cast/studio/series. Cross-library feedback, when enabled, is a weaker
+prior and excludes scenes already counted in the local library. Low ratings, scene
+and entity exclusions and dismissals still prevent selection.
+
+The default target is **up to 500**, subject to available Watchlist matches and
+selection constraints. Explicit lower `count` overrides remain respected: change
+old `count:250` defaults or library overrides to `count:500` to request the larger
+collections. Three periods share a separate overlap budget: unselected candidates
+are preferred, and a scene can occur in at most two periods when the pool is large
+enough. Small pools permit more overlap instead of producing empty collections.
+Per-studio/performer diversity limits still apply. An exact 500 or fully disjoint
+membership is not guaranteed for a small Watchlist.
+
+Existing saved configurations selecting `watchlist` automatically include the two
+new periods. Set `watchlist_periods:false` to stop this automatic expansion, and
+use an explicit `collections` list to choose the desired periods. Libraries which
+exclude `watchlist` do not have it enabled automatically.
+
+These three kinds make **no dedicated OpenAI requests**. They reuse verified
+current/saved candidate priorities from existing For You, favourites, recent,
+overlooked or diversity rankings where IDs and local media matches agree. Local
+preferences retain most ranking weight; uncovered entries retain their local
+order. Report `ranking_reuse` fields show actual coverage. The existing OpenAI
+monthly cap and scheduled requests for other collections are unchanged; the old
+weekly Watchlist no longer consumes its own model request.

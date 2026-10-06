@@ -63,3 +63,14 @@ func TestValidatedPrioritiesPersistAndInvalidResponseIsAtomic(t *testing.T) {
 		t.Fatal("invalid response mutated ranking")
 	}
 }
+
+func TestWatchlistPeriodsReuseOnlyVerifiedExistingPriorities(t *testing.T) {
+	old := LibraryReport{LibraryID: "16", Collections: []Collection{{Kind: "for-you", Picks: []Pick{{ID: "a", MediaID: "ma", LunaPriority: priority(90)}, {ID: "foreign", MediaID: "elsewhere", LunaPriority: priority(100)}}}}}
+	for _, kind := range []string{"watchlist", "monthly-watchlist", "yearly-watchlist"} {
+		r := LibraryReport{LibraryID: "16", Collections: []Collection{{Kind: kind, Candidates: []Pick{{ID: "a", MediaID: "ma"}, {ID: "b", MediaID: "mb"}, {ID: "foreign", MediaID: "local"}}}}}
+		ReuseLunaRankings(&r, &old)
+		if !LocalOnlyKind(kind) || len(r.Collections[0].Candidates) != 3 || r.Collections[0].RankingReuse.Saved != 1 {
+			t.Fatalf("%s reused ineligible evidence or allowed dedicated request", kind)
+		}
+	}
+}

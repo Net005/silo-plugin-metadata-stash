@@ -97,6 +97,7 @@ func (c recommendationConfig) libraryOptions(id string) (rec.Options, error) {
 			return o, fmt.Errorf("library %s options: %w", id, err)
 		}
 	}
+	o = o.WithWatchlistPeriods()
 	return o, o.Validate()
 }
 

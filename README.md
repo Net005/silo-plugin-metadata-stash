@@ -66,7 +66,7 @@ Companion v0.2.11 delegates incoming Watchlist hooks to the authenticated Go rec
 
 ## Additional local helpers
 
-See [POSTER_LAYOUTS.md](POSTER_LAYOUTS.md) for opt-in local non-JAV poster repair and [RECOMMENDATIONS.md](RECOMMENDATIONS.md) for the fourteen collection kinds. The five added collection kinds reuse feedback without additional OpenAI calls. The [Tampermonkey backdrop-hover script](contrib/tampermonkey/silo-backdrop-hover.user.js) is published as a release asset and has configurable hover timing; see its [setup guide](contrib/tampermonkey/README.md). Native Silo For You enrichment and inbound playback-history imports are not implemented.
+See [POSTER_LAYOUTS.md](POSTER_LAYOUTS.md) for opt-in local non-JAV poster repair and [RECOMMENDATIONS.md](RECOMMENDATIONS.md) for the sixteen collection kinds. The five added collection kinds reuse feedback without additional OpenAI calls. The [Tampermonkey backdrop-hover script](contrib/tampermonkey/silo-backdrop-hover.user.js) is published as a release asset and has configurable hover timing; see its [setup guide](contrib/tampermonkey/README.md). Native Silo For You enrichment and inbound playback-history imports are not implemented.
 
 ### Watchlist recovery for shared Silo items
 

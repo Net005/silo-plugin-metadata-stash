@@ -15,6 +15,12 @@ type RankingReuse struct {
 
 func reuseSources(kind string) []string {
 	switch kind {
+	case "watchlist":
+		return []string{"recent", "for-you", "favourites"}
+	case "monthly-watchlist":
+		return []string{"for-you", "favourites", "recent", "different"}
+	case "yearly-watchlist":
+		return []string{"for-you", "favourites", "overlooked"}
 	case "monthly-spotlight", "yearly-spotlight":
 		return []string{"spotlight", "for-you", "favourites", "overlooked", "recent"}
 	case "cast-spotlight":
