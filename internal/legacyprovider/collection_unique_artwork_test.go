@@ -116,3 +116,13 @@ func TestCollectionCompositionRetainsBothMemberImages(t *testing.T) {
 		t.Fatal("unstable composition")
 	}
 }
+
+func TestCollectionReservationSurvivesSignedURLExpiry(t *testing.T) {
+	m := uniquePosterMarker{Policy: 1, PosterThumbhash: "stable"}
+	if !posterMarkerMatches(m, siloCollection{PosterThumbhash: "stable", PosterURL: "https://example.invalid/expired"}) {
+		t.Fatal("stable cached poster reservation lost")
+	}
+	if posterMarkerMatches(m, siloCollection{PosterThumbhash: "replaced"}) {
+		t.Fatal("changed artwork kept stale reservation")
+	}
+}

@@ -38,16 +38,17 @@ type CollectionArtwork struct {
 const collectionOwner = "Managed by JAVBeacon metadata plugin."
 
 type siloCollection struct {
-	ID             string                     `json:"id"`
-	Title          string                     `json:"title"`
-	CollectionType string                     `json:"collection_type"`
-	GroupID        *string                    `json:"group_id"`
-	LibraryID      string                     `json:"library_id"`
-	Slug           string                     `json:"slug"`
-	Description    string                     `json:"description"`
-	PosterURL      string                     `json:"poster_url"`
-	BackdropURL    string                     `json:"backdrop_url"`
-	SourceConfig   map[string]json.RawMessage `json:"source_config"`
+	ID              string                     `json:"id"`
+	Title           string                     `json:"title"`
+	CollectionType  string                     `json:"collection_type"`
+	GroupID         *string                    `json:"group_id"`
+	LibraryID       string                     `json:"library_id"`
+	Slug            string                     `json:"slug"`
+	Description     string                     `json:"description"`
+	PosterThumbhash string                     `json:"poster_thumbhash"`
+	PosterURL       string                     `json:"poster_url"`
+	BackdropURL     string                     `json:"backdrop_url"`
+	SourceConfig    map[string]json.RawMessage `json:"source_config"`
 }
 
 func collectionSlug(spec CollectionSpec) string {
