@@ -6,6 +6,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -151,5 +152,25 @@ func TestLunaFullThousandCandidatePoolFitsAndRetainsEvidence(t *testing.T) {
 		if p.LunaPriority == nil {
 			t.Fatal("candidate was not ranked")
 		}
+	}
+}
+
+func TestLunaSchemaUsesBoundedIntegersAndReportsIncompleteCause(t *testing.T) {
+	r := LibraryReport{Collections: []Collection{{Kind: "for-you", Candidates: []Pick{{ID: "1"}}}}}
+	var request map[string]any
+	json.Unmarshal(LunaRequest(r, "none", 16000), &request)
+	schema := request["text"].(map[string]any)["format"].(map[string]any)["schema"].(map[string]any)
+	collection := schema["properties"].(map[string]any)["collections"].(map[string]any)["properties"].(map[string]any)["for-you"].(map[string]any)
+	priority := collection["properties"].(map[string]any)["1"].(map[string]any)
+	if priority["type"] != "integer" || priority["minimum"] != float64(0) || priority["maximum"] != float64(100) {
+		t.Fatal("unbounded priorities")
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		w.Write([]byte(`{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"usage":{"input_tokens":1000,"output_tokens":16000}}`))
+	}))
+	defer server.Close()
+	u, e := (Luna{Key: "secret", HTTP: server.Client(), Endpoint: server.URL}).Organize(t.Context(), &r, 16000)
+	if e == nil || !strings.Contains(e.Error(), "max_output_tokens") || u.Output != 16000 || r.Collections[0].Candidates[0].LunaPriority != nil {
+		t.Fatal("incomplete response mishandled", u, e)
 	}
 }

@@ -118,7 +118,7 @@ func recommendationFingerprint(c recommendationConfig) string {
 		Options   rec.Options
 		Libraries map[string]json.RawMessage
 		Archive   bool
-	}{"watchlist-periods-500-compact-luna-batches-v3", c.Profile, c.Options, c.Libraries, c.Archive})
+	}{"watchlist-periods-500-compact-luna-batches-integer-v4", c.Profile, c.Options, c.Libraries, c.Archive})
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:])
 }
@@ -648,9 +648,9 @@ func (s *recommendationServer) run(ctx context.Context, preview bool) (runErr er
 			for bi := range batches {
 				batch := batches[bi]
 				report.Phase = fmt.Sprintf("Luna ranking library %s: %s (%d/%d)", r.LibraryID, r.Collections[j].Kind, bi+1, len(batches))
-				maxOut := 8000
+				maxOut := 16000
 				if cfg.Effort == "low" {
-					maxOut = 16000
+					maxOut = 24000
 				}
 				input := rec.LunaRequest(batch, cfg.Effort, maxOut)
 				reserve := rec.ReserveCost(input, maxOut)
