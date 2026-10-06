@@ -118,7 +118,7 @@ func recommendationFingerprint(c recommendationConfig) string {
 		Options   rec.Options
 		Libraries map[string]json.RawMessage
 		Archive   bool
-	}{"watchlist-periods-500-v1", c.Profile, c.Options, c.Libraries, c.Archive})
+	}{"watchlist-periods-500-compact-luna-v2", c.Profile, c.Options, c.Libraries, c.Archive})
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:])
 }
@@ -636,7 +636,7 @@ func (s *recommendationServer) run(ctx context.Context, preview bool) (runErr er
 			input := rec.LunaRequest(batch, cfg.Effort, maxOut)
 			reserve := rec.ReserveCost(input, maxOut)
 			if len(input) > 240000 {
-				r.Warnings = append(r.Warnings, "Luna input exceeds bounded request size; local ranking used")
+				r.Warnings = append(r.Warnings, fmt.Sprintf("%s: Luna request exceeds 240 KB (%d candidates, %d bytes); local ranking used", r.Collections[j].Kind, len(r.Collections[j].Candidates), len(input)))
 				continue
 			}
 			if state.Spend[month]+reserve > cfg.MonthlyCap {

@@ -82,3 +82,74 @@ func TestCachePricingAndFullSchemaReservation(t *testing.T) {
 		t.Fatal("long context price incorrect")
 	}
 }
+
+func TestLunaFullThousandCandidatePoolFitsAndRetainsEvidence(t *testing.T) {
+	r := LibraryReport{FeedbackScenes: 2705, Collections: []Collection{{Kind: "for-you"}}}
+	rating := 90
+	for i := 0; i < 1000; i++ {
+		r.Collections[0].Candidates = append(r.Collections[0].Candidates, Pick{ID: fmt.Sprint(30000 + i), Score: 4.123456789012345 + float64(i)/1000, Confidence: "medium", Rating: &rating, Studio: fmt.Sprint(i % 40), PerformerIDs: []string{fmt.Sprint(i % 300), fmt.Sprint(i % 400)}, Reasons: []string{"No recorded play", "Scene rating 90/100", "Favourited performer", "Related metadata has positive feedback", "Matches one of several performers supported by positive feedback"}})
+	}
+	var input struct {
+		Columns     []string `json:"columns"`
+		Evidence    []string `json:"evidence_dictionary"`
+		Collections []struct {
+			Candidates [][]json.RawMessage `json:"candidates"`
+		} `json:"collections"`
+	}
+	if err := json.Unmarshal(LunaInput(r), &input); err != nil {
+		t.Fatal(err)
+	}
+	if len(input.Collections[0].Candidates) != 1000 || len(input.Evidence) != 5 {
+		t.Fatal("shortlist or evidence lost")
+	}
+	for i, row := range input.Collections[0].Candidates {
+		var id string
+		var score float64
+		var refs []int
+		var cast []string
+		var actualRating int
+		json.Unmarshal(row[0], &id)
+		json.Unmarshal(row[1], &score)
+		json.Unmarshal(row[3], &actualRating)
+		json.Unmarshal(row[5], &cast)
+		json.Unmarshal(row[6], &refs)
+		p := r.Collections[0].Candidates[i]
+		if id != p.ID || score != p.Score || actualRating != rating || len(cast) != len(p.PerformerIDs) || len(refs) != len(p.Reasons) {
+			t.Fatal("candidate data changed")
+		}
+		for j, ref := range refs {
+			if input.Evidence[ref] != p.Reasons[j] {
+				t.Fatal("evidence changed")
+			}
+		}
+	}
+	request := LunaRequest(r, "none", 16000)
+	t.Logf("1,000-candidate request: %d bytes", len(request))
+	if len(request) > 240000 {
+		t.Fatal("full pool exceeds request limit")
+	}
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		calls++
+		var payload map[string]json.RawMessage
+		if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		scores := map[string]float64{}
+		for _, p := range r.Collections[0].Candidates {
+			scores[p.ID] = 50
+		}
+		raw, _ := json.Marshal(map[string]any{"collections": map[string]any{"for-you": scores}})
+		json.NewEncoder(w).Encode(map[string]any{"status": "completed", "usage": map[string]int{"input_tokens": 30000, "output_tokens": 6000}, "output": []any{map[string]any{"content": []any{map[string]string{"type": "output_text", "text": string(raw)}}}}})
+	}))
+	defer server.Close()
+	u, err := (Luna{Key: "secret", HTTP: server.Client(), Endpoint: server.URL}).Organize(t.Context(), &r, 16000)
+	if err != nil || calls != 1 || u.Requests != 1 {
+		t.Fatalf("ranking skipped: %v, calls=%d", err, calls)
+	}
+	for _, p := range r.Collections[0].Candidates {
+		if p.LunaPriority == nil {
+			t.Fatal("candidate was not ranked")
+		}
+	}
+}
