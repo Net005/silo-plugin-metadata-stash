@@ -47,11 +47,37 @@ func (s *scheduledTaskServer) Run(ctx context.Context, req *pluginv1.RunSchedule
 		return taskOutput(map[string]any{"status": "started"})
 	}
 	if key == "watchlist-export-backfill" || strings.HasSuffix(key, ":watchlist-export-backfill") {
-		n, e := s.runtime.backfillWatchlist(ctx)
-		if e != nil {
-			return nil, e
+		if !s.runtime.watchlistMu.TryLock() {
+			return taskOutput(map[string]any{"status": "already_running", "detail": "Watchlist recovery/local export is active; durable intents remain queued"})
 		}
-		return taskOutput(map[string]any{"status": "complete", "exported": n})
+		type result struct {
+			exported int
+			err      error
+		}
+		done := make(chan result, 1)
+		go func() {
+			defer s.runtime.watchlistMu.Unlock()
+			work, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+			n, e := s.runtime.backfillWatchlistLocked(work)
+			if e != nil {
+				s.log.Warn("Watchlist export recovery failed", "error", e)
+			}
+			done <- result{n, e}
+		}()
+		timer := time.NewTimer(time.Second)
+		defer timer.Stop()
+		select {
+		case r := <-done:
+			if r.err != nil {
+				return nil, r.err
+			}
+			return taskOutput(map[string]any{"status": "complete", "exported": r.exported})
+		case <-timer.C:
+			return taskOutput(map[string]any{"status": "running", "detail": "Watchlist recovery continues in the background; pending actions remain durable"})
+		case <-ctx.Done():
+			return taskOutput(map[string]any{"status": "running", "detail": "Watchlist recovery continues in the background"})
+		}
 	}
 	for _, name := range []string{"recommendation-sync", "recommendation-preview"} {
 		if key == name || strings.HasSuffix(key, ":"+name) {

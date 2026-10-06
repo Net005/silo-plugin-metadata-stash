@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	legacy "github.com/Net005/silo-plugin-metadata-stash/internal/legacytasks"
+	pluginv1 "github.com/Silo-Server/silo-plugin-sdk/pkg/pluginproto/silo/plugin/v1"
 	"github.com/hashicorp/go-hclog"
 	"net/http"
 	"net/http/httptest"
@@ -124,5 +125,16 @@ func TestWatchlistParksMissingLibraryIntentAndContinues(t *testing.T) {
 	json.Unmarshal(config[watchlistJournalKey], &journal)
 	if len(journal.Pending) != 0 || len(journal.Inactive) != 0 {
 		t.Fatal("restored intent not acknowledged")
+	}
+}
+
+func TestScheduledWatchlistExportDoesNotWaitForActiveRecovery(t *testing.T) {
+	rt := &runtimeServer{}
+	rt.watchlistMu.Lock()
+	defer rt.watchlistMu.Unlock()
+	server := &scheduledTaskServer{runtime: rt}
+	out, err := server.Run(t.Context(), &pluginv1.RunScheduledTaskRequest{TaskKey: "plugin:15:watchlist-export-backfill"})
+	if err != nil || out.GetOutput().AsMap()["status"] != "already_running" {
+		t.Fatalf("result=%v err=%v", out, err)
 	}
 }

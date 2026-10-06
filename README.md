@@ -80,3 +80,9 @@ If a queued Watchlist item's files leave that library during a scan, the action
 is parked in the durable `inactive_library_actions` journal. Other matching
 items continue syncing. The parked action resumes when the library has a file
 again; a newer local action takes precedence.
+
+Scheduled Watchlist export acknowledges an active worker instead of waiting on
+the watch-event lock. Longer recovery uses its own two-minute context and a
+one-second control acknowledgement; RPC timeouts cannot cancel queued recovery.
+A completed admission is not proof that every action has been exported: pending
+and inactive actions remain in the durable collection journal.
