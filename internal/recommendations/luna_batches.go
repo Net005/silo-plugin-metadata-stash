@@ -6,7 +6,7 @@ import (
 	"sort"
 )
 
-const lunaBatchSize = 250
+const lunaBatchSize = 100
 
 // LunaBatches keeps every candidate, using shared comparison anchors to align
 // scores across requests without asking for a fragile 1,000-property response.

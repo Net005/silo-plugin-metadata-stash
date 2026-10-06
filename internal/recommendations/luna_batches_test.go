@@ -14,11 +14,11 @@ func TestLunaBatchesRetainWholePoolAndCalibrateSharedAnchors(t *testing.T) {
 	r.Collections[0].Candidates = append(r.Collections[0].Candidates, r.Collections[0].Candidates[0])
 	bs := LunaBatches(r)
 	seen := map[string]bool{}
-	if len(bs) != 5 {
+	if len(bs) != 12 {
 		t.Fatal("unbounded batch count", len(bs))
 	}
 	for i := range bs {
-		if len(bs[i].Collections[0].Candidates) > 250 || len(bs[i].LunaAnchors) != 12 || len(LunaRequest(bs[i], "none", 8000)) > 240000 {
+		if len(bs[i].Collections[0].Candidates) > 100 || len(bs[i].LunaAnchors) != 12 || len(LunaRequest(bs[i], "none", 8000)) > 240000 {
 			t.Fatal("batch bound or anchors missing")
 		}
 		for j := range bs[i].Collections[0].Candidates {
