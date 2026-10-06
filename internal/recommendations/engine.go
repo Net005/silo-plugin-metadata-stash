@@ -110,6 +110,7 @@ type Collection struct {
 	Picks        []Pick        `json:"picks"`
 }
 type LibraryReport struct {
+	LunaAnchors    []string     `json:"-"`
 	Target         int          `json:"target_items_per_collection"`
 	Matched        int          `json:"matched_scenes"`
 	Evaluation     Evaluation   `json:"evaluation"`

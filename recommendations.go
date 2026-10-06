@@ -118,7 +118,7 @@ func recommendationFingerprint(c recommendationConfig) string {
 		Options   rec.Options
 		Libraries map[string]json.RawMessage
 		Archive   bool
-	}{"watchlist-periods-500-compact-luna-v2", c.Profile, c.Options, c.Libraries, c.Archive})
+	}{"watchlist-periods-500-compact-luna-batches-v3", c.Profile, c.Options, c.Libraries, c.Archive})
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:])
 }
@@ -250,6 +250,14 @@ func encodeRecommendationState(state recommendationState) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	encoding := "gzip-base64-v1"
+	if len(raw) > 1000000 {
+		raw, err = internRecommendationStrings(raw)
+		if err != nil {
+			return nil, err
+		}
+		encoding = "gzip-base64-v2"
+	}
 	var buf bytes.Buffer
 	z, err := gzip.NewWriterLevel(&buf, gzip.BestCompression)
 	if err != nil {
@@ -261,7 +269,7 @@ func encodeRecommendationState(state recommendationState) ([]byte, error) {
 	if err = z.Close(); err != nil {
 		return nil, err
 	}
-	return json.Marshal(map[string]any{"encoding": "gzip-base64-v1", "data": base64.StdEncoding.EncodeToString(buf.Bytes())})
+	return json.Marshal(map[string]any{"encoding": encoding, "data": base64.StdEncoding.EncodeToString(buf.Bytes())})
 }
 func decodeRecommendationState(raw []byte) (recommendationState, error) {
 	var envelope struct {
@@ -273,7 +281,7 @@ func decodeRecommendationState(raw []byte) (recommendationState, error) {
 		return state, err
 	}
 	if envelope.Encoding != "" {
-		if envelope.Encoding != "gzip-base64-v1" {
+		if envelope.Encoding != "gzip-base64-v1" && envelope.Encoding != "gzip-base64-v2" {
 			return state, fmt.Errorf("unknown state encoding")
 		}
 		b, err := base64.StdEncoding.DecodeString(envelope.Data)
@@ -286,6 +294,13 @@ func decodeRecommendationState(raw []byte) (recommendationState, error) {
 		}
 		defer z.Close()
 		raw, err = io.ReadAll(io.LimitReader(z, 16<<20))
+		if err != nil {
+			return state, err
+		}
+	}
+	if envelope.Encoding == "gzip-base64-v2" {
+		var err error
+		raw, err = expandRecommendationStrings(raw)
 		if err != nil {
 			return state, err
 		}
@@ -626,55 +641,72 @@ func (s *recommendationServer) run(ctx context.Context, preview bool) (runErr er
 			if cfg.APIKey == "" || len(r.Collections[j].Candidates) == 0 || rec.LocalOnlyKind(r.Collections[j].Kind) {
 				continue
 			}
-			report.Phase = "Luna ranking library " + r.LibraryID + ": " + r.Collections[j].Kind
-			batch := *r
-			batch.Collections = []rec.Collection{r.Collections[j]}
-			maxOut := 16000
-			if cfg.Effort == "low" {
-				maxOut = 24000
-			}
-			input := rec.LunaRequest(batch, cfg.Effort, maxOut)
-			reserve := rec.ReserveCost(input, maxOut)
-			if len(input) > 240000 {
-				r.Warnings = append(r.Warnings, fmt.Sprintf("%s: Luna request exceeds 240 KB (%d candidates, %d bytes); local ranking used", r.Collections[j].Kind, len(r.Collections[j].Candidates), len(input)))
-				continue
-			}
-			if state.Spend[month]+reserve > cfg.MonthlyCap {
-				r.Warnings = append(r.Warnings, "Monthly spending cap reached; local ranking used")
-				continue
-			}
-			state.Spend[month] += reserve
-			report.Usage.Reserved += reserve
-			state.Report = report
-			record, tag, err = s.save(ctx, client, record, tag, state)
-			if err != nil {
-				state.Spend[month] -= reserve
-				report.Usage.Reserved -= reserve
-				return err
-			}
-			usage, e := (rec.Luna{Key: cfg.APIKey, Effort: cfg.Effort}).Organize(ctx, &batch, maxOut)
-			if usage.Input > 0 || usage.Output > 0 {
-				state.Spend[month] += usage.Cost - reserve
-				report.Usage.Reserved -= reserve
-				report.Usage.Input += usage.Input
-				report.Usage.Output += usage.Output
-				report.Usage.Cached += usage.Cached
-				report.Usage.CacheWrites += usage.CacheWrites
-				report.Usage.Requests += usage.Requests
-				report.Usage.RequestIDs = append(report.Usage.RequestIDs, usage.RequestIDs...)
-				report.Usage.CostBasis = "estimated_standard_token_rates"
-				report.Usage.Cost += usage.Cost
-			}
-			if e != nil {
-				r.Warnings = append(r.Warnings, r.Collections[j].Kind+": "+e.Error())
-			} else {
-				r.Collections[j].Candidates = batch.Collections[0].Candidates
-			}
+			ranking := *r
+			ranking.Collections = []rec.Collection{r.Collections[j]}
+			batches := rec.LunaBatches(ranking)
+			failed := false
+			for bi := range batches {
+				batch := batches[bi]
+				report.Phase = fmt.Sprintf("Luna ranking library %s: %s (%d/%d)", r.LibraryID, r.Collections[j].Kind, bi+1, len(batches))
+				maxOut := 8000
+				if cfg.Effort == "low" {
+					maxOut = 16000
+				}
+				input := rec.LunaRequest(batch, cfg.Effort, maxOut)
+				reserve := rec.ReserveCost(input, maxOut)
+				if len(input) > 240000 {
+					r.Warnings = append(r.Warnings, fmt.Sprintf("%s: Luna request exceeds 240 KB (%d candidates, %d bytes); local ranking used", r.Collections[j].Kind, len(r.Collections[j].Candidates), len(input)))
+					failed = true
+					break
+				}
+				if state.Spend[month]+reserve > cfg.MonthlyCap {
+					r.Warnings = append(r.Warnings, "Monthly spending cap reached; local ranking used")
+					failed = true
+					break
+				}
+				state.Spend[month] += reserve
+				report.Usage.Reserved += reserve
+				state.Report = report
+				record, tag, err = s.save(ctx, client, record, tag, state)
+				if err != nil {
+					state.Spend[month] -= reserve
+					report.Usage.Reserved -= reserve
+					return err
+				}
+				usage, e := (rec.Luna{Key: cfg.APIKey, Effort: cfg.Effort}).Organize(ctx, &batch, maxOut)
+				if usage.Input > 0 || usage.Output > 0 {
+					state.Spend[month] += usage.Cost - reserve
+					report.Usage.Reserved -= reserve
+					report.Usage.Input += usage.Input
+					report.Usage.Output += usage.Output
+					report.Usage.Cached += usage.Cached
+					report.Usage.CacheWrites += usage.CacheWrites
+					report.Usage.Requests += usage.Requests
+					report.Usage.RequestIDs = append(report.Usage.RequestIDs, usage.RequestIDs...)
+					report.Usage.CostBasis = "estimated_standard_token_rates"
+					report.Usage.Cost += usage.Cost
+				}
+				if e != nil {
+					r.Warnings = append(r.Warnings, r.Collections[j].Kind+": "+e.Error())
+				}
 
-			state.Report = report
-			record, tag, err = s.save(ctx, client, record, tag, state)
-			if err != nil {
-				return err
+				state.Report = report
+				record, tag, err = s.save(ctx, client, record, tag, state)
+				if err != nil {
+					return err
+				}
+				if e != nil {
+					failed = true
+					break
+				}
+				batches[bi] = batch
+			}
+			if !failed {
+				if e := rec.MergeLunaBatches(&ranking, batches); e != nil {
+					r.Warnings = append(r.Warnings, r.Collections[j].Kind+": "+e.Error())
+				} else {
+					r.Collections[j].Candidates = ranking.Collections[0].Candidates
+				}
 			}
 		}
 		var saved *rec.LibraryReport

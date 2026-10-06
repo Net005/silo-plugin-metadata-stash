@@ -185,3 +185,53 @@ func TestStateStorageKeepsPicksAndPrioritiesWithoutMutatingShortlists(t *testing
 		t.Fatal("live shortlist mutated")
 	}
 }
+
+func TestInternedRecommendationStatePreservesFullLargeReport(t *testing.T) {
+	s := emptyRecommendationState()
+	s.Spend["2026-10"] = 0.45
+	for i := 0; i < 5; i++ {
+		lib := rec.LibraryReport{LibraryID: fmt.Sprint(i)}
+		for j := 0; j < 16; j++ {
+			c := rec.Collection{Kind: fmt.Sprint(j)}
+			for k := 0; k < 500; k++ {
+				v := float64(k % 100)
+				p := rec.Pick{ID: fmt.Sprint(k), MediaID: fmt.Sprintf("local-%032x", k*732743), Title: strings.Repeat(fmt.Sprintf("Scene %d ", k), 10), LunaPriority: &v, Reasons: []string{"Related metadata has positive activity", "Favourited performer"}}
+				c.Picks = append(c.Picks, p)
+				c.Candidates = append(c.Candidates, p)
+			}
+			lib.Collections = append(lib.Collections, c)
+		}
+		s.Report.Libraries = append(s.Report.Libraries, lib)
+	}
+	b, e := encodeRecommendationState(s)
+	if e != nil {
+		t.Fatal(e)
+	}
+	t.Logf("Large full report saved in %d bytes", len(b))
+	if len(b) > 900000 {
+		t.Fatal("report exceeds safe state size", len(b))
+	}
+	decoded, e := decodeRecommendationState(b)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if decoded.Spend["2026-10"] != 0.45 {
+		t.Fatal("accounting lost")
+	}
+	for i, l := range decoded.Report.Libraries {
+		for j, c := range l.Collections {
+			if len(c.Picks) != 500 || len(c.Candidates) != 500 {
+				t.Fatal("picks or priorities lost")
+			}
+			for k, p := range c.Picks {
+				want := s.Report.Libraries[i].Collections[j].Picks[k]
+				if p.Title != want.Title || p.MediaID != want.MediaID || *p.LunaPriority != *want.LunaPriority || len(p.Reasons) != 2 {
+					t.Fatal("report data changed")
+				}
+			}
+		}
+	}
+	if _, e := expandRecommendationStrings([]byte(`{"strings":[],"state":{"a":{"$s":0}}}`)); e == nil {
+		t.Fatal("invalid reference accepted")
+	}
+}
