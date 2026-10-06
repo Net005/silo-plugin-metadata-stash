@@ -249,6 +249,18 @@ func (c *SiloClient) ApplyMatchWithStash(ctx context.Context, contentID, library
 // ItemFilePaths returns every media path Silo associates with an unmatched
 // item. The auto-match task uses actual filename stems, not parsed titles.
 func (c *SiloClient) ItemFilePaths(ctx context.Context, contentID string) ([]string, error) {
+	return c.itemFilePaths(ctx, contentID, "")
+}
+
+// ItemFilePathsForLibrary excludes files from other library memberships of the
+// same Silo item. Watchlist exports must verify the collection's library only.
+func (c *SiloClient) ItemFilePathsForLibrary(ctx context.Context, contentID, libraryID string) ([]string, error) {
+	if libraryID == "" {
+		return nil, fmt.Errorf("silo: Watchlist library ID is required")
+	}
+	return c.itemFilePaths(ctx, contentID, libraryID)
+}
+func (c *SiloClient) itemFilePaths(ctx context.Context, contentID, libraryID string) ([]string, error) {
 	if !c.Configured() {
 		return nil, fmt.Errorf("silo: api key is not configured")
 	}
@@ -276,7 +288,8 @@ func (c *SiloClient) ItemFilePaths(ctx context.Context, contentID string) ([]str
 		}
 		var result struct {
 			Items []struct {
-				FilePath string `json:"file_path"`
+				FilePath  string `json:"file_path"`
+				LibraryID string `json:"library_id"`
 			} `json:"items"`
 			Page struct {
 				HasMore    bool   `json:"has_more"`
@@ -289,7 +302,7 @@ func (c *SiloClient) ItemFilePaths(ctx context.Context, contentID string) ([]str
 			return nil, err
 		}
 		for _, item := range result.Items {
-			if item.FilePath != "" {
+			if item.FilePath != "" && (libraryID == "" || item.LibraryID == libraryID) {
 				paths = append(paths, item.FilePath)
 			}
 		}

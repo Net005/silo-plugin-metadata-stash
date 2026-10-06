@@ -255,11 +255,11 @@ func (c *stashClient) setWatchlistTag(ctx context.Context, id, tag string, desir
 	var out any
 	return c.graphql(ctx, `mutation($input:BulkSceneUpdateInput!){bulkSceneUpdate(input:$input){id}}`, map[string]any{"input": map[string]any{"ids": []string{id}, "tag_ids": map[string]any{"ids": []string{tag}, "mode": mode}}}, &out)
 }
-func (s *runtimeServer) resolveWatchlistScene(ctx context.Context, media string) (string, error) {
+func (s *runtimeServer) resolveWatchlistScene(ctx context.Context, media, libraryID string) (string, error) {
 	s.mu.RLock()
 	base, key := s.siloBase, s.siloKey
 	s.mu.RUnlock()
-	paths, e := provider.NewSiloClient(base, key).ItemFilePaths(ctx, media)
+	paths, e := provider.NewSiloClient(base, key).ItemFilePathsForLibrary(ctx, media, libraryID)
 	if e != nil {
 		return "", e
 	}
@@ -414,7 +414,7 @@ func (s *runtimeServer) backfillWatchlistLocked(ctx context.Context) (int, error
 				return done, e
 			}
 			if intent.SceneID == "" {
-				intent.SceneID, e = s.resolveWatchlistScene(ctx, media)
+				intent.SceneID, e = s.resolveWatchlistScene(ctx, media, row.LibraryID)
 				if e != nil {
 					return done, e
 				}

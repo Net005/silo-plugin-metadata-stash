@@ -67,3 +67,11 @@ Companion v0.2.11 delegates incoming Watchlist hooks to the authenticated Go rec
 ## Additional local helpers
 
 See [POSTER_LAYOUTS.md](POSTER_LAYOUTS.md) for opt-in local non-JAV poster repair and [RECOMMENDATIONS.md](RECOMMENDATIONS.md) for the fourteen collection kinds. The five added collection kinds reuse feedback without additional OpenAI calls. The [Tampermonkey backdrop-hover script](contrib/tampermonkey/silo-backdrop-hover.user.js) is published as a release asset and has configurable hover timing; see its [setup guide](contrib/tampermonkey/README.md). Native Silo For You enrichment and inbound playback-history imports are not implemented.
+
+### Watchlist recovery for shared Silo items
+
+Watchlist export verifies only files belonging to the target collection's library.
+A Silo item can also exist in ordinary Movies or another Stash library; those
+other files cannot block an exact match in the selected library. File pagination
+and the requirement for one verified Stash scene remain enforced. No play/O
+counters are written by Watchlist recovery.
