@@ -141,12 +141,50 @@ func samePoster(a, b []byte) bool {
 // SameArtworkImage compares decoded picture content across cache resizing and
 // lossy encoding. It is used only to retain an already selected artwork source.
 func SameArtworkImage(a, b []byte) bool {
-	x, err := posterSignature(a)
+	normalized := func(raw []byte) ([]byte, error) {
+		cfg, _, err := image.DecodeConfig(bytes.NewReader(raw))
+		if err != nil || cfg.Width <= 0 || cfg.Height <= 0 || cfg.Width > 40000000/max(1, cfg.Height) {
+			return nil, fmt.Errorf("invalid image")
+		}
+		im, _, err := image.Decode(bytes.NewReader(raw))
+		if err != nil {
+			return nil, err
+		}
+		small := image.NewRGBA(image.Rect(0, 0, 32, 48))
+		// Area-aware downsampling avoids text-edge aliasing between differently
+		// sized JPEG originals and Silo's smaller WebP cache.
+		xdraw.CatmullRom.Scale(small, small.Bounds(), im, im.Bounds(), draw.Src, nil)
+		out := make([]byte, 0, 32*48*3)
+		for y := 0; y < 48; y++ {
+			for x := 0; x < 32; x++ {
+				p := small.RGBAAt(x, y)
+				out = append(out, p.R, p.G, p.B)
+			}
+		}
+		return out, nil
+	}
+	x, err := normalized(a)
 	if err != nil {
 		return false
 	}
-	y, err := posterSignature(b)
-	return err == nil && samePoster(x, y)
+	y, err := normalized(b)
+	if err != nil || len(x) != len(y) {
+		return false
+	}
+	sum, large := 0, 0
+	for i := range x {
+		delta := int(x[i]) - int(y[i])
+		if delta < 0 {
+			delta = -delta
+		}
+		sum += delta
+		if delta > 25 {
+			large++
+		}
+	}
+	// Go's JPEG/WebP colour conversion may introduce a small uniform drift.
+	// Require whole-picture similarity AND very few large local differences.
+	return sum <= 10*len(x) && large <= len(x)/20
 }
 func (c *SiloClient) posterBytes(ctx context.Context, u string) ([]byte, error) {
 	p, e := url.Parse(u)

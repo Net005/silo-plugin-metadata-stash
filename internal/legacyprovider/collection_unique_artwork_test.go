@@ -3,8 +3,11 @@ package legacyprovider
 import (
 	"bytes"
 	"encoding/json"
+	xdraw "golang.org/x/image/draw"
 	"image"
 	"image/color"
+	"image/draw"
+	"image/jpeg"
 	"image/png"
 	"net/http"
 	"net/http/httptest"
@@ -124,5 +127,26 @@ func TestCollectionReservationSurvivesSignedURLExpiry(t *testing.T) {
 	}
 	if posterMarkerMatches(m, siloCollection{PosterThumbhash: "replaced"}) {
 		t.Fatal("changed artwork kept stale reservation")
+	}
+}
+
+func TestCurrentArtworkComparisonSurvivesLossyResizing(t *testing.T) {
+	im := image.NewRGBA(image.Rect(0, 0, 793, 531))
+	for y := 0; y < 531; y++ {
+		for x := 0; x < 793; x++ {
+			im.SetRGBA(x, y, color.RGBA{byte(x / 4), byte(y / 3), byte((x/9 + y/7) % 230), 255})
+		}
+	}
+	var source bytes.Buffer
+	jpeg.Encode(&source, im, &jpeg.Options{Quality: 95})
+	smaller := image.NewRGBA(image.Rect(0, 0, 500, 335))
+	xdraw.CatmullRom.Scale(smaller, smaller.Bounds(), im, im.Bounds(), draw.Src, nil)
+	var cached bytes.Buffer
+	jpeg.Encode(&cached, smaller, &jpeg.Options{Quality: 85})
+	if !SameArtworkImage(source.Bytes(), cached.Bytes()) {
+		t.Fatal("same resized image rejected")
+	}
+	if SameArtworkImage(source.Bytes(), solidPoster(color.RGBA{180, 20, 30, 255})) {
+		t.Fatal("unrelated image accepted")
 	}
 }
