@@ -1,7 +1,9 @@
 // ==UserScript==
 // @name         Silo Stash Backdrop Hover
 // @namespace    https://github.com/Net005/silo-plugin-metadata-stash
-// @version      1.0.0
+// @version      1.0.1
+// @downloadURL  https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
+// @updateURL    https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @description  Muted Stash preview in Silo movie backdrops, with configurable delay and thumbnail fallback.
 // @match        https://silo.example.invalid/*
 // @connect      stash.example.invalid
@@ -32,7 +34,52 @@
     if (ids.size > 1) throw new Error('Ambiguous Stash file match; assign this item a scene ID in the script menu.');
     return [...ids][0] || null;
   }
-  if (typeof module !== 'undefined' && module.exports) { module.exports = { parseCues, exactScene }; return; }
+  function createSiloFileReader({ fetch, localStorage, sessionStorage, getKey, getLibrary }) {
+    let refreshing = null;
+    async function refresh() {
+      if (refreshing) return refreshing;
+      refreshing = (async () => {
+        const token = localStorage.getItem('refresh_token');
+        if (!token) return false;
+        const r = await fetch('/api/v2/auth/refresh', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ refresh_token: token }) });
+        if (!r.ok) return false;
+        const d = await r.json();
+        if (!d.access_token) return false;
+        localStorage.setItem('access_token', d.access_token);
+        if (d.refresh_token) localStorage.setItem('refresh_token', d.refresh_token);
+        return true;
+      })().catch(() => false);
+      try { return await refreshing; } finally { refreshing = null; }
+    }
+    function headers() {
+      const key = getKey() || localStorage.getItem('access_token');
+      const profile = localStorage.getItem('profile_id');
+      const proof = sessionStorage.getItem('profile_token') || localStorage.getItem('profile_token');
+      return { ...(key ? { Authorization: 'Bearer ' + key } : {}), ...(profile ? { 'X-Profile-Id': profile } : {}), ...(proof ? { 'X-Profile-Token': proof } : {}) };
+    }
+    return async function (id) {
+      const files = [], library = getLibrary(); let cursor = '';
+      for (let page = 0; page < 100; page++) {
+        const url = '/api/v2/admin/items/' + encodeURIComponent(id) + '/files?limit=200' + (cursor ? '&cursor=' + encodeURIComponent(cursor) : '');
+        const request = () => fetch(url, { credentials: 'same-origin', headers: headers() });
+        let response = await request();
+        if (response.status === 401 && !getKey() && await refresh()) response = await request();
+        if (!response.ok) {
+          if (response.status === 401) throw new Error('Silo login expired or the saved Silo API key is invalid. Sign in again, or enter a valid Silo admin API key in Backdrop hover settings.');
+          if (response.status === 403) throw new Error('Silo denied the file lookup. Unlock your administrator profile, or enter a Silo admin API key in Backdrop hover settings.');
+          throw new Error('Silo file lookup returned HTTP ' + response.status + '. Try again after Silo is available.');
+        }
+        const result = await response.json();
+        files.push(...(result.items || []).filter(f => !library || String(f.library_id) === library));
+        if (!result.page?.has_more) return files;
+        const next = result.page.next_cursor;
+        if (!next || next === cursor) throw new Error('Silo file pagination stalled. Assign a Stash scene ID in the script menu.');
+        cursor = next;
+      }
+      throw new Error('Too many Silo file pages. Assign a Stash scene ID in the script menu.');
+    };
+  }
+  if (typeof module !== 'undefined' && module.exports) { module.exports = { parseCues, exactScene, createSiloFileReader }; return; }
   let settings = { ...DEFAULTS, ...GM_getValue('settings', {}) };
   let current = null;
   const itemID = () => /^\/item\/([^/]+)$/.exec(location.pathname)?.[1];
@@ -96,17 +143,7 @@
     if (result.errors?.length) throw new Error('Stash lookup failed. Check the API key and scene ID.');
     return result.data;
   }
-  async function siloFiles(id) {
-    const key = settings.siloKey || localStorage.getItem('access_token');
-    const profile = localStorage.getItem('profile_id');
-    const proof = sessionStorage.getItem('profile_token') || localStorage.getItem('profile_token');
-    const response = await fetch('/api/v2/admin/items/' + encodeURIComponent(id) + '/files?limit=200', {
-      credentials: 'same-origin', headers: { ...(key ? { Authorization: 'Bearer ' + key } : {}), ...(profile ? { 'X-Profile-Id': profile } : {}), ...(proof ? { 'X-Profile-Token': proof } : {}) } });
-    if (!response.ok) throw new Error(`Silo file lookup returned HTTP ${response.status}. Add a Silo admin API key or assign this item a Stash scene ID in the script menu.`);
-    const result = await response.json();
-    if (result.page?.has_more) throw new Error('Too many file versions; assign this item a Stash scene ID.');
-    return result.items || [];
-  }
+  const siloFiles = createSiloFileReader({ fetch: (...args) => fetch(...args), localStorage, sessionStorage, getKey: () => settings.siloKey, getLibrary: () => new URL(location.href).searchParams.get('libraryId') || '' });
   async function sceneFor(id) {
     let scene = GM_getValue('scene:' + id, '');
     if (!scene) {
