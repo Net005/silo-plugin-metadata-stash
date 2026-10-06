@@ -118,7 +118,7 @@ func recommendationFingerprint(c recommendationConfig) string {
 		Options   rec.Options
 		Libraries map[string]json.RawMessage
 		Archive   bool
-	}{"watchlist-periods-500-compact-luna-batches-integer-v5", c.Profile, c.Options, c.Libraries, c.Archive})
+	}{"watchlist-periods-500-compact-luna-batches-integer-retry-v6", c.Profile, c.Options, c.Libraries, c.Archive})
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:])
 }
@@ -652,51 +652,63 @@ func (s *recommendationServer) run(ctx context.Context, preview bool) (runErr er
 				if cfg.Effort == "low" {
 					maxOut = 32000
 				}
-				input := rec.LunaRequest(batch, cfg.Effort, maxOut)
-				reserve := rec.ReserveCost(input, maxOut)
-				if len(input) > 240000 {
-					r.Warnings = append(r.Warnings, fmt.Sprintf("%s: Luna request exceeds 240 KB (%d candidates, %d bytes); local ranking used", r.Collections[j].Kind, len(r.Collections[j].Candidates), len(input)))
-					failed = true
-					break
-				}
-				if state.Spend[month]+reserve > cfg.MonthlyCap {
-					r.Warnings = append(r.Warnings, "Monthly spending cap reached; local ranking used")
-					failed = true
-					break
-				}
-				state.Spend[month] += reserve
-				report.Usage.Reserved += reserve
-				state.Report = report
-				record, tag, err = s.save(ctx, client, record, tag, state)
-				if err != nil {
-					state.Spend[month] -= reserve
-					report.Usage.Reserved -= reserve
-					return err
-				}
-				usage, e := (rec.Luna{Key: cfg.APIKey, Effort: cfg.Effort}).Organize(ctx, &batch, maxOut)
-				if usage.Input > 0 || usage.Output > 0 {
-					state.Spend[month] += usage.Cost - reserve
-					report.Usage.Reserved -= reserve
-					report.Usage.Input += usage.Input
-					report.Usage.Output += usage.Output
-					report.Usage.Cached += usage.Cached
-					report.Usage.CacheWrites += usage.CacheWrites
-					report.Usage.Requests += usage.Requests
-					report.Usage.RequestIDs = append(report.Usage.RequestIDs, usage.RequestIDs...)
-					report.Usage.CostBasis = "estimated_standard_token_rates"
-					report.Usage.Cost += usage.Cost
-				}
-				if e != nil {
-					r.Warnings = append(r.Warnings, r.Collections[j].Kind+": "+e.Error())
-				}
+				for attempt := 0; attempt < 2; attempt++ {
+					input := rec.LunaRequest(batch, cfg.Effort, maxOut)
+					reserve := rec.ReserveCost(input, maxOut)
+					if len(input) > 240000 {
+						r.Warnings = append(r.Warnings, fmt.Sprintf("%s: Luna request exceeds 240 KB (%d candidates, %d bytes); local ranking used", r.Collections[j].Kind, len(r.Collections[j].Candidates), len(input)))
+						failed = true
+						break
+					}
+					if state.Spend[month]+reserve > cfg.MonthlyCap {
+						r.Warnings = append(r.Warnings, "Monthly spending cap reached; local ranking used")
+						failed = true
+						break
+					}
+					state.Spend[month] += reserve
+					report.Usage.Reserved += reserve
+					state.Report = report
+					record, tag, err = s.save(ctx, client, record, tag, state)
+					if err != nil {
+						state.Spend[month] -= reserve
+						report.Usage.Reserved -= reserve
+						return err
+					}
+					usage, e := (rec.Luna{Key: cfg.APIKey, Effort: cfg.Effort}).Organize(ctx, &batch, maxOut)
+					if usage.Input > 0 || usage.Output > 0 {
+						state.Spend[month] += usage.Cost - reserve
+						report.Usage.Reserved -= reserve
+						report.Usage.Input += usage.Input
+						report.Usage.Output += usage.Output
+						report.Usage.Cached += usage.Cached
+						report.Usage.CacheWrites += usage.CacheWrites
+						report.Usage.Requests += usage.Requests
+						report.Usage.RequestIDs = append(report.Usage.RequestIDs, usage.RequestIDs...)
+						report.Usage.CostBasis = "estimated_standard_token_rates"
+						report.Usage.Cost += usage.Cost
+					}
+					retry := attempt == 0 && retryRecommendationResponse(e, usage)
+					if e != nil && !retry {
+						r.Warnings = append(r.Warnings, r.Collections[j].Kind+": "+e.Error())
+					}
 
-				state.Report = report
-				record, tag, err = s.save(ctx, client, record, tag, state)
-				if err != nil {
-					return err
+					state.Report = report
+					record, tag, err = s.save(ctx, client, record, tag, state)
+					if err != nil {
+						return err
+					}
+					if retry {
+						if strings.Contains(e.Error(), "max_output_tokens") {
+							maxOut *= 2
+						}
+						continue
+					}
+					if e != nil {
+						failed = true
+					}
+					break
 				}
-				if e != nil {
-					failed = true
+				if failed {
 					break
 				}
 				batches[bi] = batch
@@ -992,4 +1004,14 @@ func (s *recommendationServer) Handle(ctx context.Context, req *pluginv1.HandleH
 		return respond(200, map[string]any{"status": "updated"})
 	}
 	return respond(404, map[string]any{"error": "unknown recommendation route"})
+}
+
+// Retry only definitive model responses. Network/decoding failures may already
+// be billed and retain their reservation; they must not be blindly repeated.
+func retryRecommendationResponse(err error, usage rec.Usage) bool {
+	if err == nil || usage.Requests != 1 || (usage.Input == 0 && usage.Output == 0) {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "Luna candidate set mismatch") || strings.Contains(msg, "Luna status incomplete (max_output_tokens;")
 }

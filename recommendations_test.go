@@ -235,3 +235,23 @@ func TestInternedRecommendationStatePreservesFullLargeReport(t *testing.T) {
 		t.Fatal("invalid reference accepted")
 	}
 }
+
+func TestRecommendationRetryOnlyDefinitiveInvalidResponses(t *testing.T) {
+	u := rec.Usage{Requests: 1, Input: 100, Output: 500}
+	for _, msg := range []string{"Luna candidate set mismatch (99 returned, 100 expected)", "Luna status incomplete (max_output_tokens; 24000 output tokens); local ordering retained"} {
+		if !retryRecommendationResponse(fmt.Errorf("%s", msg), u) {
+			t.Fatal("definitive response not retryable", msg)
+		}
+		if retryRecommendationResponse(fmt.Errorf("%s", msg), rec.Usage{}) {
+			t.Fatal("unknown outcome retried")
+		}
+	}
+	for _, msg := range []string{"Luna request failed", "Luna HTTP 429", "Luna response could not be decoded", "Luna priority or candidate invalid"} {
+		if retryRecommendationResponse(fmt.Errorf("%s", msg), u) {
+			t.Fatal("non-retryable error retried", msg)
+		}
+	}
+	if retryRecommendationResponse(nil, u) {
+		t.Fatal("success retried")
+	}
+}
