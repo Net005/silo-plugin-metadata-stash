@@ -34,9 +34,7 @@ func TestPosterComparisonIgnoresEncodingAndSmallColorChanges(t *testing.T) {
 	if !samePoster(a, b) || samePoster(a, c) {
 		t.Fatal("poster visual comparison failed")
 	}
-	if bytes.Equal(collectionTitleCard("1", "Watchlist"), collectionTitleCard("2", "Watchlist")) {
-		t.Fatal("fallback covers identical")
-	}
+
 }
 func TestUniquePosterAcrossCollectionsAndDifferentMemberIDs(t *testing.T) {
 	red := solidPoster(color.RGBA{190, 20, 30, 255})
@@ -93,34 +91,16 @@ func TestUniquePosterAcrossCollectionsAndDifferentMemberIDs(t *testing.T) {
 	if uploads != 1 || !bytes.Equal(uploaded, blue) {
 		t.Fatalf("uploads %d; did not reserve distinct blue poster", uploads)
 	}
-	// Identical membership with no unused photos must receive a distinct card.
-	if err := client.SetUniqueCollectionPoster(t.Context(), "target", choices[:1]); err != nil {
-		t.Fatal(err)
+	// Exhausted real artwork must preserve the previous poster, never generate text.
+	if err := client.SetUniqueCollectionPoster(t.Context(), "target", choices[:1]); err == nil {
+		t.Fatal("expected artwork conflict")
 	}
-	if bytes.Equal(uploaded, red) || bytes.Equal(uploaded, blue) {
-		t.Fatal("did not generate fallback")
+	if uploads != 1 || !bytes.Equal(uploaded, blue) {
+		t.Fatal("replaced real artwork with fallback")
 	}
+
 }
 func mustJSON(v any) json.RawMessage { b, _ := json.Marshal(v); return b }
-
-func TestCollectionCompositionRetainsBothMemberImages(t *testing.T) {
-	red := solidPoster(color.RGBA{190, 20, 30, 255})
-	blue := solidPoster(color.RGBA{10, 40, 190, 255})
-	data := collectionMemberCard("collection", "Stash | Your Top Rated", [][]byte{red, blue})
-	im, _, err := image.Decode(bytes.NewReader(data))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if im.Bounds().Dx() != 500 || im.Bounds().Dy() != 750 {
-		t.Fatal("not a portrait cover")
-	}
-	if color.RGBAModel.Convert(im.At(125, 275)).(color.RGBA) != (color.RGBA{190, 20, 30, 255}) || color.RGBAModel.Convert(im.At(355, 275)).(color.RGBA) != (color.RGBA{10, 40, 190, 255}) {
-		t.Fatal("member images missing")
-	}
-	if !bytes.Equal(data, collectionMemberCard("collection", "Stash | Your Top Rated", [][]byte{red, blue})) {
-		t.Fatal("unstable composition")
-	}
-}
 
 func TestCollectionReservationSurvivesSignedURLExpiry(t *testing.T) {
 	m := uniquePosterMarker{Policy: 1, PosterThumbhash: "stable"}
@@ -234,8 +214,11 @@ func TestSmallCollectionGetsRealCoverWithoutChangingUserCollections(t *testing.T
 			sig, _ := posterSignature(red)
 			markers["large"][uniquePosterKey] = mustJSON(uniquePosterMarker{Policy: 1, MediaID: "red-member", SourceDigest: digest, PosterURL: urls["large"], PosterThumbhash: thumbs["large"], Signature: sig})
 			err := NewSiloClient(server.URL, "key").SetUniqueCollectionPoster(t.Context(), "small", []CollectionArtwork{{MediaID: "red-member", PosterURL: server.URL + "/red"}})
-			if err != nil {
+			if managed && err != nil {
 				t.Fatal(err)
+			}
+			if !managed && err == nil {
+				t.Fatal("expected artwork conflict for user-owned cover")
 			}
 			if managed {
 				if !bytes.Equal(uploaded["small"], red) || !bytes.Equal(uploaded["large"], blue) {

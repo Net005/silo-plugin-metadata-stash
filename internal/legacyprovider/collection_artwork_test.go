@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"image/color"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -73,7 +74,7 @@ func TestSyncCollectionArtworkUploadsOncePerWindow(t *testing.T) {
 			return
 		}
 		if r.URL.Path == "/source-poster" {
-			w.Write(collectionTitleCard("scene", "Member"))
+			w.Write(solidPoster(color.RGBA{90, 40, 20, 255}))
 			return
 		}
 		if r.URL.Path == "/api/v2/admin/collections/c1" {

@@ -11,7 +11,7 @@ import (
 	"image/color"
 	"image/draw"
 	_ "image/jpeg"
-	"image/png"
+	_ "image/png"
 	"io"
 	"net/http"
 	"net/url"
@@ -20,10 +20,6 @@ import (
 	"sync"
 
 	xdraw "golang.org/x/image/draw"
-	"golang.org/x/image/font"
-	"golang.org/x/image/font/gofont/goregular"
-	"golang.org/x/image/font/opentype"
-	"golang.org/x/image/math/fixed"
 	_ "golang.org/x/image/webp"
 )
 
@@ -218,14 +214,14 @@ func (c *SiloClient) posterBytes(ctx context.Context, u string) ([]byte, error) 
 
 // Unique posters are reserved across ALL Silo collections, including user
 // collections (which are inspected but never edited). Membership is unchanged.
-// If no unclaimed member image exists, a collection-specific composition of member artwork is used.
+// If no unclaimed member image exists, preserve existing artwork and report the conflict.
 func (c *SiloClient) SetUniqueCollectionPoster(ctx context.Context, id string, candidates []CollectionArtwork) error {
 	collectionPosterMu.Lock()
 	defer collectionPosterMu.Unlock()
-	return c.setUniqueCollectionPoster(ctx, id, candidates, true, true)
+	return c.setUniqueCollectionPoster(ctx, id, candidates, true)
 }
 
-func (c *SiloClient) setUniqueCollectionPoster(ctx context.Context, id string, candidates []CollectionArtwork, rebalance, composition bool) error {
+func (c *SiloClient) setUniqueCollectionPoster(ctx context.Context, id string, candidates []CollectionArtwork, rebalance bool) error {
 	rows, e := c.collections(ctx)
 	if e != nil {
 		return e
@@ -409,64 +405,20 @@ func (c *SiloClient) setUniqueCollectionPoster(ctx context.Context, id string, c
 				if len(alternatives) == 0 {
 					continue
 				}
-				if err = c.setUniqueCollectionPoster(ctx, owner.ID, alternatives, false, false); err != nil {
+				if err = c.setUniqueCollectionPoster(ctx, owner.ID, alternatives, false); err != nil {
 					continue
 				}
-				return c.setUniqueCollectionPoster(ctx, id, candidates, false, true)
+				return c.setUniqueCollectionPoster(ctx, id, candidates, false)
 			}
 		}
 	}
 	if data == nil {
-		if !composition {
-			return fmt.Errorf("no unclaimed member cover available")
-		}
-		// Source outages preserve existing artwork; exhaustion of shared artwork
-		// produces a distinct, honest card, never an unrelated movie poster.
 		if failures > 0 {
 			return fmt.Errorf("collection poster sources unavailable (%d)", failures)
 		}
-		var sources [][]byte
-		for _, a := range candidates {
-			if a.PosterURL == "" {
-				continue
-			}
-			b, err := c.posterBytes(ctx, a.PosterURL)
-			if err != nil {
-				continue
-			}
-			if _, err = pixelDigest(b); err != nil {
-				continue
-			}
-			sources = append(sources, b)
-			if len(sources) == 2 {
-				break
-			}
-		}
-		if len(sources) == 0 && len(candidates) > 0 {
-			return fmt.Errorf("collection member artwork unavailable")
-		}
-		for attempt := 0; attempt < 32; attempt++ {
-			data = collectionMemberCard(fmt.Sprintf("%s:%d", current.ID, attempt), current.Title, sources)
-			sig, _ := posterSignature(data)
-			duplicate := false
-			for _, other := range signatures {
-				if samePoster(sig, other) {
-					duplicate = true
-					break
-				}
-			}
-			if !duplicate {
-				break
-			}
-			data = nil
-		}
-		if data == nil {
-			return fmt.Errorf("cannot reserve distinct collection artwork")
-		}
-		digest, _ = pixelDigest(data)
-		if posterMarkerMatches(previous, current) && previous.MediaID == "" && previous.SourceDigest == digest {
-			return nil
-		}
+		// Preserve the saved artwork when no distinct real member cover is available.
+		// Never synthesize title cards or collages as collection posters.
+		return fmt.Errorf("no unclaimed member cover available")
 	}
 	path := "/api/v2/admin/collections/" + url.PathEscape(id)
 	if e = c.uploadCollectionArtworkBytes(ctx, path+"/poster", data); e != nil {
@@ -483,75 +435,6 @@ func (c *SiloClient) setUniqueCollectionPoster(ctx context.Context, id string, c
 	latest.SourceConfig[uniquePosterKey], _ = json.Marshal(uniquePosterMarker{Policy: 1, MediaID: selected.MediaID, SourceDigest: digest, PosterURL: latest.PosterURL, PosterThumbhash: latest.PosterThumbhash, Signature: func() []byte { v, _ := posterSignature(data); return v }()})
 	_, e = c.collectionRequestETag(ctx, http.MethodPatch, path, map[string]any{"source_config": latest.SourceConfig}, nil, tag)
 	return e
-}
-
-// Member artwork stays fully visible: fit rather than crop, with a title band.
-// A stable collection-specific accent distinguishes otherwise identical shelves.
-func collectionTitleCard(id, title string) []byte {
-	return collectionMemberCard(id, title, nil)
-}
-func collectionMemberCard(id, title string, sources [][]byte) []byte {
-	im := image.NewRGBA(image.Rect(0, 0, 500, 750))
-	h := sha256.Sum256([]byte(id))
-	bg := color.RGBA{18, 22, 30, 255}
-	accent := color.RGBA{70 + h[0]/2, 70 + h[1]/2, 70 + h[2]/2, 255}
-	draw.Draw(im, im.Bounds(), &image.Uniform{bg}, image.Point{}, draw.Src)
-	n := min(2, len(sources))
-	for i := 0; i < n; i++ {
-		src, _, err := image.Decode(bytes.NewReader(sources[i]))
-		if err != nil {
-			continue
-		}
-		panel := image.Rect(20+i*460/n, 20, 20+(i+1)*460/n-8, 550)
-		bounds := src.Bounds()
-		w, height := panel.Dx(), panel.Dy()
-		if w*bounds.Dy() > height*bounds.Dx() {
-			w = height * bounds.Dx() / bounds.Dy()
-		} else {
-			height = w * bounds.Dy() / bounds.Dx()
-		}
-		x, y := panel.Min.X+(panel.Dx()-w)/2, panel.Min.Y+(panel.Dy()-height)/2
-		xdraw.CatmullRom.Scale(im, image.Rect(x, y, x+w, y+height), src, bounds, draw.Src, nil)
-	}
-	draw.Draw(im, image.Rect(0, 565, 500, 750), &image.Uniform{color.RGBA{accent.R / 2, accent.G / 2, accent.B / 2, 255}}, image.Point{}, draw.Src)
-	draw.Draw(im, image.Rect(24, 575, 476, 581), &image.Uniform{accent}, image.Point{}, draw.Src)
-	parsed, _ := opentype.Parse(goregular.TTF)
-	face, _ := opentype.NewFace(parsed, &opentype.FaceOptions{Size: 36, DPI: 72, Hinting: font.HintingFull})
-	defer face.Close()
-	d := font.Drawer{Dst: im, Src: image.White, Face: face}
-	// Provider prefix is already visible beneath the card in Silo.
-	if prefix, rest, ok := strings.Cut(title, " | "); ok && len(prefix) < 20 {
-		title = rest
-	}
-	lines := []string{}
-	line := ""
-	for _, word := range strings.Fields(title) {
-		test := strings.TrimSpace(line + " " + word)
-		if line != "" && d.MeasureString(test).Ceil() > 444 {
-			lines = append(lines, line)
-			line = word
-		} else {
-			line = test
-		}
-	}
-	if line != "" {
-		lines = append(lines, line)
-	}
-	for i, line := range lines {
-		if i >= 3 {
-			break
-		}
-		// Bound unusually long words without writing outside the card.
-		for d.MeasureString(line).Ceil() > 444 && len([]rune(line)) > 1 {
-			r := []rune(line)
-			line = string(r[:len(r)-2]) + "…"
-		}
-		d.Dot = fixed.P(28, 634+i*44)
-		d.DrawString(line)
-	}
-	var out bytes.Buffer
-	_ = png.Encode(&out, im)
-	return out.Bytes()
 }
 
 // RepairCollectionPosters changes only artwork on owned collections. It uses
