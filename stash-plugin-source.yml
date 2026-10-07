@@ -1,8 +1,8 @@
 - id: stash-silo-companion
   name: Stash.Silo Companion
   version: 0.2.11
-  date: 2026-10-07 22:25:24
-  path: https://github.com/Net005/silo-plugin-metadata-stash/releases/download/v0.3.49/stash-silo-companion_v0.3.49.zip
-  sha256: df1e182fd7a4348e1defcab8da0bf78bad9ee664c09ab8b8f9743bc52df30ea1
+  date: 2026-10-07 22:29:00
+  path: https://github.com/Net005/silo-plugin-metadata-stash/releases/download/v0.3.50/stash-silo-companion_v0.3.50.zip
+  sha256: 0fb2ea0308af364af9ee5ecabb54cae7d974fb45718373783eb3d1b5ca0d7226
   metadata:
     description: Stash companion for Silo metadata, WatchList collection updates, and cached metadata migration.
