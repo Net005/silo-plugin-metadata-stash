@@ -1,6 +1,6 @@
 {
   "plugin_id": "stash.metadata",
-  "version": "0.3.46",
+  "version": "0.3.47",
   "checksum": "__CHECKSUM__",
   "silo_api_version": "v1",
   "presentation": {
@@ -446,6 +446,22 @@
       ],
       "access": "admin",
       "id": "poster-repair"
+    },
+    {
+      "path": "/recommendations/posters/status",
+      "methods": [
+        "GET"
+      ],
+      "access": "admin",
+      "id": "poster-renewal-status"
+    },
+    {
+      "path": "/recommendations/posters/renew",
+      "methods": [
+        "POST"
+      ],
+      "access": "admin",
+      "id": "poster-renewal-start"
     }
   ]
 }

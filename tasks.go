@@ -20,15 +20,19 @@ import (
 
 type scheduledTaskServer struct {
 	pluginv1.UnimplementedScheduledTaskServer
-	runtime       *runtimeServer
-	log           hclog.Logger
-	mu            sync.Mutex
-	running       bool
-	cursor        string
-	posterMu      sync.Mutex
-	artworkMu     sync.Mutex
-	artworkCursor string
-	artworkRetry  map[string]time.Time
+	runtime         *runtimeServer
+	log             hclog.Logger
+	mu              sync.Mutex
+	running         bool
+	cursor          string
+	posterMu        sync.Mutex
+	posterWake      chan struct{}
+	posterStatusMu  sync.RWMutex
+	posterLastError string
+	posterLastRun   time.Time
+	artworkMu       sync.Mutex
+	artworkCursor   string
+	artworkRetry    map[string]time.Time
 }
 
 func (s *scheduledTaskServer) Run(ctx context.Context, req *pluginv1.RunScheduledTaskRequest) (*pluginv1.RunScheduledTaskResponse, error) {

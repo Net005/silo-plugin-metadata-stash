@@ -886,6 +886,37 @@ func (s *recommendationServer) Handle(ctx context.Context, req *pluginv1.HandleH
 		return recommendationPage(ctx)
 	}
 	switch {
+	case req.Method == "POST" && path == "/recommendations/posters/renew":
+		s.runtime.posterPollOnce.Do(func() { go s.runtime.task.pollPosters() })
+		select {
+		case s.runtime.task.posterWake <- struct{}{}:
+		default:
+		}
+		return respond(202, map[string]any{"status": "queued"})
+	case req.Method == "GET" && path == "/recommendations/posters/status":
+		rows, err := client.RecommendationRecords(ctx)
+		if err != nil {
+			return respond(503, map[string]any{"error": err.Error()})
+		}
+		out := []map[string]any{}
+		for _, r := range rows {
+			if !strings.HasPrefix(r.Slug, "stash-recommendations-poster-layout-") {
+				continue
+			}
+			var st posterRepairState
+			if err := json.Unmarshal(r.SourceConfig["poster_layout"], &st); err != nil {
+				continue
+			}
+			out = append(out, map[string]any{"library_id": r.LibraryID, "scanned": st.Scanned, "applied": st.Applied, "skipped": st.Skipped, "errors": st.Errors, "completed": st.Completed, "updated": st.Updated, "revision": st.Revision, "offset": st.Offset, "has_more": st.Cursor != ""})
+		}
+		active := !s.runtime.task.posterMu.TryLock()
+		if !active {
+			s.runtime.task.posterMu.Unlock()
+		}
+		s.runtime.task.posterStatusMu.RLock()
+		lastErr, lastRun := s.runtime.task.posterLastError, s.runtime.task.posterLastRun
+		s.runtime.task.posterStatusMu.RUnlock()
+		return respond(200, map[string]any{"libraries": out, "worker_active": active, "last_error": lastErr, "last_run": lastRun})
 	case req.Method == "POST" && path == "/recommendations/posters/repair":
 		var input struct {
 			Library string   `json:"library_id"`

@@ -111,6 +111,12 @@ func (s *runtimeServer) Configure(_ context.Context, req *pluginv1.ConfigureRequ
 		s.pollOnce.Do(func() { go s.pollMatching() })
 		s.watchlistPollOnce.Do(func() { go s.pollWatchlistExports() })
 	}
+	if s.task != nil && s.task.posterWake != nil {
+		select {
+		case s.task.posterWake <- struct{}{}:
+		default:
+		}
+	}
 	if s.recommendations != nil {
 		s.recommendations.pollOnce.Do(func() { go s.recommendations.poll() })
 	}
@@ -460,7 +466,7 @@ func main() {
 	rs.recommendations = &recommendationServer{runtime: rs}
 	ms := &metadataServer{runtime: rs}
 	ws := &watchSyncServer{runtime: rs}
-	rs.task = &scheduledTaskServer{runtime: rs, log: logger}
+	rs.task = &scheduledTaskServer{runtime: rs, log: logger, posterWake: make(chan struct{}, 1)}
 	runtime.Serve(runtime.ServeConfig{Logger: logger, Servers: runtime.CapabilityServers{Runtime: rs, MetadataProvider: ms, ImageResolver: ms, WatchSyncProvider: ws, ScheduledTask: rs.task, HttpRoutes: rs.recommendations}})
 }
 
