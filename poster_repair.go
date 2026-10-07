@@ -335,6 +335,11 @@ func (s *scheduledTaskServer) pollPosters() {
 		// Drain a newly enabled/changed layout in bounded batches, then resume
 		// hourly checks. Durable item markers prevent repeat downloads/uploads.
 		wait := time.Hour
+		if err != nil {
+			// Connection and recommendation-owner configuration arrive separately
+			// at startup. Retry readiness without postponing renewal for an hour.
+			wait = 30 * time.Second
+		}
 		if err == nil && result["status"] == "partial" {
 			wait = 5 * time.Second
 		}
