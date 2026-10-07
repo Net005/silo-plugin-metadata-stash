@@ -18,6 +18,7 @@ func TestWatchlistLocalFirstDurableRetryAndNewerActionWins(t *testing.T) {
 	members := map[string]bool{}
 	config := map[string]json.RawMessage{}
 	native := false
+	shared := false
 	remote := false
 	fail := true
 	mutations := 0
@@ -58,7 +59,11 @@ func TestWatchlistLocalFirstDurableRetryAndNewerActionWins(t *testing.T) {
 				t.Error("unexpected local method")
 			}
 		case "/api/v2/admin/items/local-1/files":
-			fmt.Fprint(w, `{"items":[{"library_id":"16","file_path":"/stash/test.mp4"}]}`)
+			if shared {
+				fmt.Fprint(w, `{"items":[{"library_id":"16","file_path":"/stash/test.mp4"},{"library_id":"3","file_path":"/movies/same-title.mkv"}]}`)
+			} else {
+				fmt.Fprint(w, `{"items":[{"library_id":"16","file_path":"/stash/test.mp4"}]}`)
+			}
 		default:
 			t.Errorf("unexpected Silo request %s", r.URL.Path)
 			http.NotFound(w, r)
@@ -75,7 +80,7 @@ func TestWatchlistLocalFirstDurableRetryAndNewerActionWins(t *testing.T) {
 		case strings.Contains(req.Query, "findSavedFilters"):
 			fmt.Fprint(w, `{"data":{"findSavedFilters":[{"id":"7","name":"Watchlist","object_filter":{}}]}}`)
 		case strings.Contains(req.Query, "findScenes"):
-			if req.Variables["path"] != nil {
+			if path, ok := req.Variables["path"].(map[string]any); ok && path["value"] == "/stash/test.mp4" {
 				fmt.Fprint(w, `{"data":{"findScenes":{"count":1,"scenes":[{"id":"42","files":[{"path":"/stash/test.mp4"}]}]}}}`)
 			} else {
 				fmt.Fprint(w, `{"data":{"findScenes":{"count":0,"scenes":[]}}}`)
@@ -169,6 +174,24 @@ func TestWatchlistLocalFirstDurableRetryAndNewerActionWins(t *testing.T) {
 	native = false
 	if _, e := rt.backfillWatchlist(t.Context()); e != nil || remote || members["local-1"] {
 		t.Fatalf("native removal not exported: %v", e)
+	}
+
+	// A regular movie sharing the Silo identity must not affect either the
+	// Stash tag or the library collection, even when event IDs claim Stash.
+	shared = true
+	before := mutations
+	native = true
+	if _, err := rt.backfillWatchlist(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if remote || members["local-1"] || mutations != before {
+		t.Fatal("shared movie native Watchlist leaked into Stash")
+	}
+	if err := rt.applyWatchlistEvent(t.Context(), event(pluginv1.WatchSyncOperation_WATCH_SYNC_OPERATION_ADD_TO_WATCHLIST, now.Add(10*time.Second))); err != errOutsideStashWatchlist {
+		t.Fatalf("shared identity accepted: %v", err)
+	}
+	if remote || members["local-1"] || mutations != before {
+		t.Fatal("shared movie event leaked into Stash")
 	}
 
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	provider "github.com/Net005/silo-plugin-metadata-stash/internal/legacyprovider"
 	pluginv1 "github.com/Silo-Server/silo-plugin-sdk/pkg/pluginproto/silo/plugin/v1"
@@ -15,6 +16,8 @@ import (
 )
 
 const watchlistJournalKey = "stash_watchlist_outbox"
+
+var errUnverifiedStashWatchlist = errors.New("item files do not identify one Stash scene; split unrelated files first")
 
 var errOutsideStashWatchlist = fmt.Errorf("item is outside the selected Stash Watchlist libraries")
 
@@ -263,13 +266,23 @@ func (s *runtimeServer) resolveWatchlistScene(ctx context.Context, media, librar
 	s.mu.RLock()
 	base, key := s.siloBase, s.siloKey
 	s.mu.RUnlock()
-	paths, e := provider.NewSiloClient(base, key).ItemFilePathsForLibrary(ctx, media, libraryID)
+	client := provider.NewSiloClient(base, key)
+	paths, e := client.ItemFilePathsForLibrary(ctx, media, libraryID)
+	if e != nil {
+		return "", e
+	}
+	if len(paths) == 0 {
+		return "", errUnverifiedStashWatchlist
+	}
+	// A shared ID can include a normal movie with the same title. Every file
+	// must belong to one scene before a global native Watchlist action is exported.
+	paths, e = client.ItemFilePaths(ctx, media)
 	if e != nil {
 		return "", e
 	}
 	id, e := s.stash().sceneIDForExactPaths(ctx, paths)
 	if e == nil && id == "" {
-		e = fmt.Errorf("no exact Stash Watchlist file match")
+		e = errUnverifiedStashWatchlist
 	}
 	return id, e
 }
@@ -370,6 +383,13 @@ func (s *runtimeServer) backfillWatchlistLocked(ctx context.Context) (int, error
 				}
 			}
 			for media, desired := range deltas {
+				scene, identityErr := s.resolveWatchlistScene(ctx, media, row.LibraryID)
+				if errors.Is(identityErr, errUnverifiedStashWatchlist) {
+					continue
+				}
+				if identityErr != nil {
+					return done, identityErr
+				}
 				var files struct {
 					Items []struct {
 						Library string `json:"library_id"`
@@ -380,7 +400,7 @@ func (s *runtimeServer) backfillWatchlistLocked(ctx context.Context) (int, error
 				}
 				for _, file := range files.Items {
 					if file.Library == row.LibraryID {
-						intent := watchlistIntent{Desired: desired, Changed: time.Now()}
+						intent := watchlistIntent{Desired: desired, SceneID: scene, Changed: time.Now()}
 						j.Pending[media] = intent
 						j.LastActions[media] = watchlistActionVersion{intent.Changed, desired}
 						if desired {
@@ -457,18 +477,25 @@ func (s *runtimeServer) backfillWatchlistLocked(ctx context.Context) (int, error
 				}
 				continue
 			}
-			delete(j.Inactive, media)
-			if e = s.applyLocalWatchlist(ctx, row.ID, media, intent.Desired); e != nil {
-				return done, e
-			}
-			if intent.SceneID == "" {
-				intent.SceneID, e = s.stash().sceneIDForExactPaths(ctx, paths)
-				if e == nil && intent.SceneID == "" {
-					e = fmt.Errorf("no exact Stash Watchlist file match")
+			intent.SceneID, e = s.resolveWatchlistScene(ctx, media, row.LibraryID)
+			if errors.Is(e, errUnverifiedStashWatchlist) {
+				j.Inactive[media] = intent
+				delete(j.Pending, media)
+				if e = s.saveWatchlistState(ctx, r, j, tag); e != nil {
+					return done, e
 				}
+				r, j, tag, e = s.watchlistState(ctx, row.ID)
 				if e != nil {
 					return done, e
 				}
+				continue
+			}
+			if e != nil {
+				return done, e
+			}
+			delete(j.Inactive, media)
+			if e = s.applyLocalWatchlist(ctx, row.ID, media, intent.Desired); e != nil {
+				return done, e
 			}
 			if tagID == "" {
 				tagID, e = s.stash().watchlistTag(ctx)
@@ -535,6 +562,13 @@ func (s *runtimeServer) applyWatchlistEvent(ctx context.Context, event *pluginv1
 		if !libs[row.LibraryID] {
 			continue
 		}
+		scene, identityErr := s.resolveWatchlistScene(ctx, media, row.LibraryID)
+		if errors.Is(identityErr, errUnverifiedStashWatchlist) {
+			continue
+		}
+		if identityErr != nil {
+			return identityErr
+		}
 		r, j, tag, e := s.watchlistState(ctx, row.ID)
 		if e != nil {
 			return e
@@ -546,7 +580,7 @@ func (s *runtimeServer) applyWatchlistEvent(ctx context.Context, event *pluginv1
 				return e
 			}
 		}
-		intent := watchlistIntent{Desired: desired, SceneID: stashPlaybackID(event.GetMedia().GetExternalIds()[capabilityID]), Changed: eventTime(event)}
+		intent := watchlistIntent{Desired: desired, SceneID: scene, Changed: eventTime(event)}
 		if old, ok := j.LastActions[media]; ok && (old.Changed.After(intent.Changed) || (old.Changed.Equal(intent.Changed) && old.Desired == desired && len(j.Pending) == 0)) {
 			matched++
 			continue

@@ -162,7 +162,7 @@ func TestApplyMatchSendsStashSceneProviderIDs(t *testing.T) {
 		t.Fatal(err)
 	}
 	ids, _ := gotBody["provider_ids"].(map[string]any)
-	if ids["javbeacon"] != "stash:11631" || ids["stash"] != "11631" {
+	if ids["javbeacon"] != "stash:11631" || ids["stash"] != "stash:11631" {
 		t.Fatalf("provider_ids=%v", ids)
 	}
 }
@@ -198,5 +198,26 @@ func TestMetadataJobStateReadsTerminalFailure(t *testing.T) {
 	state, err := NewSiloClient(server.URL, "key").MetadataJobState(t.Context(), "job-1")
 	if err != nil || state != "failed" {
 		t.Fatalf("state=%q err=%v", state, err)
+	}
+}
+
+func TestApplyStashMatchUsesQualifiedCandidateID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			IDs     map[string]string `json:"provider_ids"`
+			Library string            `json:"library_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body.IDs["stash"] != "stash:42" || body.Library != "21" {
+			t.Errorf("unsafe Stash match: %+v", body)
+		}
+	}))
+	defer server.Close()
+	for _, id := range []string{"42", "stash:42"} {
+		if err := NewSiloClient(server.URL, "key").ApplyStashMatch(t.Context(), "local-scene", "21", id); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

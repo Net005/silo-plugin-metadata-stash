@@ -12,7 +12,7 @@ import (
 	"testing"
 )
 
-func TestWatchlistResolveExcludesOrdinaryMovieFilesAndPagesSelectedLibrary(t *testing.T) {
+func TestWatchlistResolveRejectsSharedMovieIdentityAcrossPages(t *testing.T) {
 	silo := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("cursor") == "second" {
 			fmt.Fprint(w, `{"items":[{"library_id":"21","file_path":"/stash/scene.mp4"},{"library_id":"19","file_path":"/another/unrelated.mp4"}],"page":{"has_more":false}}`)
@@ -28,8 +28,10 @@ func TestWatchlistResolveExcludesOrdinaryMovieFilesAndPagesSelectedLibrary(t *te
 		}
 		json.NewDecoder(r.Body).Decode(&req)
 		path := req.Variables["path"].(map[string]any)["value"]
-		if path != "/stash/scene.mp4" {
-			t.Errorf("queried an unrelated library path: %v", path)
+		if path == "/movies/unrelated.mkv" {
+			calls++
+			fmt.Fprint(w, `{"data":{"findScenes":{"count":0,"scenes":[]}}}`)
+			return
 		}
 		calls++
 		fmt.Fprint(w, `{"data":{"findScenes":{"count":1,"scenes":[{"id":"42167","files":[{"path":"/stash/scene.mp4"}]}]}}}`)
@@ -37,7 +39,7 @@ func TestWatchlistResolveExcludesOrdinaryMovieFilesAndPagesSelectedLibrary(t *te
 	defer stash.Close()
 	rt := &runtimeServer{siloBase: silo.URL, siloKey: "key", client: &stashClient{base: stash.URL, key: "key"}}
 	id, err := rt.resolveWatchlistScene(t.Context(), "movie-shared", "21")
-	if err != nil || id != "42167" || calls != 1 {
+	if err != errUnverifiedStashWatchlist || id != "" || calls != 1 {
 		t.Fatalf("id=%s calls=%d err=%v", id, calls, err)
 	}
 	id, err = rt.resolveWatchlistScene(t.Context(), "movie-shared", "16")

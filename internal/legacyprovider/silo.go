@@ -208,13 +208,13 @@ func (c *SiloClient) ApplyMatchWithStash(ctx context.Context, contentID, library
 	}
 	providerIDs := map[string]string{"javbeacon": providerID}
 	if stashSceneID != "" {
-		providerIDs["stash"] = stashSceneID
+		providerIDs["stash"] = "stash:" + strings.TrimPrefix(stashSceneID, "stash:")
 	}
 	if sceneID, ok := strings.CutPrefix(providerID, "stash:"); ok {
 		if sceneID == "" {
 			return fmt.Errorf("silo: Stash scene id is required")
 		}
-		providerIDs["stash"] = sceneID
+		providerIDs["stash"] = "stash:" + sceneID
 	}
 	payload := map[string]any{"provider_ids": providerIDs}
 	if libraryID != "" {
@@ -389,7 +389,7 @@ func (c *SiloClient) ApplyStashMatch(ctx context.Context, contentID, libraryID, 
 	if !c.Configured() || contentID == "" || sceneID == "" {
 		return fmt.Errorf("silo: connection, item and Stash scene are required")
 	}
-	payload := map[string]any{"provider_ids": map[string]string{"stash": sceneID}, "library_id": libraryID}
+	payload := map[string]any{"provider_ids": map[string]string{"stash": "stash:" + strings.TrimPrefix(sceneID, "stash:")}, "library_id": libraryID}
 	return c.collectionRequest(ctx, http.MethodPost, "/api/v2/admin/items/"+url.PathEscape(contentID)+"/match/apply", payload, nil)
 }
 
