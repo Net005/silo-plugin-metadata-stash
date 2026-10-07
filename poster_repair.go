@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -91,6 +92,7 @@ func (s *scheduledTaskServer) repairSelectedPosters(ctx context.Context, library
 	defer s.posterMu.Unlock()
 	s.runtime.mu.RLock()
 	base, key, mode, enabled := s.runtime.siloBase, s.runtime.siloKey, s.runtime.posterLayout, s.runtime.posterRepair
+	artwork := s.runtime.artwork
 	profile := s.runtime.recommendationConfig.Profile
 	stash := s.runtime.client
 	s.runtime.mu.RUnlock()
@@ -148,10 +150,10 @@ func (s *scheduledTaskServer) repairSelectedPosters(ctx context.Context, library
 			state.Items = map[string]posterMarker{}
 		}
 		if library == "" {
-			if state.Revision != "renewal-v4" {
+			if state.Revision != "renewal-v5-context" {
 				state.Cursor, state.Offset, state.Scanned, state.Applied, state.Skipped = "", 0, 0, 0, 0
 				state.Completed = time.Time{}
-				state.Revision = "renewal-v4"
+				state.Revision = "renewal-v5-context"
 			}
 			if !state.Completed.IsZero() && time.Since(state.Completed) < 7*24*time.Hour {
 				continue
@@ -242,7 +244,7 @@ func (s *scheduledTaskServer) repairSelectedPosters(ctx context.Context, library
 					skipped++
 					return nil
 				}
-				fingerprint := fmt.Sprintf("layout-v3-lossless-original|%t|%s|%s|%s|%s|%s|%s", isJAV, mode, row.ID, row.Title, row.Date, row.Paths.Screenshot, studioName)
+				fingerprint := fmt.Sprintf("layout-v6-yunet-context|%t|%s|%s|%s|%s|%s|%s", isJAV, mode, row.ID, row.Title, row.Date, row.Paths.Screenshot, studioName)
 				fp := sha256.Sum256([]byte(fingerprint))
 				source := hex.EncodeToString(fp[:])
 				old := state.Items[item.ContentID]
@@ -289,6 +291,13 @@ func (s *scheduledTaskServer) repairSelectedPosters(ctx context.Context, library
 						var changed bool
 						rendered, changed, e = poster.RenderJAVPoster(raw)
 						if e == nil && !changed {
+							state.Items[item.ContentID] = posterMarker{Source: source, Hash: digest, Checked: time.Now().UTC()}
+							skipped++
+							return nil
+						}
+					} else if mode == "smart" {
+						rendered, e = artwork.renderScenePoster(ctx, raw)
+						if errors.Is(e, errInsufficientPosterContext) {
 							state.Items[item.ContentID] = posterMarker{Source: source, Hash: digest, Checked: time.Now().UTC()}
 							skipped++
 							return nil

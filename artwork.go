@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"image"
 	"io"
 	"net/http"
 	"net/url"
@@ -100,7 +103,7 @@ func validArtworkReference(raw string) bool {
 	}
 	query := parsed.Query()
 	return legacySceneCoverRoute.MatchString(parsed.Path) && len(query) == 1 &&
-		(query.Get("variant") == "poster" || query.Get("variant") == "backdrop")
+		(query.Get("variant") == "smart" || query.Get("variant") == "poster" || query.Get("variant") == "backdrop")
 }
 
 func backendImagePath(path string) string {
@@ -122,4 +125,39 @@ func (c *artworkClient) imageURL(path string) string {
 	q.Set("api_key", c.key)
 	u.RawQuery = q.Encode()
 	return u.String()
+}
+
+var errInsufficientPosterContext = errors.New("original artwork is already a close-up")
+
+func (c *artworkClient) renderScenePoster(ctx context.Context, raw []byte) ([]byte, error) {
+	if !c.configured() {
+		return nil, fmt.Errorf("smart poster crop requires configured JAVBeacon URL and API key")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+"/api/v1/integrations/silo/poster/render", bytes.NewReader(raw))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.key)
+	req.Header.Set("Content-Type", "application/octet-stream")
+	client := &http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNoContent {
+		return nil, errInsufficientPosterContext
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("JAVBeacon poster render HTTP %d (requires JAVBeacon v1.0.286+)", resp.StatusCode)
+	}
+	result, err := io.ReadAll(io.LimitReader(resp.Body, (16<<20)+1))
+	if err != nil || len(result) > 16<<20 {
+		return nil, fmt.Errorf("invalid rendered poster response")
+	}
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(result))
+	if err != nil || cfg.Width != 1200 || cfg.Height != 1800 {
+		return nil, fmt.Errorf("rendered poster is not 1200x1800")
+	}
+	return result, nil
 }

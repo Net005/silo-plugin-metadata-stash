@@ -6,6 +6,7 @@ import (
 	_ "embed"
 	"encoding/hex"
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -86,9 +87,9 @@ func (s *runtimeServer) Configure(_ context.Context, req *pluginv1.ConfigureRequ
 		}
 		s.posterLayout = text(v["nonjav_poster_layout"])
 		if s.posterLayout == "" {
-			s.posterLayout = "contain"
+			s.posterLayout = "smart"
 		}
-		if s.posterLayout != "contain" && s.posterLayout != "face" {
+		if s.posterLayout != "contain" && s.posterLayout != "face" && s.posterLayout != "smart" {
 			s.mu.Unlock()
 			return nil, fmt.Errorf("invalid poster layout")
 		}
@@ -136,6 +137,17 @@ func (s *runtimeServer) sceneArtwork(ctx context.Context, id string) *sceneArtwo
 	art, err := s.artworkClient().fetch(ctx, id)
 	if err != nil {
 		return nil
+	}
+	if art != nil && art.ReleaseID == 0 {
+		s.mu.RLock()
+		mode := s.posterLayout
+		s.mu.RUnlock()
+		if mode == "smart" {
+			row, e := s.stash().findScene(ctx, id)
+			if e == nil && row != nil && !javPosterCode.MatchString(strings.TrimSpace(row.Code)) {
+				art.PosterPath = "/api/v1/integrations/silo/stash/scenes/" + url.PathEscape(id) + "/cover?variant=smart"
+			}
+		}
 	}
 	return art
 }

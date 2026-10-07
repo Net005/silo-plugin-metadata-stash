@@ -1,6 +1,6 @@
 {
   "plugin_id": "stash.metadata",
-  "version": "0.3.48",
+  "version": "0.3.49",
   "checksum": "__CHECKSUM__",
   "silo_api_version": "v1",
   "presentation": {
@@ -162,7 +162,7 @@
       "key": "connection",
       "title": "StashApp Connection",
       "description": "Direct StashApp GraphQL connection.",
-      "json_schema": "{\"type\":\"object\",\"properties\":{\"base_url\":{\"type\":\"string\",\"format\":\"uri\",\"minLength\":1},\"api_key\":{\"type\":\"string\",\"minLength\":1},\"silo_base_url\":{\"type\":\"string\",\"format\":\"uri\"},\"silo_api_key\":{\"type\":\"string\"},\"javbeacon_url\":{\"type\":\"string\",\"format\":\"uri\"},\"javbeacon_api_key\":{\"type\":\"string\"},\"stash_saved_filter_selection\":{\"type\":\"string\"},\"stash_saved_filter_prefix\":{\"type\":\"string\"},\"saved_filter_selection\":{\"type\":\"string\"},\"saved_filter_prefix\":{\"type\":\"string\"},\"playback_excluded_scene_ids\":{\"type\":\"string\"},\"nonjav_poster_repair_enabled\":{\"type\":\"boolean\"},\"nonjav_poster_layout\":{\"type\":\"string\",\"enum\":[\"contain\",\"face\"]}},\"required\":[\"base_url\"],\"additionalProperties\":false}",
+      "json_schema": "{\"type\":\"object\",\"properties\":{\"base_url\":{\"type\":\"string\",\"format\":\"uri\",\"minLength\":1},\"api_key\":{\"type\":\"string\",\"minLength\":1},\"silo_base_url\":{\"type\":\"string\",\"format\":\"uri\"},\"silo_api_key\":{\"type\":\"string\"},\"javbeacon_url\":{\"type\":\"string\",\"format\":\"uri\"},\"javbeacon_api_key\":{\"type\":\"string\"},\"stash_saved_filter_selection\":{\"type\":\"string\"},\"stash_saved_filter_prefix\":{\"type\":\"string\"},\"saved_filter_selection\":{\"type\":\"string\"},\"saved_filter_prefix\":{\"type\":\"string\"},\"playback_excluded_scene_ids\":{\"type\":\"string\"},\"nonjav_poster_repair_enabled\":{\"type\":\"boolean\"},\"nonjav_poster_layout\":{\"type\":\"string\",\"enum\":[\"smart\",\"contain\",\"face\"]}},\"required\":[\"base_url\"],\"additionalProperties\":false}",
       "required": true,
       "admin_form": {
         "fields": [
@@ -249,8 +249,8 @@
             "key": "nonjav_poster_layout",
             "label": "Non-JAV poster layout",
             "control": "ADMIN_FORM_CONTROL_TEXT",
-            "default_value": "contain",
-            "description": "contain preserves the whole image and printed titles on a dark blurred 2:3 card. face optionally crops around one confident face; falls back to contain. Face detection does not protect printed text."
+            "default_value": "smart",
+            "description": "smart renders sharp 1200x1800 face-focused covers through JAVBeacon v1.0.286+. Keeps fitting face groups; otherwise selects a confident face with at least one third of the frame for surrounding detail. Existing close-ups remain unchanged if no face fits with context. Rotated faces supported; no-face images use a centre crop. contain keeps the full original; face uses the legacy detector."
           }
         ]
       }

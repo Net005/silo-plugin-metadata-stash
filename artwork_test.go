@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -121,5 +122,27 @@ func TestUnlinkedStashCoverStillUsesPosterCropAndRawBackdrop(t *testing.T) {
 	u, err := url.Parse(resolved)
 	if err != nil || u.Host != strings.TrimPrefix(backend.URL, "http://") || u.Query().Get("variant") != "poster" || u.Query().Get("api_key") != "art-key" {
 		t.Fatalf("resolved image: %v %v", u, err)
+	}
+}
+
+func TestSmartPosterNoContextAndAuthentication(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" || r.URL.Path != "/api/v1/integrations/silo/poster/render" || r.Header.Get("Authorization") != "Bearer key" {
+			t.Error("incorrect renderer request")
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	client := &artworkClient{base: server.URL, key: "key"}
+	if _, err := client.renderScenePoster(context.Background(), []byte("source")); !errors.Is(err, errInsufficientPosterContext) {
+		t.Fatalf("expected unchanged close-up, got %v", err)
+	}
+}
+
+func TestSmartPosterRejectsInvalidRendererImage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("invalid")) }))
+	defer server.Close()
+	if _, err := (&artworkClient{base: server.URL, key: "key"}).renderScenePoster(context.Background(), []byte("source")); err == nil {
+		t.Fatal("accepted invalid crop")
 	}
 }
