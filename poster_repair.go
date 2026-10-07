@@ -150,10 +150,11 @@ func (s *scheduledTaskServer) repairSelectedPosters(ctx context.Context, library
 			state.Items = map[string]posterMarker{}
 		}
 		if library == "" {
-			if state.Revision != "renewal-v5-context" {
+			revision := fmt.Sprintf("renewal-v5-context:%s:%t", mode, enabled)
+			if state.Revision != revision {
 				state.Cursor, state.Offset, state.Scanned, state.Applied, state.Skipped = "", 0, 0, 0, 0
 				state.Completed = time.Time{}
-				state.Revision = "renewal-v5-context"
+				state.Revision = revision
 			}
 			if !state.Completed.IsZero() && time.Since(state.Completed) < 7*24*time.Hour {
 				continue
