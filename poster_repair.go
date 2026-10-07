@@ -419,7 +419,7 @@ func (s *scheduledTaskServer) pollPosters() {
 			// at startup. Retry readiness without postponing renewal for an hour.
 			wait = 30 * time.Second
 		}
-		if err == nil && result["status"] == "partial" {
+		if err == nil && (result["status"] == "partial" || result["status"] == "already_running") {
 			wait = 5 * time.Second
 		}
 		select {
