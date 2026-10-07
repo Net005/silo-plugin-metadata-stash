@@ -511,6 +511,11 @@ func (c *SiloClient) RepairCollectionPosters(ctx context.Context, profile string
 			continue
 		}
 		if e = c.SetUniqueCollectionPoster(ctx, r.ID, candidates); e != nil {
+			if e.Error() == "no unclaimed member cover available" {
+				// Small overlapping collections may have no unique cover. Preserve
+				// theirs and continue repairing the other owned collections.
+				continue
+			}
 			return count, fmt.Errorf("repair collection %s: %w", r.ID, e)
 		}
 		count++

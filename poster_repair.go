@@ -175,6 +175,11 @@ func (s *scheduledTaskServer) repairSelectedPosters(ctx context.Context, library
 				}
 			}
 			if e != nil {
+				if library == "" && e.Error() == "multiple Stash scenes match playback files" {
+					// Ambiguous files are never repaired automatically; keep the scan moving.
+					skipped++
+					continue
+				}
 				return nil, fmt.Errorf("poster item %s: %w", item.ContentID, e)
 			}
 			if sceneID == "" {
@@ -327,6 +332,12 @@ func (s *scheduledTaskServer) pollPosters() {
 		} else if result["applied"] != nil {
 			s.log.Info("Poster layout repair", "summary", result)
 		}
-		time.Sleep(time.Hour)
+		// Drain a newly enabled/changed layout in bounded batches, then resume
+		// hourly checks. Durable item markers prevent repeat downloads/uploads.
+		wait := time.Hour
+		if err == nil && result["status"] == "partial" {
+			wait = 5 * time.Second
+		}
+		time.Sleep(wait)
 	}
 }
