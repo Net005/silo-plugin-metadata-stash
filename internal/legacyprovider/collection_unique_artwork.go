@@ -240,7 +240,8 @@ func (c *SiloClient) posterBytes(ctx context.Context, u string) ([]byte, error) 
 
 // Unique posters are reserved across ALL Silo collections, including user
 // collections (which are inspected but never edited). Membership is unchanged.
-// If no unclaimed member image exists, preserve existing artwork and report the conflict.
+// Prefer distinct member covers. Legacy placeholders and empty shelves must receive
+// real artwork even when all available covers are already used elsewhere.
 func (c *SiloClient) SetUniqueCollectionPoster(ctx context.Context, id string, candidates []CollectionArtwork) error {
 	collectionPosterMu.Lock()
 	defer collectionPosterMu.Unlock()
@@ -255,6 +256,7 @@ func (c *SiloClient) setUniqueCollectionPoster(ctx context.Context, id string, c
 	var current siloCollection
 	signatures := [][]byte{}
 	usedIDs, usedDigests, usedURLs := map[string]bool{}, map[string]bool{}, map[string]bool{}
+	uses := map[string]int{}
 	for _, r := range rows {
 		if r.ID == id {
 			current = r
@@ -264,6 +266,7 @@ func (c *SiloClient) setUniqueCollectionPoster(ctx context.Context, id string, c
 		_ = json.Unmarshal(r.SourceConfig[uniquePosterKey], &m)
 		if posterMarkerMatches(m, r) {
 			usedIDs[m.MediaID] = true
+			uses[m.MediaID]++
 			usedDigests[m.SourceDigest] = true
 			if len(m.Signature) > 0 {
 				signatures = append(signatures, m.Signature)
@@ -436,6 +439,29 @@ func (c *SiloClient) setUniqueCollectionPoster(ctx context.Context, id string, c
 				}
 				return c.setUniqueCollectionPoster(ctx, id, candidates, false)
 			}
+		}
+	}
+	if data == nil && previous.MediaID == "" {
+		// Old synthetic title cards have no member ID. Never preserve them merely
+		// to enforce uniqueness: use a complete real member image, preferring
+		// the least-used source. Existing real covers remain protected below.
+		sort.SliceStable(candidates, func(i, j int) bool {
+			return uses[candidates[i].MediaID] < uses[candidates[j].MediaID]
+		})
+		for _, a := range candidates {
+			if a.MediaID == "" || a.PosterURL == "" {
+				continue
+			}
+			b, err := c.posterBytes(ctx, a.PosterURL)
+			if err != nil {
+				continue
+			}
+			d, err := pixelDigest(b)
+			if err != nil {
+				continue
+			}
+			selected, data, digest = a, b, d
+			break
 		}
 	}
 	if data == nil {

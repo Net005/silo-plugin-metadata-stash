@@ -98,6 +98,15 @@ func TestUniquePosterAcrossCollectionsAndDifferentMemberIDs(t *testing.T) {
 	if uploads != 1 || !bytes.Equal(uploaded, blue) {
 		t.Fatal("replaced real artwork with fallback")
 	}
+	// A legacy generated card has no member reservation. It must be replaced
+	// with the exact real source bytes even when uniqueness is exhausted.
+	marker[uniquePosterKey] = mustJSON(uniquePosterMarker{Policy: 1, SourceDigest: "old-title-card"})
+	if err := client.SetUniqueCollectionPoster(t.Context(), "target", choices[:1]); err != nil {
+		t.Fatal(err)
+	}
+	if uploads != 2 || !bytes.Equal(uploaded, red) {
+		t.Fatal("placeholder was not replaced by the full real member cover")
+	}
 
 }
 func mustJSON(v any) json.RawMessage { b, _ := json.Marshal(v); return b }
@@ -214,18 +223,15 @@ func TestSmallCollectionGetsRealCoverWithoutChangingUserCollections(t *testing.T
 			sig, _ := posterSignature(red)
 			markers["large"][uniquePosterKey] = mustJSON(uniquePosterMarker{Policy: 1, MediaID: "red-member", SourceDigest: digest, PosterURL: urls["large"], PosterThumbhash: thumbs["large"], Signature: sig})
 			err := NewSiloClient(server.URL, "key").SetUniqueCollectionPoster(t.Context(), "small", []CollectionArtwork{{MediaID: "red-member", PosterURL: server.URL + "/red"}})
-			if managed && err != nil {
+			if err != nil {
 				t.Fatal(err)
-			}
-			if !managed && err == nil {
-				t.Fatal("expected artwork conflict for user-owned cover")
 			}
 			if managed {
 				if !bytes.Equal(uploaded["small"], red) || !bytes.Equal(uploaded["large"], blue) {
 					t.Fatal("did not give small shelf its real member cover")
 				}
-			} else if uploaded["large"] != nil || bytes.Equal(uploaded["small"], red) {
-				t.Fatal("changed user artwork or duplicated its cover")
+			} else if uploaded["large"] != nil || !bytes.Equal(uploaded["small"], red) {
+				t.Fatal("changed user artwork or left small shelf without its real cover")
 			}
 		})
 	}
