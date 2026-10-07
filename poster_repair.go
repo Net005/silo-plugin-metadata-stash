@@ -356,13 +356,17 @@ func (s *scheduledTaskServer) repairSelectedPosters(ctx context.Context, library
 				}
 			}
 			state.Updated = time.Now().UTC()
-			record.SourceConfig["poster_layout"], _ = json.Marshal(state)
-			if err = client.UpdateRecommendationRecord(ctx, record.ID, tag, map[string]any{"source_config": record.SourceConfig}); err != nil {
-				return nil, err
-			}
-			record, tag, err = client.ReadRecommendationRecord(ctx, record.ID)
-			if err != nil {
-				return nil, err
+			// A skipped item has no publication to recover. Checkpoint skips in
+			// groups, but persist every changed cover and failure immediately.
+			if itemErr != nil || applied > before || (index+1)%20 == 0 {
+				record.SourceConfig["poster_layout"], _ = json.Marshal(state)
+				if err = client.UpdateRecommendationRecord(ctx, record.ID, tag, map[string]any{"source_config": record.SourceConfig}); err != nil {
+					return nil, err
+				}
+				record, tag, err = client.ReadRecommendationRecord(ctx, record.ID)
+				if err != nil {
+					return nil, err
+				}
 			}
 			if applied >= 20 {
 				return map[string]any{"status": "partial", "applied": applied, "skipped": skipped}, nil

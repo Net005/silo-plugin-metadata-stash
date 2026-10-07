@@ -14,6 +14,7 @@ func TestPosterRenewalDrainsPagesAndPersistsItemFailures(t *testing.T) {
 	save := func() { rec.SourceConfig["poster_layout"], _ = json.Marshal(state) }
 	save()
 	pageReads := 0
+	stateWrites := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("ETag", `"1"`)
 		switch r.URL.Path {
@@ -25,6 +26,7 @@ func TestPosterRenewalDrainsPagesAndPersistsItemFailures(t *testing.T) {
 			json.NewEncoder(w).Encode(map[string]any{"items": []provider.RecommendationRecord{rec}})
 		case "/api/v2/admin/collections/state":
 			if r.Method == http.MethodPatch {
+				stateWrites++
 				var d struct {
 					SourceConfig map[string]json.RawMessage `json:"source_config"`
 				}
@@ -38,7 +40,11 @@ func TestPosterRenewalDrainsPagesAndPersistsItemFailures(t *testing.T) {
 		case "/api/v2/catalog":
 			pageReads++
 			if r.URL.Query().Get("cursor") == "" {
-				json.NewEncoder(w).Encode(map[string]any{"items": []map[string]string{{"content_id": "bad"}, {"content_id": "safe"}}, "page": map[string]any{"has_more": true, "next_cursor": "page2"}})
+				items := []map[string]string{{"content_id": "bad"}}
+				for range 79 {
+					items = append(items, map[string]string{"content_id": "safe"})
+				}
+				json.NewEncoder(w).Encode(map[string]any{"items": items, "page": map[string]any{"has_more": true, "next_cursor": "page2"}})
 			} else {
 				json.NewEncoder(w).Encode(map[string]any{"items": []map[string]string{{"content_id": "last"}}, "page": map[string]any{"has_more": false}})
 			}
@@ -58,15 +64,23 @@ func TestPosterRenewalDrainsPagesAndPersistsItemFailures(t *testing.T) {
 	if err != nil || result["status"] != "partial" {
 		t.Fatalf("first pass %+v %v", result, err)
 	}
-	if state.Scanned != 2 || state.Offset != 0 || state.Cursor != "page2" || len(state.Errors) != 1 {
+	if state.Scanned != 80 || state.Offset != 0 || state.Cursor != "page2" || len(state.Errors) != 1 {
 		t.Fatalf("checkpoint %+v", state)
 	}
 	result, err = task.repairPosters(t.Context())
-	if err != nil || result["status"] != "complete" || state.Scanned != 3 || state.Completed.IsZero() {
+	if err != nil || result["status"] != "complete" || state.Scanned != 81 || state.Completed.IsZero() {
 		t.Fatalf("final pass %+v %+v %v", result, state, err)
 	}
 	task.repairPosters(t.Context())
 	if pageReads != 2 {
 		t.Fatal("completed sweep restarted immediately")
+	}
+	if stateWrites > 7 {
+		t.Fatalf("skipped items caused excessive checkpoints: %d", stateWrites)
+	}
+	rs.posterLayout = "smart"
+	result, err = task.repairPosters(t.Context())
+	if err != nil || result["status"] != "partial" || pageReads != 3 || state.Scanned != 80 || state.Revision != "renewal-v5-context:smart:true" {
+		t.Fatalf("layout change did not restart sweep: %+v %+v %v", result, state, err)
 	}
 }
