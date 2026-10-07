@@ -242,3 +242,80 @@ func TestLegacyManagedPosterReservationWithoutImageURL(t *testing.T) {
 		t.Fatal("claimed user artwork")
 	}
 }
+
+func TestChangedMemberPosterRefreshesCollectionButURLRenewalDoesNot(t *testing.T) {
+	old := solidPoster(color.RGBA{190, 20, 30, 255})
+	cropped := solidPoster(color.RGBA{10, 40, 190, 255})
+	marker := map[string]json.RawMessage{}
+	uploads, reads := 0, 0
+	var uploaded []byte
+	var server *httptest.Server
+	row := func() siloCollection {
+		return siloCollection{ID: "target", PosterURL: server.URL + "/cached", SourceConfig: marker}
+	}
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("ETag", `"1"`)
+		switch r.URL.Path {
+		case "/api/v2/admin/collections":
+			json.NewEncoder(w).Encode(map[string]any{"items": []siloCollection{row()}})
+		case "/new-crop.webp":
+			reads++
+			w.Write(cropped)
+		case "/api/v2/admin/collections/target/poster":
+			if err := r.ParseMultipartForm(1 << 20); err != nil {
+				t.Fatal(err)
+			}
+			f, _, err := r.FormFile("image")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer f.Close()
+			uploaded, _ = io.ReadAll(f)
+			uploads++
+		case "/api/v2/admin/collections/target":
+			if r.Method == "GET" {
+				json.NewEncoder(w).Encode(row())
+			} else {
+				var p struct {
+					SourceConfig map[string]json.RawMessage `json:"source_config"`
+				}
+				json.NewDecoder(r.Body).Decode(&p)
+				marker = p.SourceConfig
+			}
+		default:
+			t.Errorf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	sig, _ := posterSignature(old)
+	digest, _ := pixelDigest(old)
+	marker[uniquePosterKey] = mustJSON(uniquePosterMarker{Policy: 1, MediaID: "same-member", PosterURL: server.URL + "/cached", SourceDigest: digest, Signature: sig, SourceReference: posterSourceReference(server.URL + "/old-spread.webp")})
+	client := NewSiloClient(server.URL, "key")
+	for _, suffix := range []string{"?X-Amz-Date=old&X-Amz-Signature=old", "?X-Amz-Date=new&X-Amz-Signature=new"} {
+		if err := client.SetUniqueCollectionPoster(t.Context(), "target", []CollectionArtwork{{MediaID: "same-member", PosterURL: server.URL + "/new-crop.webp" + suffix}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if uploads != 1 || reads != 1 || !bytes.Equal(uploaded, cropped) {
+		t.Fatalf("crop not refreshed or signed renewal reuploaded: uploads=%d reads=%d", uploads, reads)
+	}
+	var saved uniquePosterMarker
+	json.Unmarshal(marker[uniquePosterKey], &saved)
+	if saved.SourceReference != posterSourceReference(server.URL+"/new-crop.webp") {
+		t.Fatal("source revision not recorded")
+	}
+}
+
+func TestPosterSourceReferencePreservesMeaningfulVariants(t *testing.T) {
+	a := posterSourceReference("https://images.example/poster?variant=poster&apikey=secret&X-Amz-Date=old")
+	b := posterSourceReference("https://images.example/poster?variant=poster&apikey=rotated&X-Amz-Date=new")
+	if a != b {
+		t.Fatal("credential rotation changed source")
+	}
+	if a == posterSourceReference("https://images.example/poster?variant=backdrop") {
+		t.Fatal("meaningful layout ignored")
+	}
+	if posterSourceReference("") != "" {
+		t.Fatal("empty source gets cache identity")
+	}
+}

@@ -35,9 +35,35 @@ type uniquePosterMarker struct {
 	Policy          int    `json:"policy"`
 	MediaID         string `json:"media_id"`
 	SourceDigest    string `json:"source_digest"`
+	SourceReference string `json:"source_reference,omitempty"`
 	PosterURL       string `json:"poster_url"`
 	PosterThumbhash string `json:"poster_thumbhash,omitempty"`
 	Signature       []byte `json:"signature"`
+}
+
+// A repaired cached poster gets a new object path. Signed URL renewal and
+// credential rotation must not cause uploads; meaningful layout parameters do.
+// Persist only the reference digest, never signed URLs or credentials.
+func posterSourceReference(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	q := u.Query()
+	for key := range q {
+		k := strings.ToLower(key)
+		if strings.HasPrefix(k, "x-amz-") || k == "signature" || k == "expires" || k == "key-pair-id" || k == "apikey" || k == "api_key" || k == "access_token" || k == "token" {
+			q.Del(key)
+		}
+	}
+	u.RawQuery = q.Encode()
+	u.Fragment = ""
+	u.User = nil
+	sum := sha256.Sum256([]byte(u.String()))
+	return hex.EncodeToString(sum[:])
 }
 
 // Admin detail responses omit signed URLs; thumbhash is stable across URL expiry.
@@ -287,7 +313,7 @@ func (c *SiloClient) setUniqueCollectionPoster(ctx context.Context, id string, c
 	_ = json.Unmarshal(current.SourceConfig[uniquePosterKey], &previous)
 	// Keeping a still-valid reservation avoids re-uploading artwork on every poll.
 	for _, a := range candidates {
-		if posterMarkerMatches(previous, current) && previous.MediaID == a.MediaID && !usedIDs[a.MediaID] && !usedDigests[previous.SourceDigest] && func() bool {
+		if posterMarkerMatches(previous, current) && previous.MediaID == a.MediaID && previous.SourceReference != "" && previous.SourceReference == posterSourceReference(a.PosterURL) && !usedIDs[a.MediaID] && !usedDigests[previous.SourceDigest] && func() bool {
 			for _, v := range signatures {
 				if samePoster(previous.Signature, v) {
 					return false
@@ -432,7 +458,7 @@ func (c *SiloClient) setUniqueCollectionPoster(ctx context.Context, id string, c
 	if latest.SourceConfig == nil {
 		latest.SourceConfig = map[string]json.RawMessage{}
 	}
-	latest.SourceConfig[uniquePosterKey], _ = json.Marshal(uniquePosterMarker{Policy: 1, MediaID: selected.MediaID, SourceDigest: digest, PosterURL: latest.PosterURL, PosterThumbhash: latest.PosterThumbhash, Signature: func() []byte { v, _ := posterSignature(data); return v }()})
+	latest.SourceConfig[uniquePosterKey], _ = json.Marshal(uniquePosterMarker{Policy: 1, MediaID: selected.MediaID, SourceDigest: digest, SourceReference: posterSourceReference(selected.PosterURL), PosterURL: latest.PosterURL, PosterThumbhash: latest.PosterThumbhash, Signature: func() []byte { v, _ := posterSignature(data); return v }()})
 	_, e = c.collectionRequestETag(ctx, http.MethodPatch, path, map[string]any{"source_config": latest.SourceConfig}, nil, tag)
 	return e
 }
