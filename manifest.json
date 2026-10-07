@@ -1,6 +1,6 @@
 {
   "plugin_id": "stash.metadata",
-  "version": "0.3.49",
+  "version": "0.3.50",
   "checksum": "__CHECKSUM__",
   "silo_api_version": "v1",
   "presentation": {
@@ -242,7 +242,7 @@
           {
             "key": "nonjav_poster_repair_enabled",
             "label": "Enable non-JAV poster layout repair",
-            "control": "ADMIN_FORM_CONTROL_CHECKBOX",
+            "control": "ADMIN_FORM_CONTROL_SWITCH",
             "description": "Opt-in hourly worker and manual task. Only Stash Metadata libraries and exact Stash file matches; skips manual artwork locks and JAV codes. Requires the recommendation owner profile setting."
           },
           {
