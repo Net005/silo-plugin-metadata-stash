@@ -14,10 +14,8 @@ import (
 	"image"
 	"image/color"
 	stdraw "image/draw"
-	"image/jpeg"
-	_ "image/png"
+	"image/png"
 	"math"
-	"strings"
 )
 
 type face struct {
@@ -30,7 +28,7 @@ type face struct {
 
 func posterResize(src image.Image, w, h int) *image.RGBA {
 	out := image.NewRGBA(image.Rect(0, 0, w, h))
-	draw.BiLinear.Scale(out, out.Bounds(), src, src.Bounds(), stdraw.Src, nil)
+	draw.CatmullRom.Scale(out, out.Bounds(), src, src.Bounds(), stdraw.Src, nil)
 	return out
 }
 func posterCrop(src image.Image, r image.Rectangle) image.Image {
@@ -68,7 +66,7 @@ func RenderScenePoster(raw []byte, title, footer, mode string) ([]byte, error) {
 	ratio := float64(config.Width) / float64(config.Height)
 	if ratio > .62 && ratio < .71 {
 		var out bytes.Buffer
-		err := jpeg.Encode(&out, posterResize(im, 600, 900), &jpeg.Options{Quality: 90})
+		err := png.Encode(&out, posterResize(im, 1200, 1800))
 		return out.Bytes(), err
 	}
 	c, err := pigo.NewPigo().Unpack(posterFaceCascade)
@@ -123,9 +121,9 @@ func RenderScenePoster(raw []byte, title, footer, mode string) ([]byte, error) {
 	} else if len(faces) > 1 {
 
 	}
-	out := image.NewRGBA(image.Rect(0, 0, 600, 900))
+	out := image.NewRGBA(image.Rect(0, 0, 1200, 1800))
 	if mode == "face-aware crop" || mode == "preserve portrait" {
-		out = posterResize(source, 600, 900)
+		out = posterResize(source, 1200, 1800)
 	} else {
 		// Blur at a tiny resolution: bounded work, no GPU or extra image library.
 		bg := posterResize(im, 60, 90)
@@ -154,46 +152,15 @@ func RenderScenePoster(raw []byte, title, footer, mode string) ([]byte, error) {
 				bg.SetRGBA(x, y, color.RGBA{v.R / 3, v.G / 3, v.B / 3, 255})
 			}
 		}
-		out = posterResize(bg, 600, 900)
-		scale := math.Min(600/float64(w), 620/float64(h))
+		out = posterResize(bg, 1200, 1800)
+		scale := math.Min(1200/float64(w), 1800/float64(h))
 		fw, fh := int(float64(w)*scale), int(float64(h)*scale)
 		fg := posterResize(im, fw, fh)
-		stdraw.Draw(out, image.Rect((600-fw)/2, 70+(620-fh)/2, (600+fw)/2, 70+(620+fh)/2), fg, image.Point{}, stdraw.Src)
+		stdraw.Draw(out, image.Rect((1200-fw)/2, (1800-fh)/2, (1200+fw)/2, (1800+fh)/2), fg, image.Point{}, stdraw.Src)
 	}
-	// Raster title/footer for a proper portrait card; no generated imagery.
-	for y := 700; y < 900; y++ {
-		alpha := uint32((y - 700) * 230 / 200)
-		for x := 0; x < 600; x++ {
-			v := out.RGBAAt(x, y)
-			out.SetRGBA(x, y, color.RGBA{uint8(uint32(v.R) * (255 - alpha) / 255), uint8(uint32(v.G) * (255 - alpha) / 255), uint8(uint32(v.B) * (255 - alpha) / 255), 255})
-		}
-	}
-	title = strings.TrimSpace(title)
-	words := strings.Fields(title)
-	lines := []string{}
-	line := ""
-	for _, word := range words {
-		if len(line)+len(word) > 24 {
-			lines = append(lines, line)
-			line = word
-		} else {
-			if line != "" {
-				line += " "
-			}
-			line += word
-		}
-	}
-	if line != "" {
-		lines = append(lines, line)
-	}
-	for i, line := range lines {
-		if i < 3 {
-			posterText(out, line, 740+i*44, 3)
-		}
-	}
-	posterText(out, footer, 865, 2)
+	// Preserve the actual cover; titles remain in Silo rather than in artwork.
 	var dest bytes.Buffer
-	if err := jpeg.Encode(&dest, out, &jpeg.Options{Quality: 90}); err != nil {
+	if err := png.Encode(&dest, out); err != nil {
 		return nil, err
 	}
 	return dest.Bytes(), nil

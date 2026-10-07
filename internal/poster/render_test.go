@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"image"
 	"image/color"
-	"image/jpeg"
 	"image/png"
 	"testing"
 )
@@ -29,15 +28,15 @@ func TestContainPreservesBothEdges(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	im, e := jpeg.Decode(bytes.NewReader(out))
+	im, e := png.Decode(bytes.NewReader(out))
 	if e != nil {
 		t.Fatal(e)
 	}
-	if im.Bounds() != image.Rect(0, 0, 600, 900) {
+	if im.Bounds() != image.Rect(0, 0, 1200, 1800) {
 		t.Fatal(im.Bounds())
 	}
-	r, _, _, _ := im.At(20, 380).RGBA()
-	_, _, blue, _ := im.At(580, 380).RGBA()
+	r, _, _, _ := im.At(40, 900).RGBA()
+	_, _, blue, _ := im.At(1160, 900).RGBA()
 	if r < 50000 || blue < 50000 {
 		t.Fatal("full-frame mode clipped source edges")
 	}
@@ -60,11 +59,11 @@ func TestPortraitArtworkHasNoAddedFooter(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	im, e := jpeg.Decode(bytes.NewReader(out))
+	im, e := png.Decode(bytes.NewReader(out))
 	if e != nil {
 		t.Fatal(e)
 	}
-	r, _, _, _ := im.At(300, 880).RGBA()
+	r, _, _, _ := im.At(600, 1760).RGBA()
 	if r < 50000 {
 		t.Fatal("existing portrait was darkened or overlaid")
 	}

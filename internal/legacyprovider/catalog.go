@@ -40,7 +40,7 @@ func (c *SiloClient) ListMatchedCatalogPage(ctx context.Context, libraryID, curs
 	if len(profiles.Items) == 0 {
 		return nil, "", fmt.Errorf("silo: no profile available for catalog")
 	}
-	path := "/api/v2/catalog?library_id=" + url.QueryEscape(libraryID) + "&limit=200&skip_total=true&status=matched&sort=-added_at"
+	path := "/api/v2/catalog?library_id=" + url.QueryEscape(libraryID) + "&limit=200&skip_total=true&status=matched&sort=-added_at&image_size=original"
 	if cursor != "" {
 		path += "&cursor=" + url.QueryEscape(cursor)
 	}
@@ -111,7 +111,7 @@ func (c *SiloClient) ItemArtwork(ctx context.Context, profileID, contentID strin
 	if !c.Configured() || profileID == "" || contentID == "" {
 		return "", "", fmt.Errorf("silo: client, profile and content IDs are required")
 	}
-	path := "/api/v2/catalog/items/" + url.PathEscape(contentID)
+	path := "/api/v2/catalog/items/" + url.PathEscape(contentID) + "?image_size=original"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
 	if err != nil {
 		return "", "", err

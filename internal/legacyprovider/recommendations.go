@@ -148,7 +148,7 @@ func (c *SiloClient) ListRecommendationCatalog(ctx context.Context, library, pro
 	out := []CatalogItem{}
 	cursor := ""
 	for page := 0; page < 500; page++ {
-		path := "/api/v2/catalog?library_id=" + url.QueryEscape(library) + "&limit=200&skip_total=true"
+		path := "/api/v2/catalog?library_id=" + url.QueryEscape(library) + "&limit=200&skip_total=true&image_size=original"
 		if cursor != "" {
 			path += "&cursor=" + url.QueryEscape(cursor)
 		}

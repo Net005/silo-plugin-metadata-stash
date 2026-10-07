@@ -52,7 +52,7 @@ func applyRenderedPoster(ctx context.Context, base, key, id string, data []byte)
 			http.NotFound(w, r)
 			return
 		}
-		w.Header().Set("Content-Type", "image/jpeg")
+		w.Header().Set("Content-Type", http.DetectContentType(data))
 		w.Header().Set("Cache-Control", "no-store")
 		w.Write(data)
 	})}
@@ -206,7 +206,7 @@ func (s *scheduledTaskServer) repairSelectedPosters(ctx context.Context, library
 				skipped++
 				continue
 			}
-			fingerprint := fmt.Sprintf("layout-v2|%t|%s|%s|%s|%s|%s|%s", isJAV, mode, row.ID, row.Title, row.Date, row.Paths.Screenshot, studioName)
+			fingerprint := fmt.Sprintf("layout-v3-lossless-original|%t|%s|%s|%s|%s|%s|%s", isJAV, mode, row.ID, row.Title, row.Date, row.Paths.Screenshot, studioName)
 			fp := sha256.Sum256([]byte(fingerprint))
 			source := hex.EncodeToString(fp[:])
 			old := state.Items[item.ContentID]
