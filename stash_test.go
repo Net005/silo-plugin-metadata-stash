@@ -185,3 +185,31 @@ func TestManualSearchContinuesAfterDeletedProviderScene(t *testing.T) {
 		t.Fatal(result, e)
 	}
 }
+
+func TestExactPathSearchDoesNotMixDuplicateOrSwappedTitles(t *testing.T) {
+	path := "/collections/Studio - 2025-05-09 - Part 1 [WEBDL-2160p].mp4"
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		var req struct {
+			Query     string            `json:"query"`
+			Variables map[string]string `json:"variables"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(req.Query, "exactPath:") || req.Variables["path"] != path {
+			t.Errorf("missing exact path lookup: %+v", req)
+		}
+		json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"exactPath": map[string]any{"scenes": []any{
+			map[string]any{"id": "right-file", "title": "Part 2", "files": []any{map[string]string{"path": path}}},
+			map[string]any{"id": "wrong-file", "title": "Part 1", "files": []any{map[string]string{"path": "/other.mp4"}}},
+		}}}})
+	}))
+	defer server.Close()
+	c := &stashClient{base: server.URL, key: "key"}
+	got, err := c.search(context.Background(), path)
+	if err != nil || len(got) != 1 || got[0].ID != "right-file" || calls != 1 {
+		t.Fatalf("got=%+v err=%v calls=%d", got, err, calls)
+	}
+}

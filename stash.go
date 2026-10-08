@@ -147,6 +147,33 @@ func (c *stashClient) findScene(ctx context.Context, id string) (*scene, error) 
 	return flight.row, flight.err
 }
 func (c *stashClient) search(ctx context.Context, query string) ([]scene, error) {
+	// A complete media path identifies the file, even when titles are blank,
+	// duplicated, or assigned to the wrong part. Do not mix weaker title hits
+	// into an exact-path result and turn a verified file match ambiguous.
+	if filepath.IsAbs(strings.TrimSpace(query)) {
+		var data struct {
+			Found struct {
+				Scenes []scene `json:"scenes"`
+			} `json:"exactPath"`
+		}
+		err := c.graphql(ctx, `query($path:String!) { exactPath:findScenes(scene_filter:{path:{value:$path,modifier:EQUALS}},filter:{per_page:100}){scenes{`+sceneFields+`}} }`, map[string]any{"path": strings.TrimSpace(query)}, &data)
+		if err != nil {
+			return nil, err
+		}
+		var exact []scene
+		seen := map[string]bool{}
+		for _, item := range data.Found.Scenes {
+			for _, file := range item.Files {
+				if filepath.Clean(file.Path) == filepath.Clean(strings.TrimSpace(query)) && !seen[item.ID] {
+					exact = append(exact, item)
+					seen[item.ID] = true
+				}
+			}
+		}
+		if len(exact) > 0 {
+			return exact, nil
+		}
+	}
 	terms := searchTerms(query)
 	if len(terms) == 0 {
 		return nil, nil
