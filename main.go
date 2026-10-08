@@ -189,7 +189,16 @@ func displayTitle(s scene) string {
 	if strings.TrimSpace(s.Title) != "" {
 		return s.Title
 	}
-	return s.Code
+	if strings.TrimSpace(s.Code) != "" {
+		return s.Code
+	}
+	for _, file := range s.Files {
+		terms := searchTerms(file.Path)
+		if len(terms) > 0 {
+			return terms[len(terms)-1]
+		}
+	}
+	return ""
 }
 func searchResult(s scene) *pluginv1.ProviderSearchResult {
 	imagePath := ""

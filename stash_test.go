@@ -213,3 +213,17 @@ func TestExactPathSearchDoesNotMixDuplicateOrSwappedTitles(t *testing.T) {
 		t.Fatalf("got=%+v err=%v calls=%d", got, err, calls)
 	}
 }
+
+func TestBlankStashTitleUsesVerifiedMediaFilename(t *testing.T) {
+	var row scene
+	if err := json.Unmarshal([]byte(`{"id":"42","files":[{"path":"/collections/Freeze/Freeze - 2023-08-29 - Therapy [WEBDL-2160p].mp4"}]}`), &row); err != nil {
+		t.Fatal(err)
+	}
+	if got := displayTitle(row); got != "Therapy" {
+		t.Fatalf("title=%q", got)
+	}
+	row.Title = "Source title"
+	if got := displayTitle(row); got != "Source title" {
+		t.Fatalf("source title overridden: %q", got)
+	}
+}
