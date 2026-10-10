@@ -244,13 +244,17 @@ func TestWatchlistAddMovesExistingMemberFirstAndPreservesOthers(t *testing.T) {
 		switch r.URL.Path {
 		case "/api/v2/admin/collections/wl/items":
 			items := []map[string]string{}
-			for _, id := range ids {
+			pageIDs := ids[:2]
+			if r.URL.Query().Get("cursor") == "tail" {
+				pageIDs = ids[2:]
+			}
+			for _, id := range pageIDs {
 				items = append(items, map[string]string{"media_item_id": id})
 			}
-			json.NewEncoder(w).Encode(map[string]any{"items": items})
+			json.NewEncoder(w).Encode(map[string]any{"items": items, "page": map[string]any{"has_more": r.URL.Query().Get("cursor") == "", "next_cursor": "tail"}})
 		case "/api/v2/admin/collections/wl/items/order":
 			if r.Method == "GET" {
-				json.NewEncoder(w).Encode(map[string]any{"ordered_ids": ids})
+				json.NewEncoder(w).Encode(map[string]any{"ordered_ids": ids[:1], "has_more": true})
 			} else {
 				if r.Header.Get("If-Match") != `"order-1"` {
 					t.Error("missing order CAS")

@@ -221,11 +221,49 @@ func (s *runtimeServer) applyLocalWatchlist(ctx context.Context, id, media strin
 		}
 	}
 	var order struct {
-		IDs []string `json:"ordered_ids"`
+		IDs     []string `json:"ordered_ids"`
+		HasMore bool     `json:"has_more"`
 	}
 	tag, e := s.siloWatchlistRequest(ctx, "GET", path+"/items/order", nil, &order, "")
 	if e != nil {
 		return e
+	}
+	if order.HasMore {
+		order.IDs = nil
+		cursor := ""
+		complete := false
+		for page := 0; page < 100; page++ {
+			requestPath := path + "/items?limit=200"
+			if cursor != "" {
+				requestPath += "&cursor=" + url.QueryEscape(cursor)
+			}
+			var data struct {
+				Items []struct {
+					ID string `json:"media_item_id"`
+				} `json:"items"`
+				Page struct {
+					More bool   `json:"has_more"`
+					Next string `json:"next_cursor"`
+				} `json:"page"`
+			}
+			if _, e = s.siloWatchlistRequest(ctx, "GET", requestPath, nil, &data, ""); e != nil {
+				return e
+			}
+			for _, item := range data.Items {
+				order.IDs = append(order.IDs, item.ID)
+			}
+			if !data.Page.More {
+				complete = true
+				break
+			}
+			if data.Page.Next == "" || data.Page.Next == cursor {
+				return fmt.Errorf("Watchlist order pagination stalled")
+			}
+			cursor = data.Page.Next
+		}
+		if !complete {
+			return fmt.Errorf("Watchlist order pagination limit")
+		}
 	}
 	if len(order.IDs) > 0 && order.IDs[0] == media {
 		return nil
