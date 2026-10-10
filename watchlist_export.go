@@ -31,6 +31,7 @@ type watchlistActionVersion struct {
 	Desired bool      `json:"desired"`
 }
 type watchlistJournal struct {
+	OrderPolicy       int                               `json:"order_policy,omitempty"`
 	NativeHeadAddedAt time.Time                         `json:"native_head_added_at,omitempty"`
 	NativeBaseline    map[string]bool                   `json:"native_baseline,omitempty"`
 	NativeSeeded      bool                              `json:"native_seeded,omitempty"`
@@ -202,7 +203,7 @@ func (s *runtimeServer) saveWatchlistState(ctx context.Context, r watchlistColle
 	_, e := s.siloWatchlistRequest(ctx, "PATCH", "/api/v2/admin/collections/"+url.PathEscape(r.ID), map[string]any{"source_config": r.SourceConfig}, nil, tag)
 	return e
 }
-func (s *runtimeServer) applyLocalWatchlist(ctx context.Context, id, media string, desired bool) error {
+func (s *runtimeServer) applyLocalWatchlist(ctx context.Context, id, media string, desired bool, nativeOrders ...[]string) error {
 	members, e := s.watchlistMembers(ctx, id)
 	if e != nil {
 		return e
@@ -265,13 +266,43 @@ func (s *runtimeServer) applyLocalWatchlist(ctx context.Context, id, media strin
 			return fmt.Errorf("Watchlist order pagination limit")
 		}
 	}
-	if len(order.IDs) > 0 && order.IDs[0] == media {
-		return nil
-	}
 	ids := []string{media}
 	for _, id := range order.IDs {
 		if id != media {
 			ids = append(ids, id)
+		}
+	}
+	if len(nativeOrders) > 0 {
+		present := map[string]bool{media: true}
+		for _, id := range order.IDs {
+			present[id] = true
+		}
+		sorted := []string{}
+		seen := map[string]bool{}
+		for _, id := range nativeOrders[0] {
+			if present[id] && !seen[id] {
+				sorted = append(sorted, id)
+				seen[id] = true
+			}
+		}
+		for _, id := range ids {
+			if !seen[id] {
+				sorted = append(sorted, id)
+				seen[id] = true
+			}
+		}
+		ids = sorted
+	}
+	if len(ids) == len(order.IDs) {
+		equal := true
+		for i := range ids {
+			if ids[i] != order.IDs[i] {
+				equal = false
+				break
+			}
+		}
+		if equal {
+			return nil
 		}
 	}
 	if tag == "" {
@@ -355,10 +386,10 @@ func (s *runtimeServer) backfillWatchlist(ctx context.Context) (int, error) {
 	defer s.watchlistMu.Unlock()
 	return s.backfillWatchlistLocked(ctx)
 }
-func (s *runtimeServer) nativeWatchlistMembers(ctx context.Context) (map[string]bool, string, error) {
+func (s *runtimeServer) nativeWatchlistMembers(ctx context.Context) (map[string]bool, []string, error) {
 	out := map[string]bool{}
 	cursor := ""
-	head := ""
+	ordered := []string{}
 	for page := 0; page < 100; page++ {
 		path := "/api/v2/watchlist?limit=200"
 		if cursor != "" {
@@ -375,25 +406,25 @@ func (s *runtimeServer) nativeWatchlistMembers(ctx context.Context) (map[string]
 			} `json:"page"`
 		}
 		if _, err := s.siloWatchlistRequest(ctx, "GET", path, nil, &data, ""); err != nil {
-			return nil, "", err
+			return nil, nil, err
 		}
 		for _, item := range data.Items {
 			if item.Type == "movie" && item.ID != "" {
-				if head == "" {
-					head = item.ID
+				if !out[item.ID] {
+					ordered = append(ordered, item.ID)
 				}
 				out[item.ID] = true
 			}
 		}
 		if !data.Page.More {
-			return out, head, nil
+			return out, ordered, nil
 		}
 		if data.Page.Next == "" || data.Page.Next == cursor {
-			return nil, "", fmt.Errorf("native Watchlist pagination stalled")
+			return nil, nil, fmt.Errorf("native Watchlist pagination stalled")
 		}
 		cursor = data.Page.Next
 	}
-	return nil, "", fmt.Errorf("native Watchlist pagination limit")
+	return nil, nil, fmt.Errorf("native Watchlist pagination limit")
 }
 
 func (s *runtimeServer) backfillWatchlistLocked(ctx context.Context) (int, error) {
@@ -401,9 +432,13 @@ func (s *runtimeServer) backfillWatchlistLocked(ctx context.Context) (int, error
 	if e != nil {
 		return 0, e
 	}
-	native, head, e := s.nativeWatchlistMembers(ctx)
+	native, nativeOrder, e := s.nativeWatchlistMembers(ctx)
 	if e != nil {
 		return 0, e
+	}
+	head := ""
+	if len(nativeOrder) > 0 {
+		head = nativeOrder[0]
 	}
 	var headEntry struct {
 		AddedAt time.Time `json:"added_at"`
@@ -503,7 +538,24 @@ func (s *runtimeServer) backfillWatchlistLocked(ctx context.Context) (int, error
 				}
 				for _, file := range files.Items {
 					if file.Library == row.LibraryID {
-						intent := watchlistIntent{Desired: desired, SceneID: scene, Changed: time.Now()}
+						changedAt := time.Now()
+						if desired {
+							added, ok := nativeAdded[media]
+							if !ok {
+								var entry struct {
+									AddedAt time.Time `json:"added_at"`
+								}
+								if _, e = s.siloWatchlistRequest(ctx, "GET", "/api/v2/watchlist/"+url.PathEscape(media), nil, &entry, ""); e != nil {
+									return done, e
+								}
+								added = entry.AddedAt
+								nativeAdded[media] = added
+							}
+							if !added.IsZero() {
+								changedAt = added
+							}
+						}
+						intent := watchlistIntent{Desired: desired, SceneID: scene, Changed: changedAt}
 						j.Pending[media] = intent
 						j.LastActions[media] = watchlistActionVersion{intent.Changed, desired}
 						if desired {
@@ -601,7 +653,7 @@ func (s *runtimeServer) backfillWatchlistLocked(ctx context.Context) (int, error
 				return done, e
 			}
 			delete(j.Inactive, media)
-			if e = s.applyLocalWatchlist(ctx, row.ID, media, intent.Desired); e != nil {
+			if e = s.applyLocalWatchlist(ctx, row.ID, media, intent.Desired, nativeOrder); e != nil {
 				return done, e
 			}
 			if tagID == "" {
@@ -632,6 +684,24 @@ func (s *runtimeServer) backfillWatchlistLocked(ctx context.Context) (int, error
 				return done, e
 			}
 			done++
+		}
+		if j.OrderPolicy < 1 {
+			for _, media := range nativeOrder {
+				if members[media] {
+					if e = s.applyLocalWatchlist(ctx, row.ID, media, true, nativeOrder); e != nil {
+						return done, e
+					}
+					break
+				}
+			}
+			r, j, tag, e = s.watchlistState(ctx, row.ID)
+			if e != nil {
+				return done, e
+			}
+			j.OrderPolicy = 1
+			if e = s.saveWatchlistState(ctx, r, j, tag); e != nil {
+				return done, e
+			}
 		}
 	}
 	return done, nil
@@ -704,7 +774,11 @@ func (s *runtimeServer) applyWatchlistEvent(ctx context.Context, event *pluginv1
 		if e = s.saveWatchlistState(ctx, r, j, tag); e != nil {
 			return e
 		}
-		if e = s.applyLocalWatchlist(ctx, row.ID, media, desired); e != nil {
+		_, nativeOrder, orderErr := s.nativeWatchlistMembers(ctx)
+		if orderErr != nil {
+			return orderErr
+		}
+		if e = s.applyLocalWatchlist(ctx, row.ID, media, desired, nativeOrder); e != nil {
 			return e
 		}
 		matched++

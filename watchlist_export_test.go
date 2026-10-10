@@ -198,7 +198,7 @@ func TestWatchlistLocalFirstDurableRetryAndNewerActionWins(t *testing.T) {
 	}
 	var recovered watchlistJournal
 	json.Unmarshal(config[watchlistJournalKey], &recovered)
-	if !recovered.NativeHeadAddedAt.Equal(nativeAdded) || !recovered.LastActions["local-1"].Desired {
+	if !recovered.NativeHeadAddedAt.Equal(nativeAdded) || !recovered.LastActions["local-1"].Desired || !recovered.LastActions["local-1"].Changed.Equal(nativeAdded) {
 		t.Fatal("rapid re-add was not detected")
 	}
 	// A later addition of another title must not hide an older missed re-add.
@@ -282,5 +282,11 @@ func TestWatchlistAddMovesExistingMemberFirstAndPreservesOthers(t *testing.T) {
 	}
 	if strings.Join(ids, ",") != "target,older,other" {
 		t.Fatal("retry changed order")
+	}
+	if err := rt.applyLocalWatchlist(t.Context(), "wl", "target", true, []string{"other", "target"}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(ids, ",") != "other,target,older" {
+		t.Fatalf("delayed recovery overtook a newer native addition: %v", ids)
 	}
 }

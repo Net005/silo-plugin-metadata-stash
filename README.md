@@ -87,4 +87,4 @@ one-second control acknowledgement; RPC timeouts cannot cancel queued recovery.
 A completed admission is not proof that every action has been exported: pending
 and inactive actions remain in the durable collection journal.
 
-Native Watchlist re-adds are recovered using Silo addition timestamps, including a missed re-add behind a newer title. Exported additions move to the first collection position while preserving the other members’ order; saved-filter reconciliation leaves that Watchlist order intact.
+Native Watchlist re-adds are recovered using Silo addition timestamps, including a missed re-add behind a newer title. Exported native additions follow their actual date added, newest first, even during delayed recovery; collection-only members retain their relative order; saved-filter reconciliation leaves that Watchlist order intact.
