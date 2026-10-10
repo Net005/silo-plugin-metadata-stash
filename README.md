@@ -1,7 +1,7 @@
 <h1 align="center">Stash Metadata</h1>
 
 <p align="center">
-  <a href="https://stashapp.cc"><img src="https://stashapp.cc/images/stash.svg" alt="Stash" width="72" height="72"></a>
+  <a href="https://stashapp.cc"><img src="docs/assets/stash.svg" alt="Stash" width="72" height="72"></a>
   &nbsp;&nbsp;
   <img src="docs/assets/sync.svg" alt="Two-way sync" width="56" height="72">
   &nbsp;&nbsp;
@@ -11,7 +11,7 @@
 <p align="center"><strong>Stash ↔ Silo</strong><br>Metadata, artwork, playback and Watchlist sync.</p>
 
 <p align="center">
-  <a href="https://github.com/Net005/JAVBeacon"><img src="https://raw.githubusercontent.com/Net005/JAVBeacon/main/internal/web/static/javbeacon-site-logo-dark.png" alt="JAVBeacon — optional integration" width="48" height="48"></a><br>
+  <a href="https://github.com/Net005/JAVBeacon"><img src="https://raw.githubusercontent.com/Net005/JAVBeacon/main/internal/web/static/javbeacon-site-logo-dark.png" alt="JAVBeacon — optional integration" width="72" height="72"></a><br>
   <a href="https://github.com/Net005/JAVBeacon"><strong>JAVBeacon</strong></a> · Optional integration<br>
   <sub>Connect for extra artwork, cached enrichment and release collections.</sub>
 </p>
