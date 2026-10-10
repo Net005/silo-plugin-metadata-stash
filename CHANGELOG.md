@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.61] - 2026-10-10
+
+- Keep unavailable Watchlist additions queued without blocking newer Stash events or native Silo Watchlist recovery. Silo can retain file records after marking the files missing while refusing collection admission.
+- Preserve newer additions ahead of an older queued Stash addition when its item becomes available again.
+
 ## [0.3.60] - 2026-10-10
 
 - Apply explicit Stash Watchlist events to exact local files instead of scanning every library per click. Re-adds move to the first collection position, even when snapshot membership is unchanged. Journal incoming events before applying them; retry failures and ignore older delayed events.

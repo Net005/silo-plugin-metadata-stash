@@ -97,7 +97,7 @@ A [release ZIP](https://github.com/Net005/silo-plugin-metadata-stash/releases/la
 
 Stash's tag is the membership source. Incoming changes update the existing prefixed saved-filter collections; re-adding moves the item to the first position. Native Silo Watchlist actions export to those collections and to Stash. Personal Watchlist import is unsupported.
 
-Use **Silo plugin 0.3.60+** with **Stash companion 0.2.14+** for queued incoming events and re-add ordering. Hard-refresh Stash after a companion upgrade to load its updated UI code. Failed changes remain queued for retry; completion of a task admission does not mean all queued work has finished.
+Use **Silo plugin 0.3.61+** with **Stash companion 0.2.14+** for queued incoming events and re-add ordering. Hard-refresh Stash after a companion upgrade to load its updated UI code. Failed changes remain queued for retry; unavailable items do not block newer changes. Completion of a task admission does not mean all queued work has finished.
 
 ## Everyday use
 

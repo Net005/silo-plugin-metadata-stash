@@ -83,6 +83,7 @@ Use focused tests while iterating; run the relevant broader checks after the fin
 
 - Stage explicit paths after reviewing their contents; avoid broad staging that can include private or unrelated files.
 - When asked to commit and push, commit the authorized changes and push `main`. Confirm the push succeeded and report the commit ID. Do not infer deployment from a push.
+- Default deployment workflow: build the tested revision locally, transfer it directly to the authorized instances and upgrade in place. Commit and push source as requested, but do not wait for GitHub builds. Verify the running binary checksum/version and service health; for Silo plugins update the persistent plugin archive as well as the installed artifact. Never store private instance addresses or credentials in this repository.
 - Update the version of the component being released, and keep packaged metadata consistent with it. Check the release workflow before inventing packaging commands or asset names.
 - Do not assume a local Docker connection targets the user's remote server. Verify the target before any mutation, using private connection details only at runtime.
 - Deployment requires user authorization, which may already exist in the conversation. Back up affected installation artifacts and preserve configured settings. Use the supported upgrade mechanism; a disk-only binary replacement may be restored from Silo's stored plugin archive.

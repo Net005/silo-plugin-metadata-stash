@@ -21,6 +21,17 @@ var errUnverifiedStashWatchlist = errors.New("item files do not identify one Sta
 
 var errOutsideStashWatchlist = fmt.Errorf("item is outside the selected Stash Watchlist libraries")
 
+var errWatchlistItemUnavailable = errors.New("Watchlist item is currently unavailable in the collection libraries")
+
+type watchlistHTTPError struct {
+	method string
+	status int
+}
+
+func (e *watchlistHTTPError) Error() string {
+	return fmt.Sprintf("Silo Watchlist %s HTTP %d", e.method, e.status)
+}
+
 type watchlistIntent struct {
 	Desired bool      `json:"desired"`
 	SceneID string    `json:"scene_id,omitempty"`
@@ -84,7 +95,7 @@ func (s *runtimeServer) siloWatchlistRequest(ctx context.Context, method, path s
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("Silo Watchlist %s HTTP %d", method, resp.StatusCode)
+		return "", &watchlistHTTPError{method: method, status: resp.StatusCode}
 	}
 	if target != nil {
 		e = json.NewDecoder(io.LimitReader(resp.Body, 64<<20)).Decode(target)
@@ -219,6 +230,12 @@ func (s *runtimeServer) applyLocalWatchlist(ctx context.Context, id, media strin
 	}
 	if !members[media] {
 		if _, e = s.siloWatchlistRequest(ctx, "PUT", path+"/items/"+url.PathEscape(media), map[string]int{"position": len(members)}, nil, ""); e != nil {
+			var response *watchlistHTTPError
+			if errors.As(e, &response) && response.status == http.StatusNotFound {
+				// The files endpoint includes missing files. Collection admission
+				// excludes them, so a previously verified item may be unavailable.
+				return fmt.Errorf("%w: %w", errWatchlistItemUnavailable, e)
+			}
 			return e
 		}
 	}
@@ -658,6 +675,18 @@ func (s *runtimeServer) backfillWatchlistLocked(ctx context.Context) (int, error
 			}
 			delete(j.Inactive, media)
 			if e = s.applyLocalWatchlist(ctx, row.ID, media, intent.Desired, nativeOrder); e != nil {
+				if errors.Is(e, errWatchlistItemUnavailable) {
+					j.Inactive[media] = intent
+					delete(j.Pending, media)
+					if e = s.saveWatchlistState(ctx, r, j, tag); e != nil {
+						return done, e
+					}
+					r, j, tag, e = s.watchlistState(ctx, row.ID)
+					if e != nil {
+						return done, e
+					}
+					continue
+				}
 				return done, e
 			}
 			if tagID == "" {

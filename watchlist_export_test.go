@@ -22,6 +22,7 @@ func TestWatchlistLocalFirstDurableRetryAndNewerActionWins(t *testing.T) {
 	nativeAdded := time.Now().UTC()
 	shared := false
 	remote := false
+	unavailable := false
 	fail := true
 	mutations := 0
 	silo := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -72,6 +73,10 @@ func TestWatchlistLocalFirstDurableRetryAndNewerActionWins(t *testing.T) {
 			json.NewEncoder(w).Encode(map[string]any{"items": items})
 		case "/api/v2/admin/collections/wl/items/local-1":
 			if r.Method == "PUT" {
+				if unavailable {
+					w.WriteHeader(http.StatusNotFound)
+					return
+				}
 				members["local-1"] = true
 			} else if r.Method == "DELETE" {
 				delete(members, "local-1")
@@ -233,6 +238,26 @@ func TestWatchlistLocalFirstDurableRetryAndNewerActionWins(t *testing.T) {
 	}
 	if remote || members["local-1"] || mutations != before {
 		t.Fatal("shared movie event leaked into Stash")
+	}
+	// Raw file rows may remain after the scanner marks the file missing.
+	// Collection admission then rejects the add even though path lookup works.
+	shared = false
+	unavailable = true
+	json.Unmarshal(config[watchlistJournalKey], &recovered)
+	recovered.Pending["local-1"] = watchlistIntent{Desired: true, Changed: now.Add(time.Minute)}
+	recovered.LastActions["local-1"] = watchlistActionVersion{Desired: true, Changed: now.Add(time.Minute)}
+	config[watchlistJournalKey], _ = json.Marshal(recovered)
+	if _, err := rt.backfillWatchlist(t.Context()); err != nil {
+		t.Fatalf("unavailable queued add blocked recovery: %v", err)
+	}
+	recovered = watchlistJournal{}
+	json.Unmarshal(config[watchlistJournalKey], &recovered)
+	if _, ok := recovered.Pending["local-1"]; ok || !recovered.Inactive["local-1"].Desired || remote {
+		t.Fatal("unavailable export was lost or sent to Stash")
+	}
+	unavailable = false
+	if _, err := rt.backfillWatchlist(t.Context()); err != nil || !members["local-1"] || !remote {
+		t.Fatalf("returned item did not resume export: %v", err)
 	}
 
 }

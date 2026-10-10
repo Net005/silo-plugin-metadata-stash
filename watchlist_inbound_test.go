@@ -16,6 +16,7 @@ func TestInboundWatchlistReaddMovesFirstAndRetriesWithoutExport(t *testing.T) {
 	now := time.Now().UTC()
 	journal := watchlistJournal{Version: 1, Baseline: map[string]bool{"other": true, "target": true}, Pending: map[string]watchlistIntent{}, Incoming: map[string]watchlistIntent{"target": {Desired: false, Changed: now}}}
 	failOrder := false
+	unavailable := true
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("ETag", `"1"`)
 		switch r.URL.Path {
@@ -54,6 +55,13 @@ func TestInboundWatchlistReaddMovesFirstAndRetriesWithoutExport(t *testing.T) {
 					ids = append(ids, "target")
 				}
 			}
+			w.WriteHeader(204)
+		case "/api/v2/admin/collections/wl/items/unavailable":
+			if unavailable {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			ids = append(ids, "unavailable")
 			w.WriteHeader(204)
 		case "/api/v2/admin/collections/wl/items/order":
 			if r.Method == "GET" {
@@ -108,5 +116,27 @@ func TestInboundWatchlistReaddMovesFirstAndRetriesWithoutExport(t *testing.T) {
 	}
 	if !strings.EqualFold(ids[0], "target") {
 		t.Fatal("stale remove applied")
+	}
+	// A scanned-but-missing file is still returned by Silo's files endpoint,
+	// but admission to a library collection returns 404. Its older queued add
+	// must not block a subsequent re-add of an available item.
+	journal.Incoming = map[string]watchlistIntent{
+		"unavailable": {Desired: true, Changed: now.Add(2 * time.Second)},
+		"target":      {Desired: true, Changed: now.Add(3 * time.Second)},
+	}
+	ids = []string{"other", "target"}
+	if err := s.drainInboundWatchlist(context.Background(), "wl"); err != nil {
+		t.Fatal(err)
+	}
+	if ids[0] != "target" || len(journal.Incoming) != 1 || !journal.Incoming["unavailable"].Desired {
+		t.Fatalf("unavailable item blocked re-add or lost its event: order=%v incoming=%v", ids, journal.Incoming)
+	}
+	// Recovery of the old event retains the newer re-add's position.
+	unavailable = false
+	if err := s.drainInboundWatchlist(context.Background(), "wl"); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(ids, []string{"target", "unavailable", "other"}) || len(journal.Incoming) != 0 {
+		t.Fatalf("recovered older event displaced newer add: order=%v incoming=%v", ids, journal.Incoming)
 	}
 }

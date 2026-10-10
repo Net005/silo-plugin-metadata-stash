@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	provider "github.com/Net005/silo-plugin-metadata-stash/internal/legacyprovider"
 	"sort"
@@ -132,8 +133,27 @@ func (s *runtimeServer) drainInboundWatchlist(ctx context.Context, id string) er
 			delete(j.Incoming, media)
 			continue
 		}
-		// Do not apply native Watchlist order: a Stash re-add is itself the newest action.
-		if err = s.applyLocalWatchlist(ctx, id, media, intent.Desired); err != nil {
+		// Preserve newer completed actions when an older unavailable item returns.
+		// Native order alone cannot represent explicit Stash re-add events.
+		newer := []string{}
+		for other, action := range j.LastActions {
+			if other != media && action.Desired && action.Changed.After(intent.Changed) {
+				newer = append(newer, other)
+			}
+		}
+		sort.Slice(newer, func(a, b int) bool {
+			left, right := j.LastActions[newer[a]].Changed, j.LastActions[newer[b]].Changed
+			if left.Equal(right) {
+				return newer[a] < newer[b]
+			}
+			return left.After(right)
+		})
+		if err = s.applyLocalWatchlist(ctx, id, media, intent.Desired, append(newer, media)); err != nil {
+			if errors.Is(err, errWatchlistItemUnavailable) {
+				// Retain this exact event for recovery without blocking later events
+				// or native Watchlist exports in this and other libraries.
+				continue
+			}
 			return err
 		}
 		if intent.Desired {
