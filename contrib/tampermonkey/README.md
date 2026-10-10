@@ -83,3 +83,5 @@ Version 1.1.6 replaces the O-count flame with a water droplet, retaining the nat
 Version 1.1.8 adds a compact northeast-arrow link beside the toolbar actions. Hover text reads **Open in Stash**; clicking opens the matched or assigned Stash scene in a new tab. The link stays hidden when no scene can be resolved.
 
 Version 1.1.9 compacts the native toolbar rating to one star and its selected number. Hover or keyboard focus reveals all five stars without widening the toolbar row. Native rating clicks and arrow-key controls remain intact.
+
+Version 1.2.0 adds a water-droplet O-count badge beside age on person pages. It reads the exact linked Stash performer’s count using the existing Stash connection settings. Zero, unavailable counts and people without a Stash identity remain hidden.

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Silo Stash Backdrop Hover
 // @namespace    https://github.com/Net005/silo-plugin-metadata-stash
-// @version      1.1.9
+// @version      1.2.0
 // @downloadURL  https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @updateURL    https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @description  Stash backdrop previews, native Watchlist and O-count toolbar actions, and library-scoped subtitle creation.
@@ -182,7 +182,29 @@
       }
     };
   }
-  if (typeof module !== 'undefined' && module.exports) { module.exports = { createOCounter, parseCues, exactScene, createSiloFileReader, stashOrigin, sceneID, subtitleEligible, confirmSubtitleOverwrite, fullReleaseDate, metadataFilterHref }; return; }
+  function performerID(person) {
+    for (const value of [person?.provider_ids?.stash, person?.provider_ids?.plex, person?.plex_guid]) {
+      if (typeof value !== 'string') continue;
+      const match = /^stash:(\d+)$/.exec(value);
+      if (match) return match[1];
+    }
+    const raw = person?.provider_ids?.stash;
+    if (typeof raw === 'string' && /^\d+$/.test(raw)) return raw;
+    // Older enriched people carry the exact integration identity in their homepage.
+    try {
+      const url = new URL(person?.homepage);
+      if (['https:', 'http:'].includes(url.protocol)) return /^\/api\/v1\/integrations\/performers\/(\d+)\/stash\/?$/.exec(url.pathname)?.[1] || '';
+    } catch (_) {}
+    return '';
+  }
+  async function personOCount(person, request) {
+    const id = performerID(person);
+    if (!id) return null;
+    const data = await request('query($id:ID!){findPerformer(id:$id){o_counter}}', { id });
+    const count = data?.findPerformer?.o_counter;
+    return Number.isSafeInteger(count) && count > 0 ? count : null;
+  }
+  if (typeof module !== 'undefined' && module.exports) { module.exports = { performerID, personOCount, createOCounter, parseCues, exactScene, createSiloFileReader, stashOrigin, sceneID, subtitleEligible, confirmSubtitleOverwrite, fullReleaseDate, metadataFilterHref }; return; }
   let settings = { ...DEFAULTS, ...GM_getValue('settings', {}) };
   let current = null;
   const overviewStyle = document.createElement('style');
@@ -380,6 +402,14 @@
     }
     return svg;
   }
+  function oIcon() {
+    const icon = watchlistIcon(false);
+    icon.replaceChildren();
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', 'M12 22a7 7 0 0 0 7-7c0-4-7-13-7-13S5 11 5 15a7 7 0 0 0 7 7z M9 15a3 3 0 0 0 3 3');
+    icon.append(path);
+    return icon;
+  }
   function attachToolbar(more, id) {
     let alive = true, loading = false, captured = null, internalMenu = false;
     const watch = more.cloneNode(false), subs = more.cloneNode(false), orgasm = more.cloneNode(false);
@@ -410,12 +440,7 @@
     openStash.append(externalIcon);
     let counter = null;
     function renderO(value) {
-      // Water droplet with the same Lucide stroke weight and sizing as Silo controls.
-      const icon = watchlistIcon(false);
-      icon.replaceChildren();
-      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      path.setAttribute('d', 'M12 22a7 7 0 0 0 7-7c0-4-7-13-7-13S5 11 5 15a7 7 0 0 0 7 7z M9 15a3 3 0 0 0 3 3');
-      icon.append(path);
+      const icon = oIcon();
       orgasm.replaceChildren(icon);
       orgasm.classList.toggle('size-11', value === 0);
       for (const name of ['h-11', 'px-4', 'gap-2', 'text-[0.8125rem]', 'font-semibold', 'tabular-nums']) orgasm.classList.toggle(name, value > 0);
@@ -658,7 +683,38 @@
     const badge = [...hero.querySelectorAll('.metadata-badge')].find(el => el.textContent.trim() === date.slice(0, 4));
     if (badge) badge.textContent = date;
   }
+  const personPageID = () => /^\/person\/([^/]+)\/?$/.exec(location.pathname)?.[1];
+  let personOState = null;
+  function reconcilePersonO() {
+    const id = personPageID();
+    if (!id) { personOState = null; document.querySelectorAll('[data-stash-person-o]').forEach(el => el.remove()); return; }
+    if (personOState?.id !== id) {
+      document.querySelectorAll('[data-stash-person-o]').forEach(el => el.remove());
+      const state = personOState = { id, count: null };
+      siloJSON('/api/v2/catalog/people/' + encodeURIComponent(id) + '?prefetch=true')
+        .then(person => personOCount(person, gql))
+        .then(count => {
+          if (personOState !== state || personPageID() !== id) return;
+          state.count = count;
+          reconcilePersonO();
+        }).catch(() => {});
+    }
+    if (personOState.count === null) return;
+    const section = document.querySelector('section.page-shell');
+    const info = section?.querySelector('h1')?.parentElement?.parentElement;
+    const row = info?.querySelector('.mb-4.flex.flex-wrap.items-center');
+    if (!row || row.querySelector('[data-stash-person-o]')) return;
+    const badge = document.createElement('span');
+    badge.className = 'metadata-badge';
+    badge.dataset.stashPersonO = id;
+    badge.style.display = 'inline-flex'; badge.style.alignItems = 'center'; badge.style.gap = '0.375rem';
+    badge.title = 'Orgasm count'; badge.setAttribute('aria-label', `Orgasm count: ${personOState.count}`);
+    badge.append(oIcon(), document.createTextNode(String(personOState.count)));
+    const age = [...row.querySelectorAll('.metadata-badge')].find(el => /years old|\(age /i.test(el.textContent));
+    if (age) age.after(badge); else row.append(badge);
+  }
   function reconcile() {
+    reconcilePersonO();
     reconcileReleaseDate();
     reconcileToolbar();
     const id = itemID(), hero = document.querySelector('.item-detail-hero');

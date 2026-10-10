@@ -98,3 +98,24 @@ test('O counter rejects missing scenes and invalid mutation responses', async ()
  await assert.rejects(createOCounter(async () => ({ findScene: null }), '42').read(), /unavailable/);
  await assert.rejects(createOCounter(async () => ({ sceneAddO: null }), '42').increment(), /invalid O count/);
 });
+
+const { performerID, personOCount } = require('./silo-backdrop-hover.user.js');
+test('person O count uses exact Stash identity, including legacy enriched homepages', () => {
+ assert.equal(performerID({plex_guid:'stash:42'}),'42');
+ assert.equal(performerID({provider_ids:{stash:'43'}}),'43');
+ assert.equal(performerID({homepage:'https://beacon.example/api/v1/integrations/performers/44/stash'}),'44');
+ assert.equal(performerID({name:'Same Name',plex_guid:'tmdb:42'}),'');
+ assert.equal(performerID({homepage:'https://example/performers/44'}),'');
+});
+test('person O badge hides missing, zero and invalid counts without guessing identities', async () => {
+ let calls=0;
+ assert.equal(await personOCount({name:'Unknown'},()=>{calls++;}),null);
+ assert.equal(calls,0);
+ for (const value of [null,undefined,0,-1,'3',1.5]) {
+  assert.equal(await personOCount({plex_guid:'stash:42'},async(query,variables)=>{
+   assert.match(query,/findPerformer/); assert.deepEqual(variables,{id:'42'});
+   return {findPerformer:{o_counter:value}};
+  }),null);
+ }
+ assert.equal(await personOCount({plex_guid:'stash:42'},async()=>({findPerformer:{o_counter:7}})),7);
+});
