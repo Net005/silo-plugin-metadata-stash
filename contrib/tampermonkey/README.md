@@ -79,3 +79,7 @@ Version 1.1.3 makes item genres and studios clickable. Links open a new tab with
 Version 1.1.5 adds an O-count action beside Watchlist using Silo’s Lucide Flame icon and native glass button styling. A positive count appears beside the icon; zero or an unset count shows the icon alone. Each click records one O in Stash and displays the confirmed total. Requests are guarded against double clicks and are never automatically retried. If a request cannot be confirmed, refresh the page before trying again. The action appears only for a uniquely matched or manually assigned Stash scene whose count can be read.
 
 Version 1.1.6 replaces the O-count flame with a water droplet, retaining the native button sizing and Lucide stroke style.
+
+Version 1.1.8 adds a compact northeast-arrow link beside the toolbar actions. Hover text reads **Open in Stash**; clicking opens the matched or assigned Stash scene in a new tab. The link stays hidden when no scene can be resolved.
+
+Version 1.1.9 compacts the native toolbar rating to one star and its selected number. Hover or keyboard focus reveals all five stars without widening the toolbar row. Native rating clicks and arrow-key controls remain intact.

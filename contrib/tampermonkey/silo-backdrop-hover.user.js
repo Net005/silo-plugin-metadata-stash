@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Silo Stash Backdrop Hover
 // @namespace    https://github.com/Net005/silo-plugin-metadata-stash
-// @version      1.1.7
+// @version      1.1.9
 // @downloadURL  https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @updateURL    https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @description  Stash backdrop previews, native Watchlist and O-count toolbar actions, and library-scoped subtitle creation.
@@ -396,6 +396,18 @@
     subs.classList.add('h-11', 'px-4', 'text-[0.8125rem]', 'font-semibold', 'tracking-wide');
     subs.textContent = '+ Sub';
     orgasm.dataset.stashOCount = ''; orgasm.hidden = true;
+    const openStash = document.createElement('a');
+    openStash.className = more.className;
+    openStash.dataset.stashOpen = ''; openStash.hidden = true;
+    openStash.title = 'Open in Stash'; openStash.setAttribute('aria-label', 'Open in Stash');
+    openStash.target = '_blank'; openStash.rel = 'noopener noreferrer';
+    const externalIcon = watchlistIcon(false);
+    externalIcon.replaceChildren();
+    for (const d of ['M7 17 17 7', 'M7 7h10v10']) {
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', d); externalIcon.append(path);
+    }
+    openStash.append(externalIcon);
     let counter = null;
     function renderO(value) {
       // Water droplet with the same Lucide stroke weight and sizing as Silo controls.
@@ -417,6 +429,11 @@
     async function refreshO() {
       try {
         const scene = await resolveSceneID(id);
+        if (!alive || itemID() !== id) return;
+        const validScene = sceneID(String(scene), settings.stashURL);
+        if (!validScene) throw new Error('Invalid Stash scene ID.');
+        openStash.href = stashOrigin(settings.stashURL) + '/scenes/' + encodeURIComponent(validScene);
+        openStash.hidden = false;
         const next = createOCounter(gql, scene), value = await next.read();
         if (!alive || itemID() !== id) return;
         counter = next; renderO(value);
@@ -434,7 +451,7 @@
         if (alive && itemID() === id) notice('O count could not be confirmed. Refresh before trying again. ' + error.message);
       } finally { orgasm.disabled = false; orgasm.removeAttribute('aria-busy'); }
     });
-    more.before(watch, orgasm, subs);
+    more.before(watch, orgasm, subs, openStash);
     function nativeWatch() {
       const menuID = more.getAttribute('aria-controls');
       const menu = menuID ? document.getElementById(menuID) : document.querySelector('.detail-overflow-menu');
@@ -531,10 +548,35 @@
     acquire().catch(() => {}).finally(() => { closeInternalMenu(); if (alive && previousFocus?.isConnected) previousFocus.focus(); });
     refreshSubtitles();
     refreshO();
-    return { id, more, dispose() { alive = false; closeInternalMenu(); menuObserver.disconnect(); watch.remove(); subs.remove(); orgasm.remove(); captured?.removeAttribute('data-stash-watchlist-moved'); } };
+    return { id, more, dispose() { alive = false; closeInternalMenu(); menuObserver.disconnect(); watch.remove(); subs.remove(); orgasm.remove(); openStash.remove(); captured?.removeAttribute('data-stash-watchlist-moved'); } };
   }
   const toolbarStyle = document.createElement('style');
-  toolbarStyle.textContent = '[data-stash-toolbar-acquiring] .detail-overflow-menu{visibility:hidden!important}[data-stash-watchlist-moved]{display:none!important}button[data-stash-watchlist][hidden],button[data-stash-subtitles][hidden],button[data-stash-o-count][hidden]{display:none!important}';
+  toolbarStyle.textContent = '[data-stash-toolbar-acquiring] .detail-overflow-menu{visibility:hidden!important}[data-stash-watchlist-moved]{display:none!important}button[data-stash-watchlist][hidden],button[data-stash-subtitles][hidden],button[data-stash-o-count][hidden],a[data-stash-open][hidden]{display:none!important}';
+  // Keep Silo's actual radios and keyboard handlers. Expansion overlays the
+  // neighbouring space rather than changing the flex row's measured width.
+  toolbarStyle.textContent += `
+    .item-detail-hero .detail-secondary-action:has(> .star-rating) {
+      position:relative;width:44px;height:44px;flex:0 0 44px;
+    }
+    .item-detail-hero .detail-secondary-action > .star-rating {
+      position:absolute;left:0;top:0;height:44px;width:44px;
+      justify-content:center;padding:0;z-index:2;
+    }
+    .item-detail-hero .detail-secondary-action:not(:hover):not(:focus-within) > .star-rating .star-rating-star {
+      display:none;
+    }
+    .item-detail-hero .detail-secondary-action:not(:hover):not(:focus-within) > .star-rating .star-rating-star[aria-checked="true"],
+    .item-detail-hero .detail-secondary-action:not(:hover):not(:focus-within) > .star-rating:not(:has([aria-checked="true"])) .star-rating-star:first-child {
+      display:inline-flex;align-items:center;gap:3px;
+    }
+    .item-detail-hero .detail-secondary-action:not(:hover):not(:focus-within) > .star-rating .star-rating-star[aria-checked="true"]::after {
+      content:attr(data-rating);font-size:12px;font-weight:600;
+    }
+    .item-detail-hero .detail-secondary-action:is(:hover,:focus-within) > .star-rating {
+      width:max-content;min-width:44px;padding:0 10px;z-index:20;
+      background:var(--color-background,#18181b);box-shadow:0 4px 16px #0006;
+    }
+  `;
   document.head.append(toolbarStyle);
   function reconcileToolbar() {
     const id = itemID(), more = document.querySelector('.item-detail-hero button[aria-label="More actions"]');
