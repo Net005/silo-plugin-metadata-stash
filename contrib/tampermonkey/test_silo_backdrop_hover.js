@@ -68,3 +68,33 @@ test('replacement prompts match Stash, allow cancellation, and require two appro
   assert.match(prompts.pop(),/Already up to date/);
  } finally {global.window=previous;}
 });
+
+const { createOCounter } = require('./silo-backdrop-hover.user.js');
+test('O counter reads existing or absent counts and adds exactly one through Stash history', async () => {
+ for (const initial of [null, 0, 7]) {
+  let count = initial, mutations = 0;
+  const counter = createOCounter(async (query, variables) => {
+   assert.deepEqual(variables, { id: '42' });
+   if (query.startsWith('query')) return { findScene: { o_counter: count } };
+   assert.equal(query, 'mutation($id:ID!){sceneAddO(id:$id){count}}');
+   mutations++; count = (count || 0) + 1; return { sceneAddO: { count } };
+  }, '42');
+  assert.equal(await counter.read(), initial || 0);
+  assert.equal(await counter.increment(), (initial || 0) + 1);
+  assert.equal(mutations, 1);
+ }
+});
+test('O counter suppresses concurrent clicks and never retries a failed mutation', async () => {
+ let finish, calls = 0;
+ const counter = createOCounter(() => { calls++; return new Promise(resolve => { finish = resolve; }); }, '42');
+ const pending = counter.increment();
+ assert.equal(await counter.increment(), null); assert.equal(calls, 1);
+ finish({ sceneAddO: { count: 9 } }); assert.equal(await pending, 9);
+ let failures = 0;
+ const failing = createOCounter(async () => { failures++; throw new Error('timeout'); }, '42');
+ await assert.rejects(failing.increment(), /timeout/); assert.equal(failures, 1);
+});
+test('O counter rejects missing scenes and invalid mutation responses', async () => {
+ await assert.rejects(createOCounter(async () => ({ findScene: null }), '42').read(), /unavailable/);
+ await assert.rejects(createOCounter(async () => ({ sceneAddO: null }), '42').increment(), /invalid O count/);
+});

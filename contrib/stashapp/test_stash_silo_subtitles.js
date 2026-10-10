@@ -9,6 +9,7 @@ let captionQueryResult = {
   loading: false,
 };
 const mutationCalls = [];
+let watchlistSaveError = null;
 const confirmationCalls = [];
 let confirmResult = true;
 let confirmQueue = [];
@@ -28,10 +29,12 @@ let settingsQueryResult = {
   },
   loading: false,
 };
+const stateChanges = [];
 const React = {
+  useRef(value) { return { current: value }; },
   Fragment: Symbol("Fragment"),
   useState(initial) {
-    return [initial, () => {}];
+    return [initial, value => stateChanges.push(value)];
   },
   useEffect() {},
   useLayoutEffect() {},
@@ -66,6 +69,11 @@ global.window = {
               mutationCalls.push({ options, query });
               if (options?.variables?.args?.mode === "subtitle_status") {
                 return { data: { runPluginOperation: subtitleStatusResult } };
+              }
+              if (query.includes("StashSiloUpdateSceneWatchlist")) {
+                if (watchlistSaveError) throw watchlistSaveError;
+                const input = options.variables.input;
+                return { data: { sceneUpdate: { id: input.id, tags: input.tag_ids.map(id => ({ id })) } } };
               }
               return { data: {} };
             },
@@ -290,7 +298,11 @@ const watchlistButton = watchlistAction.props.children;
 assert.equal(watchlistAction.props.className, "stash-silo-companion-watchlist-card-action");
 assert.equal(watchlistButton.props.children.props.children, "+ Watchlist");
 assert.equal(watchlistButton.props.disabled, false);
+const stateBeforeWatchlist = stateChanges.length;
+const saveWatchlist = watchlistButton.props.onClick({ preventDefault() {}, stopPropagation() {} });
+assert.deepEqual(stateChanges.slice(stateBeforeWatchlist), [true, true], "membership paints before lookup/save completes");
 await watchlistButton.props.onClick({ preventDefault() {}, stopPropagation() {} });
+await saveWatchlist;
 assert.equal(lazyQueryCalls.length, 1);
 assert.equal(lazyQueryCalls[0].options.variables, undefined);
 assert.deepEqual(lazyQueryCalls[0].executeOptions.variables, { id: "39382" });
@@ -441,6 +453,13 @@ await completedWatchlistAction.props.children.props.onClick({
 assert.deepEqual(mutationCalls.at(-1).options.variables, {
   input: { id: "39382", tag_ids: ["4"] },
 });
+
+// A failed save restores the original membership and releases the click guard.
+watchlistSaveError = new Error("save failed");
+const rollbackStart = stateChanges.length;
+await completedWatchlistAction.props.children.props.onClick({ preventDefault() {}, stopPropagation() {} });
+assert.deepEqual(stateChanges.slice(rollbackStart), [true, false, false, null, false]);
+watchlistSaveError = null;
 
 const knownCompletedCard = afterPatches["SceneCard.Popovers"](
   sceneWithCaptions,

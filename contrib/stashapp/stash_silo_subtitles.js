@@ -346,6 +346,7 @@
     const Toast = window.PluginApi.hooks.useToast();
     const [updateScene] = useMutation(UPDATE_SCENE_WATCHLIST);
     const [pending, setPending] = React.useState(false);
+    const saving = React.useRef(false);
     const [membershipOverride, setMembershipOverride] = React.useState(null);
     const tags = scene?.tags;
     const tagID = String(settings?.watchlist_tag_id || "").trim();
@@ -361,31 +362,37 @@
     const onClick = async (event) => {
       event?.preventDefault();
       event?.stopPropagation();
-      if (disabled) return;
+      if (disabled || saving.current) return;
 
+      saving.current = true;
       setPending(true);
+      const previousMembership = membershipOverride;
+      // Paint immediately while the native scene save runs its realtime sync hook.
+      setMembershipOverride(!inWatchlist);
       try {
         const currentScene = await resolveScene();
-        const currentTags = currentScene?.tags;
-        const currentMembership =
-          Array.isArray(currentTags) &&
-          currentTags.some((tag) => String(tag?.id) === tagID);
-        const existingTagIDs = Array.isArray(currentTags)
-          ? currentTags.map((tag) => String(tag?.id || "")).filter(Boolean)
-          : [];
-        const tagIDs = currentMembership
-          ? existingTagIDs.filter((id) => id !== tagID)
-          : Array.from(new Set([...existingTagIDs, tagID]));
-        await updateScene({
+        if (!Array.isArray(currentScene?.tags)) throw new Error("Could not load Watchlist membership");
+        const currentMembership = membershipOverride ?? currentScene.tags.some((tag) => String(tag?.id) === tagID);
+        const desired = !currentMembership;
+        setMembershipOverride(desired);
+        const existing = currentScene.tags.map((tag) => String(tag.id));
+        const tagIDs = desired ? [...new Set([...existing, tagID])] : existing.filter((id) => id !== tagID);
+        const response = await updateScene({
           variables: { input: { id: String(scene.id), tag_ids: tagIDs } },
         });
-        setMembershipOverride(!currentMembership);
-        Toast.success(
-          currentMembership ? "Removed from Watchlist" : "Added to Watchlist"
-        );
+        const saved = response.data?.sceneUpdate;
+        if (!Array.isArray(saved?.tags)) throw new Error("Watchlist save could not be confirmed. Refresh before retrying.");
+        const confirmed = saved.tags.some((tag) => String(tag.id) === tagID);
+        setMembershipOverride(confirmed);
+        // Keep the status cache accurate for cards remounted after this action.
+        const cached = sceneStatusCache.get(String(scene.id));
+        if (cached) sceneStatusCache.set(String(scene.id), { ...cached, tags: saved.tags });
+        Toast.success(confirmed ? "Added to Watchlist" : "Removed from Watchlist");
       } catch (error) {
+        setMembershipOverride(previousMembership);
         Toast.error(error instanceof Error ? error.message : String(error));
       } finally {
+        saving.current = false;
         setPending(false);
       }
     };
@@ -408,22 +415,17 @@
             inWatchlist ? " is-watchlisted" : ""
           }`,
           disabled,
+          "aria-busy": pending,
           onClick,
           onMouseDown: (event) => event.stopPropagation(),
           title,
           variant: "secondary",
         },
-        pending
-          ? React.createElement(Spinner, {
-              animation: "border",
-              role: "status",
-              size: "sm",
-            })
-          : React.createElement(
-              "span",
-              { "aria-hidden": "true" },
-              inWatchlist ? "✓ Watchlist" : "+ Watchlist"
-            )
+        React.createElement(
+          "span",
+          { "aria-hidden": "true" },
+          inWatchlist ? "✓ Watchlist" : "+ Watchlist"
+        )
       )
     );
   }

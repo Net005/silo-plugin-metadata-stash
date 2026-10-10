@@ -221,6 +221,6 @@ class ProtectedWatchListHookTests(unittest.TestCase):
         silo_get.side_effect = lambda settings, path, profile_id=None: installs if path.endswith("installations") else collections
         settings = {"silo_url": "http://silo", "silo_api_key": "key", "watchlist_tag_id": "1355", "silo_library_id": "16"}
         result = plugin._sync_silo_watchlist_collection({}, settings, {"id": "42", "type": "Scene.Update.Post", "inputFields": ["tag_ids"]})
-        self.assertEqual(result["state"], "queued_protected_reconcile")
+        self.assertEqual(result["state"], "protected_reconcile")
         sync_one.assert_not_called()
         self.assertEqual(silo_post.call_args.args[1], "/api/v2/plugin-content/plugins/15/recommendations/watchlist/reconcile")

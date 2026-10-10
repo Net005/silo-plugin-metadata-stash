@@ -523,7 +523,7 @@ def _sync_silo_watchlist_collection(payload, settings, hook):
         if len(plugins) != 1:
             return {"state": "watchlist_reconciler_unavailable"}
         result = _silo_post(settings, "/api/v2/plugin-content/plugins/" + str(plugins[0]["id"]) + "/recommendations/watchlist/reconcile", {"scene_id": scene_id})
-        return {"state": "queued_protected_reconcile", "result": result}
+        return {"state": "protected_reconcile", "result": result}
     results = [_sync_silo_watchlist_collection_one(settings, scene, scene_id, desired, collection) for collection in selected]
     return results[0] if len(results) == 1 else {"state": "multiple", "results": results}
 
@@ -700,6 +700,12 @@ def main():
         except Exception as error:
             silo_collection = {"state": "error", "error": str(error)}
             _log("Silo WatchList collection update failed: " + str(error))
+        # Tag-only edits (including Watchlist) do not alter descriptive metadata
+        # or playback. Avoid enrichment and targeted metadata refresh on their
+        # synchronous save path; recommendations and collection sync still run.
+        edited = set(hook.get("inputFields") or []) - {"id", "clientMutationId"}
+        if hook.get("type") == "Scene.Update.Post" and edited == {"tag_ids"}:
+            return {"output": {"silo_collection": silo_collection, "metadata": "unchanged"}}
         if settings.get("javbeacon_url") and settings.get("webhook_secret"):
             try:
                 realtime = features.request_realtime_sync(payload, args)

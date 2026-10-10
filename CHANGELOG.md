@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Silo plugin v0.3.59 waits for inbound Watchlist reconciliation before acknowledging a Stash hook, preventing a quick remove/add from collapsing into an unchanged membership snapshot.
+
+- Stash companion v0.2.13 restores the native sceneUpdate Watchlist mutation so Scene.Update.Post continues to synchronize Silo in realtime. Immediate UI feedback and the tag-only metadata fast path remain enabled.
+
+- Stash companion v0.2.12 updates Watchlist buttons immediately, prevents duplicate saves, and restores the prior state on failure. Native scene saves preserve unrelated tags and trigger the realtime Silo synchronization hook. The button keeps its membership label while saving.
+- Tag-only scene hooks retain collection synchronization and recommendation notification but skip unrelated enrichment, activity webhooks, and Silo metadata refresh.
+
 ## [0.3.58] - 2026-10-10
 
 ### Fixed

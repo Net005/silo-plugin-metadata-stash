@@ -60,6 +60,21 @@ class HookAndScanTests(unittest.TestCase):
         self.assertEqual(result["enrichment"], {"state": "updated"})
         enrich.assert_called_once()
 
+    def test_tag_only_save_syncs_watchlist_without_metadata_work(self):
+        payload = {"args": {"mode": "hook", "hookContext": {"id": "42", "type": "Scene.Update.Post", "inputFields": ["id", "tag_ids"]}}}
+        with patch.object(plugin.json, "load", return_value=payload), \
+             patch.object(plugin, "_settings", return_value={}), \
+             patch.object(plugin, "_sync_silo_watchlist_collection", return_value={"state": "synced"}) as sync, \
+             patch.object(plugin, "_enrich_scene") as enrich, \
+             patch.object(plugin, "_refresh_silo_scene") as refresh, \
+             patch.object(plugin.features, "request_realtime_sync") as realtime:
+            result = plugin.main()["output"]
+        sync.assert_called_once()
+        enrich.assert_not_called()
+        refresh.assert_not_called()
+        realtime.assert_not_called()
+        self.assertEqual(result["silo_collection"]["state"], "synced")
+
     @patch.object(plugin, "_enrich_scene", return_value={"state": "unchanged"})
     @patch.object(plugin, "_stash_graphql")
     def test_scan_cursor_resumes_exactly_after_limit(self, graphql, enrich):

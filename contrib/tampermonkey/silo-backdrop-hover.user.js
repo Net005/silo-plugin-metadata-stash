@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         Silo Stash Backdrop Hover
 // @namespace    https://github.com/Net005/silo-plugin-metadata-stash
-// @version      1.1.4
+// @version      1.1.5
 // @downloadURL  https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @updateURL    https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
-// @description  Stash backdrop previews, native Watchlist toolbar toggle and library-scoped subtitle creation.
+// @description  Stash backdrop previews, native Watchlist and O-count toolbar actions, and library-scoped subtitle creation.
 // @match        https://silo.example.invalid/*
 // @connect      *
 // @grant        GM_getValue
@@ -159,7 +159,30 @@
     if (!libraryNames.some(name => names.includes(name))) return false;
     return !hasSubtitles || !!status && (!status.sidecar_found || status.up_to_date === false);
   }
-  if (typeof module !== 'undefined' && module.exports) { module.exports = { parseCues, exactScene, createSiloFileReader, stashOrigin, sceneID, subtitleEligible, confirmSubtitleOverwrite, fullReleaseDate, metadataFilterHref }; return; }
+  function createOCounter(request, scene) {
+    let busy = false;
+    function count(value, nullable = false) {
+      if (nullable && value == null) return 0;
+      if (!Number.isSafeInteger(value) || value < 0) throw new Error('Stash returned an invalid O count.');
+      return value;
+    }
+    return {
+      async read() {
+        const data = await request('query($id:ID!){findScene(id:$id){o_counter}}', { id: scene });
+        if (!data?.findScene) throw new Error('Stash scene is unavailable.');
+        return count(data.findScene.o_counter, true);
+      },
+      async increment() {
+        if (busy) return null;
+        busy = true;
+        try {
+          const data = await request('mutation($id:ID!){sceneAddO(id:$id){count}}', { id: scene });
+          return count(data?.sceneAddO?.count);
+        } finally { busy = false; }
+      }
+    };
+  }
+  if (typeof module !== 'undefined' && module.exports) { module.exports = { createOCounter, parseCues, exactScene, createSiloFileReader, stashOrigin, sceneID, subtitleEligible, confirmSubtitleOverwrite, fullReleaseDate, metadataFilterHref }; return; }
   let settings = { ...DEFAULTS, ...GM_getValue('settings', {}) };
   let current = null;
   const overviewStyle = document.createElement('style');
@@ -359,8 +382,8 @@
   }
   function attachToolbar(more, id) {
     let alive = true, loading = false, captured = null, internalMenu = false;
-    const watch = more.cloneNode(false), subs = more.cloneNode(false);
-    for (const button of [watch, subs]) {
+    const watch = more.cloneNode(false), subs = more.cloneNode(false), orgasm = more.cloneNode(false);
+    for (const button of [watch, subs, orgasm]) {
       for (const attr of [...button.attributes]) if (attr.name.startsWith('aria-') || attr.name === 'id' || attr.name === 'title') button.removeAttribute(attr.name);
       button.type = 'button'; button.disabled = false;
     }
@@ -372,7 +395,46 @@
     subs.classList.remove('size-11');
     subs.classList.add('h-11', 'px-4', 'text-[0.8125rem]', 'font-semibold', 'tracking-wide');
     subs.textContent = 'Create Subtitle';
-    more.before(watch, subs);
+    orgasm.dataset.stashOCount = ''; orgasm.hidden = true;
+    let counter = null;
+    function renderO(value) {
+      // Lucide Flame, also used by Silo's popular/trending row assets.
+      const icon = watchlistIcon(false);
+      icon.replaceChildren();
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', 'M8.5 14.5A6 6 0 0 1 10 10a8 8 0 0 0 1 2 6 6 0 0 0 1-8c5 1 8 5 8 9a8 8 0 1 1-16 0c0-2.3.6-4.4 2-6a6 6 0 0 0 2.5 7.5z');
+      icon.append(path);
+      orgasm.replaceChildren(icon);
+      orgasm.classList.toggle('size-11', value === 0);
+      for (const name of ['h-11', 'px-4', 'gap-2', 'text-[0.8125rem]', 'font-semibold', 'tabular-nums']) orgasm.classList.toggle(name, value > 0);
+      if (value > 0) {
+        const label = document.createElement('span'); label.textContent = String(value); orgasm.append(label);
+      }
+      orgasm.title = value > 0 ? `O count: ${value} · Add 1` : 'Add O (+1)';
+      orgasm.setAttribute('aria-label', `Orgasm count: ${value}. Add one`);
+      orgasm.hidden = false;
+    }
+    async function refreshO() {
+      try {
+        const scene = await resolveSceneID(id);
+        const next = createOCounter(gql, scene), value = await next.read();
+        if (!alive || itemID() !== id) return;
+        counter = next; renderO(value);
+      } catch (error) { if (alive) orgasm.title = error.message; }
+    }
+    orgasm.addEventListener('click', async event => {
+      event.preventDefault(); event.stopPropagation();
+      if (!counter || orgasm.disabled || !alive || itemID() !== id) return;
+      orgasm.disabled = true; orgasm.setAttribute('aria-busy', 'true');
+      try {
+        const value = await counter.increment();
+        if (value !== null && alive && itemID() === id) renderO(value);
+      } catch (error) {
+        counter = null; // A timeout may have committed; require a fresh read before another increment.
+        if (alive && itemID() === id) notice('O count could not be confirmed. Refresh before trying again. ' + error.message);
+      } finally { orgasm.disabled = false; orgasm.removeAttribute('aria-busy'); }
+    });
+    more.before(watch, orgasm, subs);
     function nativeWatch() {
       const menuID = more.getAttribute('aria-controls');
       const menu = menuID ? document.getElementById(menuID) : document.querySelector('.detail-overflow-menu');
@@ -468,10 +530,11 @@
     const previousFocus = document.activeElement;
     acquire().catch(() => {}).finally(() => { closeInternalMenu(); if (alive && previousFocus?.isConnected) previousFocus.focus(); });
     refreshSubtitles();
-    return { id, more, dispose() { alive = false; closeInternalMenu(); menuObserver.disconnect(); watch.remove(); subs.remove(); captured?.removeAttribute('data-stash-watchlist-moved'); } };
+    refreshO();
+    return { id, more, dispose() { alive = false; closeInternalMenu(); menuObserver.disconnect(); watch.remove(); subs.remove(); orgasm.remove(); captured?.removeAttribute('data-stash-watchlist-moved'); } };
   }
   const toolbarStyle = document.createElement('style');
-  toolbarStyle.textContent = '[data-stash-toolbar-acquiring] .detail-overflow-menu{visibility:hidden!important}[data-stash-watchlist-moved]{display:none!important}button[data-stash-watchlist][hidden],button[data-stash-subtitles][hidden]{display:none!important}';
+  toolbarStyle.textContent = '[data-stash-toolbar-acquiring] .detail-overflow-menu{visibility:hidden!important}[data-stash-watchlist-moved]{display:none!important}button[data-stash-watchlist][hidden],button[data-stash-subtitles][hidden],button[data-stash-o-count][hidden]{display:none!important}';
   document.head.append(toolbarStyle);
   function reconcileToolbar() {
     const id = itemID(), more = document.querySelector('.item-detail-hero button[aria-label="More actions"]');

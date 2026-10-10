@@ -934,15 +934,14 @@ func (s *recommendationServer) Handle(ctx context.Context, req *pluginv1.HandleH
 		if s.runtime.legacy == nil {
 			return respond(503, map[string]any{"error": "Watchlist reconciler unavailable"})
 		}
-		go func() {
-			work, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-			defer cancel()
-			s.runtime.legacy.Provider().InvalidateStashSavedFilters()
-			if e := s.runtime.legacy.ReconcileWatchlist(work); e != nil {
-				s.runtime.task.log.Warn("Realtime Watchlist reconciliation failed", "error", e)
-			}
-		}()
-		return respond(202, map[string]any{"status": "queued"})
+		// Acknowledge only after the current membership is applied. Otherwise a
+		// remove followed by an add can collapse into one background snapshot,
+		// retaining the previous member's addition date and position.
+		s.runtime.legacy.Provider().InvalidateStashSavedFilters()
+		if e := s.runtime.legacy.ReconcileWatchlist(ctx); e != nil {
+			return respond(503, map[string]any{"error": e.Error()})
+		}
+		return respond(200, map[string]any{"status": "applied"})
 	case req.Method == "POST" && (path == "/recommendations/run" || path == "/recommendations/preview"):
 		if !cfg.Enabled {
 			return respond(400, map[string]any{"error": "enable recommendations first"})
