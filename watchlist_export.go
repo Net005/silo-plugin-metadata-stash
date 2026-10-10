@@ -31,13 +31,14 @@ type watchlistActionVersion struct {
 	Desired bool      `json:"desired"`
 }
 type watchlistJournal struct {
-	NativeBaseline map[string]bool                   `json:"native_baseline,omitempty"`
-	NativeSeeded   bool                              `json:"native_seeded,omitempty"`
-	LastActions    map[string]watchlistActionVersion `json:"last_actions,omitempty"`
-	Inactive       map[string]watchlistIntent        `json:"inactive_library_actions,omitempty"`
-	Version        int                               `json:"version"`
-	Baseline       map[string]bool                   `json:"baseline"`
-	Pending        map[string]watchlistIntent        `json:"pending"`
+	NativeHeadAddedAt time.Time                         `json:"native_head_added_at,omitempty"`
+	NativeBaseline    map[string]bool                   `json:"native_baseline,omitempty"`
+	NativeSeeded      bool                              `json:"native_seeded,omitempty"`
+	LastActions       map[string]watchlistActionVersion `json:"last_actions,omitempty"`
+	Inactive          map[string]watchlistIntent        `json:"inactive_library_actions,omitempty"`
+	Version           int                               `json:"version"`
+	Baseline          map[string]bool                   `json:"baseline"`
+	Pending           map[string]watchlistIntent        `json:"pending"`
 }
 type watchlistCollection struct {
 	ID           string                     `json:"id"`
@@ -206,20 +207,42 @@ func (s *runtimeServer) applyLocalWatchlist(ctx context.Context, id, media strin
 	if e != nil {
 		return e
 	}
-	if members[media] == desired {
+	path := "/api/v2/admin/collections/" + url.PathEscape(id)
+	if !desired {
+		if !members[media] {
+			return nil
+		}
+		_, e = s.siloWatchlistRequest(ctx, "DELETE", path+"/items/"+url.PathEscape(media), nil, nil, "")
+		return e
+	}
+	if !members[media] {
+		if _, e = s.siloWatchlistRequest(ctx, "PUT", path+"/items/"+url.PathEscape(media), map[string]int{"position": len(members)}, nil, ""); e != nil {
+			return e
+		}
+	}
+	var order struct {
+		IDs []string `json:"ordered_ids"`
+	}
+	tag, e := s.siloWatchlistRequest(ctx, "GET", path+"/items/order", nil, &order, "")
+	if e != nil {
+		return e
+	}
+	if len(order.IDs) > 0 && order.IDs[0] == media {
 		return nil
 	}
-	method := "DELETE"
-	if desired {
-		method = "PUT"
+	ids := []string{media}
+	for _, id := range order.IDs {
+		if id != media {
+			ids = append(ids, id)
+		}
 	}
-	var payload any
-	if desired {
-		payload = map[string]int{"position": len(members)}
+	if tag == "" {
+		return fmt.Errorf("Watchlist item order ETag missing")
 	}
-	_, e = s.siloWatchlistRequest(ctx, method, "/api/v2/admin/collections/"+url.PathEscape(id)+"/items/"+url.PathEscape(media), payload, nil, "")
+	_, e = s.siloWatchlistRequest(ctx, "PUT", path+"/items/order", map[string]any{"ordered_ids": ids}, nil, tag)
 	return e
 }
+
 func (c *stashClient) watchlistTag(ctx context.Context) (string, error) {
 	var data struct {
 		Configuration struct {
@@ -294,9 +317,10 @@ func (s *runtimeServer) backfillWatchlist(ctx context.Context) (int, error) {
 	defer s.watchlistMu.Unlock()
 	return s.backfillWatchlistLocked(ctx)
 }
-func (s *runtimeServer) nativeWatchlistMembers(ctx context.Context) (map[string]bool, error) {
+func (s *runtimeServer) nativeWatchlistMembers(ctx context.Context) (map[string]bool, string, error) {
 	out := map[string]bool{}
 	cursor := ""
+	head := ""
 	for page := 0; page < 100; page++ {
 		path := "/api/v2/watchlist?limit=200"
 		if cursor != "" {
@@ -313,22 +337,25 @@ func (s *runtimeServer) nativeWatchlistMembers(ctx context.Context) (map[string]
 			} `json:"page"`
 		}
 		if _, err := s.siloWatchlistRequest(ctx, "GET", path, nil, &data, ""); err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		for _, item := range data.Items {
 			if item.Type == "movie" && item.ID != "" {
+				if head == "" {
+					head = item.ID
+				}
 				out[item.ID] = true
 			}
 		}
 		if !data.Page.More {
-			return out, nil
+			return out, head, nil
 		}
 		if data.Page.Next == "" || data.Page.Next == cursor {
-			return nil, fmt.Errorf("native Watchlist pagination stalled")
+			return nil, "", fmt.Errorf("native Watchlist pagination stalled")
 		}
 		cursor = data.Page.Next
 	}
-	return nil, fmt.Errorf("native Watchlist pagination limit")
+	return nil, "", fmt.Errorf("native Watchlist pagination limit")
 }
 
 func (s *runtimeServer) backfillWatchlistLocked(ctx context.Context) (int, error) {
@@ -336,15 +363,24 @@ func (s *runtimeServer) backfillWatchlistLocked(ctx context.Context) (int, error
 	if e != nil {
 		return 0, e
 	}
-	native, e := s.nativeWatchlistMembers(ctx)
+	native, head, e := s.nativeWatchlistMembers(ctx)
 	if e != nil {
 		return 0, e
+	}
+	var headEntry struct {
+		AddedAt time.Time `json:"added_at"`
+	}
+	if head != "" {
+		if _, e = s.siloWatchlistRequest(ctx, "GET", "/api/v2/watchlist/"+url.PathEscape(head), nil, &headEntry, ""); e != nil {
+			return 0, e
+		}
 	}
 	s.mu.RLock()
 	base, key := s.siloBase, s.siloKey
 	s.mu.RUnlock()
 	fileClient := provider.NewSiloClient(base, key)
 	done := 0
+	nativeAdded := map[string]time.Time{head: headEntry.AddedAt}
 	tagID := ""
 	for _, row := range rows {
 		r, j, tag, e := s.watchlistState(ctx, row.ID)
@@ -359,6 +395,7 @@ func (s *runtimeServer) backfillWatchlistLocked(ctx context.Context) (int, error
 			j.Version = 1
 			j.NativeBaseline = native
 			j.NativeSeeded = true
+			j.NativeHeadAddedAt = headEntry.AddedAt
 			j.Baseline = members
 			if e = s.saveWatchlistState(ctx, r, j, tag); e != nil {
 				return done, e
@@ -380,6 +417,34 @@ func (s *runtimeServer) backfillWatchlistLocked(ctx context.Context) (int, error
 			for media := range j.NativeBaseline {
 				if !native[media] {
 					deltas[media] = false
+				}
+			}
+			// Recover a newer add after a previously exported removal, even when
+			// another item has since become the newest native entry.
+			for media, last := range j.LastActions {
+				if last.Desired || last.Changed.IsZero() || !native[media] {
+					continue
+				}
+				added, ok := nativeAdded[media]
+				if !ok {
+					var entry struct {
+						AddedAt time.Time `json:"added_at"`
+					}
+					if _, e = s.siloWatchlistRequest(ctx, "GET", "/api/v2/watchlist/"+url.PathEscape(media), nil, &entry, ""); e != nil {
+						return done, e
+					}
+					added = entry.AddedAt
+					nativeAdded[media] = added
+				}
+				if added.After(last.Changed) {
+					deltas[media] = true
+				}
+			}
+			// A remove/add between polls retains membership but has a new added_at.
+			if head != "" && !headEntry.AddedAt.IsZero() {
+				last := j.LastActions[head]
+				if (!j.NativeHeadAddedAt.IsZero() && headEntry.AddedAt.After(j.NativeHeadAddedAt)) || (!last.Desired && !last.Changed.IsZero() && headEntry.AddedAt.After(last.Changed)) {
+					deltas[head] = true
 				}
 			}
 			for media, desired := range deltas {
@@ -416,6 +481,10 @@ func (s *runtimeServer) backfillWatchlistLocked(ctx context.Context) (int, error
 				j.NativeBaseline = native
 				changed = true
 			}
+		}
+		if headEntry.AddedAt.After(j.NativeHeadAddedAt) {
+			j.NativeHeadAddedAt = headEntry.AddedAt
+			changed = true
 		}
 		for id := range members {
 			if !j.Baseline[id] && j.Pending[id].Changed.IsZero() {

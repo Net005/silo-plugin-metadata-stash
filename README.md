@@ -86,3 +86,5 @@ the watch-event lock. Longer recovery uses its own two-minute context and a
 one-second control acknowledgement; RPC timeouts cannot cancel queued recovery.
 A completed admission is not proof that every action has been exported: pending
 and inactive actions remain in the durable collection journal.
+
+Native Watchlist re-adds are recovered using Silo addition timestamps, including a missed re-add behind a newer title. Exported additions move to the first collection position while preserving the other members’ order; saved-filter reconciliation leaves that Watchlist order intact.

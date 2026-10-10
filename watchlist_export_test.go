@@ -18,6 +18,8 @@ func TestWatchlistLocalFirstDurableRetryAndNewerActionWins(t *testing.T) {
 	members := map[string]bool{}
 	config := map[string]json.RawMessage{}
 	native := false
+	newerHead := false
+	nativeAdded := time.Now().UTC()
 	shared := false
 	remote := false
 	fail := true
@@ -26,8 +28,16 @@ func TestWatchlistLocalFirstDurableRetryAndNewerActionWins(t *testing.T) {
 		w.Header().Set("ETag", `"1"`)
 		row := watchlistCollection{ID: "wl", LibraryID: "16", Title: "Stash | Watchlist", Slug: "javbeacon-stash-preset-7-library-16", Description: "Managed by JAVBeacon metadata plugin.", SourceConfig: config}
 		switch r.URL.Path {
+		case "/api/v2/admin/items/newer/files":
+			fmt.Fprint(w, `{"items":[]}`)
+		case "/api/v2/watchlist/newer":
+			json.NewEncoder(w).Encode(map[string]any{"added_at": nativeAdded.Add(time.Second)})
+		case "/api/v2/watchlist/local-1":
+			json.NewEncoder(w).Encode(map[string]any{"added_at": nativeAdded})
 		case "/api/v2/watchlist":
-			if native {
+			if native && newerHead {
+				fmt.Fprint(w, `{"items":[{"content_id":"newer","type":"movie"},{"content_id":"local-1","type":"movie"}],"page":{"has_more":false}}`)
+			} else if native {
 				fmt.Fprint(w, `{"items":[{"content_id":"local-1","type":"movie"}],"page":{"has_more":false}}`)
 			} else {
 				fmt.Fprint(w, `{"items":[],"page":{"has_more":false}}`)
@@ -43,6 +53,16 @@ func TestWatchlistLocalFirstDurableRetryAndNewerActionWins(t *testing.T) {
 				config = input.Config
 			} else {
 				json.NewEncoder(w).Encode(row)
+			}
+		case "/api/v2/admin/collections/wl/items/order":
+			if r.Method == "GET" {
+				ids := []string{}
+				for id := range members {
+					ids = append(ids, id)
+				}
+				json.NewEncoder(w).Encode(map[string]any{"ordered_ids": ids})
+			} else {
+				w.WriteHeader(204)
 			}
 		case "/api/v2/admin/collections/wl/items":
 			items := []map[string]any{}
@@ -171,6 +191,27 @@ func TestWatchlistLocalFirstDurableRetryAndNewerActionWins(t *testing.T) {
 	if _, e := rt.backfillWatchlist(t.Context()); e != nil || !remote || !members["local-1"] {
 		t.Fatalf("native add not exported: %v", e)
 	}
+	// A rapid remove/add can retain native membership across polls.
+	nativeAdded = nativeAdded.Add(time.Second)
+	if _, e := rt.backfillWatchlist(t.Context()); e != nil {
+		t.Fatal(e)
+	}
+	var recovered watchlistJournal
+	json.Unmarshal(config[watchlistJournalKey], &recovered)
+	if !recovered.NativeHeadAddedAt.Equal(nativeAdded) || !recovered.LastActions["local-1"].Desired {
+		t.Fatal("rapid re-add was not detected")
+	}
+	// A later addition of another title must not hide an older missed re-add.
+	recovered.LastActions["local-1"] = watchlistActionVersion{Changed: nativeAdded.Add(-time.Second), Desired: false}
+	delete(recovered.Baseline, "local-1")
+	delete(members, "local-1")
+	remote = false
+	config[watchlistJournalKey], _ = json.Marshal(recovered)
+	newerHead = true
+	if _, err := rt.backfillWatchlist(t.Context()); err != nil || !members["local-1"] || !remote {
+		t.Fatalf("non-head re-add lost: %v", err)
+	}
+	newerHead = false
 	native = false
 	if _, e := rt.backfillWatchlist(t.Context()); e != nil || remote || members["local-1"] {
 		t.Fatalf("native removal not exported: %v", e)
@@ -194,4 +235,48 @@ func TestWatchlistLocalFirstDurableRetryAndNewerActionWins(t *testing.T) {
 		t.Fatal("shared movie event leaked into Stash")
 	}
 
+}
+
+func TestWatchlistAddMovesExistingMemberFirstAndPreservesOthers(t *testing.T) {
+	ids := []string{"older", "target", "other"}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("ETag", `"order-1"`)
+		switch r.URL.Path {
+		case "/api/v2/admin/collections/wl/items":
+			items := []map[string]string{}
+			for _, id := range ids {
+				items = append(items, map[string]string{"media_item_id": id})
+			}
+			json.NewEncoder(w).Encode(map[string]any{"items": items})
+		case "/api/v2/admin/collections/wl/items/order":
+			if r.Method == "GET" {
+				json.NewEncoder(w).Encode(map[string]any{"ordered_ids": ids})
+			} else {
+				if r.Header.Get("If-Match") != `"order-1"` {
+					t.Error("missing order CAS")
+				}
+				var p struct {
+					IDs []string `json:"ordered_ids"`
+				}
+				json.NewDecoder(r.Body).Decode(&p)
+				ids = p.IDs
+			}
+		default:
+			t.Errorf("unexpected membership mutation %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	rt := &runtimeServer{siloBase: server.URL, siloKey: "key"}
+	if err := rt.applyLocalWatchlist(t.Context(), "wl", "target", true); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(ids, ",") != "target,older,other" {
+		t.Fatalf("incorrect order %v", ids)
+	}
+	if err := rt.applyLocalWatchlist(t.Context(), "wl", "target", true); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(ids, ",") != "target,older,other" {
+		t.Fatal("retry changed order")
+	}
 }

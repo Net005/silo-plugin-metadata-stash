@@ -1,6 +1,11 @@
 # Changelog
 
-## [Unreleased]
+## [0.3.58] - 2026-10-10
+
+### Fixed
+
+- Detect quick native Watchlist remove/add cycles using the newest entry’s addition timestamp, even when membership is unchanged between recovery polls.
+- Move exported Watchlist additions to first position with an ETag-protected reorder, preserving the order of other members. Saved-filter synchronization retains this newest-first order.
 
 ### Improved
 

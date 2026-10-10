@@ -360,6 +360,11 @@ func (c *SiloClient) SyncCollectionsBatch(ctx context.Context, specs []Collectio
 			}
 		}
 		needsOrder := len(ordered) > 0
+		if len(collection.SourceConfig["stash_watchlist_outbox"]) > 0 {
+			// The Watchlist exporter owns newest-first ordering.
+			ordered = nil
+			needsOrder = false
+		}
 		if len(members) == len(ordered) {
 			needsOrder = false
 			for index, id := range ordered {

@@ -76,6 +76,13 @@ func testWatchlistInactiveRetry(t *testing.T, deleted bool) {
 			} else {
 				json.NewEncoder(w).Encode(watchlistCollection{ID: "wl", LibraryID: "16", SourceConfig: config})
 			}
+		case "/api/v2/admin/collections/wl/items/order":
+			if r.Method == "GET" {
+				ids := []string{"gone", "valid"}
+				json.NewEncoder(w).Encode(map[string]any{"ordered_ids": ids})
+			} else {
+				w.WriteHeader(204)
+			}
 		case "/api/v2/admin/collections/wl/items":
 			fmt.Fprint(w, `{"items":[{"media_item_id":"gone"},{"media_item_id":"valid"}]}`)
 		case "/api/v2/admin/items/gone/files":
