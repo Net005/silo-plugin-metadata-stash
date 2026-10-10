@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Silo Stash Backdrop Hover
 // @namespace    https://github.com/Net005/silo-plugin-metadata-stash
-// @version      1.2.0
+// @version      1.2.1
 // @downloadURL  https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @updateURL    https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @description  Stash backdrop previews, native Watchlist and O-count toolbar actions, and library-scoped subtitle creation.
@@ -176,7 +176,16 @@
         if (busy) return null;
         busy = true;
         try {
-          const data = await request('mutation($id:ID!){sceneAddO(id:$id){count}}', { id: scene });
+          // Read at click time: playback may have changed since the toolbar loaded.
+          const latest = await request('query($id:ID!){findScene(id:$id){last_played_at}}', { id: scene });
+          if (!latest?.findScene) throw new Error('Stash scene is unavailable.');
+          const played = latest.findScene.last_played_at;
+          if (played != null && (typeof played !== 'string' || !Number.isFinite(Date.parse(played)))) {
+            throw new Error('Stash returned an invalid last-played timestamp.');
+          }
+          // O history accepts explicit timestamps; null keeps Stash's current-time
+          // behavior for a scene that has never been played. Preserve exact precision.
+          const data = await request('mutation($id:ID!,$times:[Timestamp!]){sceneAddO(id:$id,times:$times){count}}', { id: scene, times: played == null ? null : [played] });
           return count(data?.sceneAddO?.count);
         } finally { busy = false; }
       }

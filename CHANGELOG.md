@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Browser userscript v1.2.1 records explicit O increments at the matched Stash scene's latest last-played timestamp, read fresh on each click. Scenes without playback history retain the current-time default.
+
 ## [0.3.61] - 2026-10-10
 
 - Keep unavailable Watchlist additions queued without blocking newer Stash events or native Silo Watchlist recovery. Silo can retain file records after marking the files missing while refusing collection admission.

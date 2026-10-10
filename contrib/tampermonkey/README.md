@@ -52,6 +52,8 @@ Matching uses a **unique exact file path**. The URL's `libraryId`, when present,
 
 Click the droplet beside Watchlist to add **one** to the matched scene's Stash O count. Zero or an unset count shows the icon alone; a positive count appears beside it. The button appears only when a unique match or manual assignment resolves and its count can be read.
 
+Version **1.2.1+** reads the matched Stash scene's latest `last_played_at` on each click and uses that exact date/time for the new O-history entry. A scene with no recorded playback uses the current time. A failed lookup or invalid timestamp stops the action without recording an O.
+
 The script blocks duplicate clicks while the request is pending and does not automatically retry O mutations. If the result cannot be confirmed, refresh before trying again.
 
 On person pages, the badge reads the linked **Stash performer's** O count using its exact provider identity or legacy integration link. It hides zero, unavailable counts and people without a Stash identity. The person badge is informational.

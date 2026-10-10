@@ -74,9 +74,12 @@ test('O counter reads existing or absent counts and adds exactly one through Sta
  for (const initial of [null, 0, 7]) {
   let count = initial, mutations = 0;
   const counter = createOCounter(async (query, variables) => {
-   assert.deepEqual(variables, { id: '42' });
-   if (query.startsWith('query')) return { findScene: { o_counter: count } };
-   assert.equal(query, 'mutation($id:ID!){sceneAddO(id:$id){count}}');
+   if (query.startsWith('query')) {
+    assert.deepEqual(variables, { id: '42' });
+    return { findScene: { o_counter: count, last_played_at: null } };
+   }
+   assert.deepEqual(variables, { id: '42', times: null });
+   assert.equal(query, 'mutation($id:ID!,$times:[Timestamp!]){sceneAddO(id:$id,times:$times){count}}');
    mutations++; count = (count || 0) + 1; return { sceneAddO: { count } };
   }, '42');
   assert.equal(await counter.read(), initial || 0);
@@ -86,7 +89,10 @@ test('O counter reads existing or absent counts and adds exactly one through Sta
 });
 test('O counter suppresses concurrent clicks and never retries a failed mutation', async () => {
  let finish, calls = 0;
- const counter = createOCounter(() => { calls++; return new Promise(resolve => { finish = resolve; }); }, '42');
+ const counter = createOCounter(async query => {
+  if (query.startsWith('query')) return { findScene: { last_played_at: null } };
+  calls++; return new Promise(resolve => { finish = resolve; });
+ }, '42');
  const pending = counter.increment();
  assert.equal(await counter.increment(), null); assert.equal(calls, 1);
  finish({ sceneAddO: { count: 9 } }); assert.equal(await pending, 9);
@@ -96,7 +102,34 @@ test('O counter suppresses concurrent clicks and never retries a failed mutation
 });
 test('O counter rejects missing scenes and invalid mutation responses', async () => {
  await assert.rejects(createOCounter(async () => ({ findScene: null }), '42').read(), /unavailable/);
- await assert.rejects(createOCounter(async () => ({ sceneAddO: null }), '42').increment(), /invalid O count/);
+ await assert.rejects(createOCounter(async query => query.startsWith('query') ? { findScene: { last_played_at: null } } : { sceneAddO: null }, '42').increment(), /invalid O count/);
+});
+test('each O uses fresh last-played time, preserving its timezone and fractional precision', async () => {
+ let played = '2026-01-02T03:04:05.123456+02:00', count = 3;
+ const recorded = [];
+ const counter = createOCounter(async (query, variables) => {
+  if (query.includes('last_played_at')) return { findScene: { last_played_at: played } };
+  if (query.startsWith('query')) return { findScene: { o_counter: count } };
+  recorded.push(variables.times); return { sceneAddO: { count: ++count } };
+ }, '42');
+ await counter.read();
+ played = '2026-01-03T12:13:14Z';
+ assert.equal(await counter.increment(), 4);
+ assert.deepEqual(recorded[0], [played]);
+ played = '2026-01-04T03:04:05.123456+02:00';
+ assert.equal(await counter.increment(), 5);
+ assert.deepEqual(recorded[1], [played]);
+});
+test('missing scenes, failed timestamp reads and invalid dates never record an O', async () => {
+ for (const scene of [null, { last_played_at: 'invalid' }, { last_played_at: '' }, { last_played_at: 123 }]) {
+  let mutations = 0;
+  const counter = createOCounter(async query => {
+   if (query.startsWith('query')) return { findScene: scene };
+   mutations++; return { sceneAddO: { count: 1 } };
+  }, '42');
+  await assert.rejects(counter.increment(), /unavailable|invalid last-played/);
+  assert.equal(mutations, 0);
+ }
 });
 
 const { performerID, personOCount } = require('./silo-backdrop-hover.user.js');
