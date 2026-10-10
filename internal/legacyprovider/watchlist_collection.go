@@ -72,7 +72,7 @@ func (c *SiloClient) SyncExistingWatchList(ctx context.Context, libraryID, colle
 			changed++
 		}
 	}
-	needsOrder := len(ordered) > 0 && allowRemovals
+	needsOrder := len(ordered) > 0 && allowRemovals && len(collection.SourceConfig["stash_watchlist_outbox"]) == 0
 	if needsOrder && len(members) == len(ordered) {
 		needsOrder = false
 		for index, id := range ordered {

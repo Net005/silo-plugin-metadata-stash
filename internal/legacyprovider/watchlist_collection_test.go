@@ -30,3 +30,22 @@ func TestWatchListRecoveryAddsWithoutRemovingUnresolvedMembers(t *testing.T) {
 		t.Fatalf("changed=%d complete=%v id=%q writes=%v err=%v", changed, complete, id, writes, err)
 	}
 }
+
+func TestWatchlistRecoveryPreservesExportedOrder(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v2/admin/collections":
+			json.NewEncoder(w).Encode(map[string]any{"items": []siloCollection{{ID: "watch", Title: "Watchlist", LibraryID: "16", Slug: "javbeacon-stash-preset-3-library-16", CollectionType: "manual", SourceConfig: map[string]json.RawMessage{"stash_watchlist_outbox": json.RawMessage(`{"version":1}`)}}}})
+		case "/api/v2/admin/collections/watch/items":
+			w.Write([]byte(`{"items":[{"media_item_id":"new","position":0},{"media_item_id":"old","position":1}],"page":{"has_more":false}}`))
+		default:
+			t.Errorf("recovery overwrote exported order: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(500)
+		}
+	}))
+	defer server.Close()
+	changed, complete, _, err := NewSiloClient(server.URL, "key").SyncExistingWatchList(t.Context(), "16", "Watchlist", []string{"old", "new"}, true, 200)
+	if err != nil || !complete || changed != 0 {
+		t.Fatalf("changed=%d complete=%v err=%v", changed, complete, err)
+	}
+}
