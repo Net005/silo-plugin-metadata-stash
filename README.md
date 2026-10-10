@@ -1,18 +1,27 @@
-<p align="center">
-  <a href="https://stashapp.cc"><img src="https://stashapp.cc/images/stash.svg" alt="Stash" height="80"></a>
-  &nbsp;&nbsp;&nbsp;&nbsp;↔&nbsp;&nbsp;&nbsp;&nbsp;
-  <a href="https://github.com/Silo-Server/silo-server"><img src="https://raw.githubusercontent.com/Silo-Server/silo-server/main/assets/icon.png" alt="Silo" width="80" height="80"></a>
-</p>
-
 <h1 align="center">Stash Metadata</h1>
 
-<p align="center">Your Stash library, connected to Silo.<br>Metadata, artwork, playback, Watchlist and optional browser enhancements.</p>
+<p align="center">
+  <a href="https://stashapp.cc"><img src="https://stashapp.cc/images/stash.svg" alt="Stash" width="72" height="72"></a>
+  &nbsp;&nbsp;
+  <img src="docs/assets/sync.svg" alt="Two-way sync" width="56" height="72">
+  &nbsp;&nbsp;
+  <a href="https://github.com/Silo-Server/silo-server"><img src="https://raw.githubusercontent.com/Silo-Server/silo-server/main/assets/icon.png" alt="Silo" width="72" height="72"></a>
+</p>
+
+<p align="center"><strong>Stash ↔ Silo</strong><br>Metadata, artwork, playback and Watchlist sync.</p>
+
+<p align="center">
+  <a href="https://github.com/Net005/JAVBeacon"><img src="https://raw.githubusercontent.com/Net005/JAVBeacon/main/internal/web/static/javbeacon-site-logo-dark.png" alt="JAVBeacon — optional integration" width="48" height="48"></a><br>
+  <a href="https://github.com/Net005/JAVBeacon"><strong>JAVBeacon</strong></a> · Optional integration<br>
+  <sub>Connect for extra artwork, cached enrichment and release collections.</sub>
+</p>
 
 <p align="center">
   <a href="https://github.com/Net005/silo-plugin-metadata-stash/releases/latest">Download</a> ·
   <a href="#quick-start">Quick start</a> ·
   <a href="#features">Features</a> ·
   <a href="contrib/tampermonkey/README.md">Browser script</a> ·
+  <a href="https://github.com/Net005/JAVBeacon">JAVBeacon</a> ·
   <a href="https://github.com/Net005/silo-plugin-metadata-stash/issues">Support</a>
 </p>
 
@@ -36,8 +45,8 @@
 | **Stash Metadata** | Silo | Metadata, image resolution, playback sync and collection workers. |
 | **Stash.Silo Companion** | Stash | Stash UI controls, incoming Watchlist changes, subtitle jobs and targeted refresh. |
 | **Tampermonkey userscript** · optional | Your browser, on Silo | Preview and toolbar enhancements. Configured separately from the server plugins. |
-| **JAVBeacon** · optional | Your server | Extra artwork, cached enrichment, release filters, playback forwarding and historical play backfill. |
-| **JAVBeacon-Subs** · optional | Your server | Subtitle generation requested by the companion or userscript. |
+| **[JAVBeacon](https://github.com/Net005/JAVBeacon)** · optional | Your server | Extra artwork, cached enrichment, release filters, playback forwarding and historical play backfill. |
+| **[JAVBeacon-Subs](https://github.com/Net005/JAVBeaconSubs)** · optional | Your server | Subtitle generation requested by the companion or userscript. |
 
 ## Quick start
 
@@ -61,7 +70,7 @@ https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/stash-p
 
 Install **Stash.Silo Companion**, then configure its **Silo URL**, **Silo API key** and **Watchlist tag ID**. Leave **Silo movie library IDs** blank to use all enabled movie and mixed libraries, or enter comma-separated IDs to limit them.
 
-For optional metadata enrichment, also enter the **JAVBeacon URL and API key**. The companion fills empty fields from exactly linked cached releases. Cover replacement is off by default.
+For optional metadata enrichment, connect a [JAVBeacon instance](https://github.com/Net005/JAVBeacon#readme) by entering its **JAVBeacon URL and API key**. The companion fills empty fields from exactly linked cached releases. Cover replacement is off by default.
 
 A [release ZIP](https://github.com/Net005/silo-plugin-metadata-stash/releases/latest) is also available for manual installation. Remove an old manual copy with the same plugin ID before installing through the source, then reload plugins. When upgrading from the old JAVBeacon companion, re-enter settings because the plugin ID changed.
 
