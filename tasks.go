@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -180,7 +181,7 @@ func (s *scheduledTaskServer) match(ctx context.Context) (map[string]any, error)
 	if !c.configured() {
 		return nil, fmt.Errorf("Stash connection not configured")
 	}
-	matched, skipped := 0, 0
+	matched, skipped, stale, rejected := 0, 0, 0, 0
 	s.mu.Lock()
 	cursor := s.cursor
 	s.mu.Unlock()
@@ -205,12 +206,26 @@ func (s *scheduledTaskServer) match(ctx context.Context) (map[string]any, error)
 			return nil, err
 		}
 		for _, item := range data.Items {
+			// Silo can retain unmatched catalog rows after their library/file
+			// membership disappears. Never resolve or apply these orphan rows.
+			if strings.TrimSpace(item.LibraryID) == "" || item.LibraryID == "0" || item.ContentID == "" {
+				skipped++
+				stale++
+				continue
+			}
 			if item.ContentType != "" && item.ContentType != "movie" {
 				skipped++
 				continue
 			}
 			files, err := provider.NewSiloClient(base, key).ItemFilePaths(ctx, item.ContentID)
 			if err != nil {
+				// A removed item may still appear in the unmatched snapshot.
+				// Other errors (auth, throttling, upstream outages) remain fatal.
+				if strings.Contains(err.Error(), "HTTP 404 listing item files:") {
+					skipped++
+					stale++
+					continue
+				}
 				return nil, err
 			}
 			candidates := files
@@ -242,6 +257,22 @@ func (s *scheduledTaskServer) match(ctx context.Context) (map[string]any, error)
 			}
 			body := map[string]any{"library_id": item.LibraryID, "provider_ids": map[string]string{"stash": sceneID}}
 			if err = siloRequest(ctx, base, key, http.MethodPost, "/api/v2/admin/items/"+url.PathEscape(item.ContentID)+"/match/apply", body, nil); err != nil {
+				var status *siloHTTPError
+				if errors.As(err, &status) {
+					if status.code == http.StatusNotFound {
+						skipped++
+						stale++
+						continue
+					}
+					if status.code == http.StatusUnprocessableEntity {
+						// One invalid item must not starve all later libraries.
+						rejected++
+						if s.log != nil {
+							s.log.Warn("Stash exact match rejected", "content_id", item.ContentID, "library_id", item.LibraryID, "error", err)
+						}
+						continue
+					}
+				}
 				return nil, err
 			}
 			matched++
@@ -250,15 +281,25 @@ func (s *scheduledTaskServer) match(ctx context.Context) (map[string]any, error)
 			s.mu.Lock()
 			s.cursor = ""
 			s.mu.Unlock()
-			return map[string]any{"status": "complete", "matched": matched, "skipped": skipped}, nil
+			return map[string]any{"status": "complete", "matched": matched, "skipped": skipped, "stale": stale, "rejected": rejected}, nil
 		}
 		cursor = data.Page.NextCursor
 	}
 	s.mu.Lock()
 	s.cursor = cursor
 	s.mu.Unlock()
-	return map[string]any{"status": "partial", "matched": matched, "skipped": skipped, "next_cursor": cursor}, nil
+	return map[string]any{"status": "partial", "matched": matched, "skipped": skipped, "stale": stale, "rejected": rejected, "next_cursor": cursor}, nil
 }
+
+type siloHTTPError struct {
+	code int
+	path string
+}
+
+func (e *siloHTTPError) Error() string {
+	return fmt.Sprintf("Silo HTTP %d on %s", e.code, e.path)
+}
+
 func siloRequest(ctx context.Context, base, key, method, path string, body any, out any) error {
 	return siloProfileRequest(ctx, base, key, "", method, path, body, out)
 }
@@ -286,7 +327,7 @@ func siloProfileRequest(ctx context.Context, base, key, profile, method, path st
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("Silo HTTP %d on %s", resp.StatusCode, path)
+		return &siloHTTPError{code: resp.StatusCode, path: path}
 	}
 	if out == nil {
 		return nil

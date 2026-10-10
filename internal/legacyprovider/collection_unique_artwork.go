@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -28,6 +29,8 @@ import (
 var collectionPosterMu sync.Mutex
 
 var posterSignatureCache = map[string][]byte{}
+
+var errNoUnclaimedMemberCover = errors.New("no unclaimed member cover available")
 
 const uniquePosterKey = "stash_unique_poster"
 
@@ -245,10 +248,18 @@ func (c *SiloClient) posterBytes(ctx context.Context, u string) ([]byte, error) 
 func (c *SiloClient) SetUniqueCollectionPoster(ctx context.Context, id string, candidates []CollectionArtwork) error {
 	collectionPosterMu.Lock()
 	defer collectionPosterMu.Unlock()
-	return c.setUniqueCollectionPoster(ctx, id, candidates, true)
+	return c.setUniqueCollectionPoster(ctx, id, candidates, true, false)
 }
 
-func (c *SiloClient) setUniqueCollectionPoster(ctx context.Context, id string, candidates []CollectionArtwork, rebalance bool) error {
+// rotateUniqueCollectionPoster advances a scheduled cover while retaining all
+// cross-collection uniqueness checks and falling back to the current member.
+func (c *SiloClient) rotateUniqueCollectionPoster(ctx context.Context, id string, candidates []CollectionArtwork) error {
+	collectionPosterMu.Lock()
+	defer collectionPosterMu.Unlock()
+	return c.setUniqueCollectionPoster(ctx, id, append([]CollectionArtwork(nil), candidates...), true, true)
+}
+
+func (c *SiloClient) setUniqueCollectionPoster(ctx context.Context, id string, candidates []CollectionArtwork, rebalance, rotate bool) error {
 	rows, e := c.collections(ctx)
 	if e != nil {
 		return e
@@ -316,7 +327,7 @@ func (c *SiloClient) setUniqueCollectionPoster(ctx context.Context, id string, c
 	_ = json.Unmarshal(current.SourceConfig[uniquePosterKey], &previous)
 	// Keeping a still-valid reservation avoids re-uploading artwork on every poll.
 	for _, a := range candidates {
-		if posterMarkerMatches(previous, current) && previous.MediaID == a.MediaID && previous.SourceReference != "" && previous.SourceReference == posterSourceReference(a.PosterURL) && !usedIDs[a.MediaID] && !usedDigests[previous.SourceDigest] && func() bool {
+		if !rotate && posterMarkerMatches(previous, current) && previous.MediaID == a.MediaID && previous.SourceReference != "" && previous.SourceReference == posterSourceReference(a.PosterURL) && !usedIDs[a.MediaID] && !usedDigests[previous.SourceDigest] && func() bool {
 			for _, v := range signatures {
 				if samePoster(previous.Signature, v) {
 					return false
@@ -330,8 +341,11 @@ func (c *SiloClient) setUniqueCollectionPoster(ctx context.Context, id string, c
 	var selected CollectionArtwork
 	var data []byte
 	var digest string
-	// Current cover first, then remaining candidates in their supplied rank order.
+	// Keep normal polls stable; on rotation try other members before the current cover.
 	sort.SliceStable(candidates, func(i, j int) bool {
+		if rotate {
+			return candidates[i].MediaID != previous.MediaID && candidates[j].MediaID == previous.MediaID
+		}
 		return candidates[i].MediaID == previous.MediaID && candidates[j].MediaID != previous.MediaID
 	})
 	var failures int
@@ -434,10 +448,10 @@ func (c *SiloClient) setUniqueCollectionPoster(ctx context.Context, id string, c
 				if len(alternatives) == 0 {
 					continue
 				}
-				if err = c.setUniqueCollectionPoster(ctx, owner.ID, alternatives, false); err != nil {
+				if err = c.setUniqueCollectionPoster(ctx, owner.ID, alternatives, false, false); err != nil {
 					continue
 				}
-				return c.setUniqueCollectionPoster(ctx, id, candidates, false)
+				return c.setUniqueCollectionPoster(ctx, id, candidates, false, rotate)
 			}
 		}
 	}
@@ -470,7 +484,7 @@ func (c *SiloClient) setUniqueCollectionPoster(ctx context.Context, id string, c
 		}
 		// Preserve the saved artwork when no distinct real member cover is available.
 		// Never synthesize title cards or collages as collection posters.
-		return fmt.Errorf("no unclaimed member cover available")
+		return errNoUnclaimedMemberCover
 	}
 	path := "/api/v2/admin/collections/" + url.PathEscape(id)
 	if e = c.uploadCollectionArtworkBytes(ctx, path+"/poster", data); e != nil {

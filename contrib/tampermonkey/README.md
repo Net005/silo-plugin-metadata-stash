@@ -16,7 +16,7 @@ Move the mouse over the backdrop outside the poster, title/information and contr
 
 The script finds a scene by a unique exact file-path match. When your Stash and Silo paths differ, use **Backdrop hover: assign Stash scene for this item** and paste the numeric Stash scene ID or scene URL. This assignment is stored per Silo item. Blank clears it.
 
-Resources are requested only after a hover and reused while that item remains open. Navigation releases previews and object URLs. Nothing changes scene metadata, collections, play history or O counts. This is a visual preview, not a full playback session.
+Resources are requested only after a hover and reused while that item remains open. Navigation releases previews and object URLs. Hover previews do not change scene metadata, collections, play history or O counts. Toolbar actions are separate explicit clicks: Watchlist updates membership, and Create Subtitle can queue generation after the checks described below.
 
 If neither a preview nor thumbnails exist, generate those assets in Stash first. Stash must be reachable from your browser. A failed lookup displays a short explanation and keeps the original backdrop.
 
@@ -36,3 +36,38 @@ The space is retained to avoid layout jumps; title, metadata and playback contro
 remain visible.
 
 Version 1.0.3 removes deployment-specific domains. Enter the Stash URL locally after updating; existing API keys and hover preferences are retained.
+
+## Toolbar actions (1.1.0)
+
+The settings dialog now includes **Subtitle library names**. It defaults to `JAV`;
+enter exact library names separated by commas, semicolons, or newlines. A blank
+allowlist disables Create Subtitle. Library IDs are resolved to names using
+Silo's library API, and an item URL's `libraryId` scopes the file lookup.
+
+**Create Subtitle** appears immediately left of More actions only for an
+allowed library with missing subtitles or confirmed old/outdated subtitles.
+Current subtitles and subtitles whose freshness is unknown keep the action
+hidden. The script resolves a unique Stash scene through the same exact-path
+lookup/manual assignment as the backdrop preview, and uses the installed
+`stash-silo-companion` plugin's `subtitle_status` and `subtitles` operations.
+It checks again when clicked. Replacement confirmations use the companion's
+same JavaScript approval/cancellation prompts, including its backend names.
+Cancellation sends no generation request. A status error hides the action
+rather than assuming an existing subtitle is outdated.
+
+Watchlist is an icon-only native glass button in the main toolbar. It copies
+Silo's own current Plus/Check menu icon, invokes the native Watchlist handler,
+and hides the duplicate Watchlist entry in More actions. This keeps Silo's
+profile state, cache invalidation, and feedback. Both toolbar additions work
+independently of whether backdrop hover is enabled. Their button classes come
+from Silo's current More action, with native text-button sizing for subtitles;
+there are no custom button colors, borders, backgrounds, or theme overrides.
+
+Update the installed userscript from this file, retaining your local `@match`
+line, then reload Silo. Existing keys and hover settings are preserved. The
+new allowlist is editable from **Backdrop hover: settings / delay / API keys**.
+Syntax and six request/eligibility/confirmation tests pass. The toolbar was
+checked against Silo's current `ActionBar` source; live visual verification
+remains unavailable because the browser policy check cannot grant access.
+
+The toolbar Watchlist toggle uses Silo’s Lucide Bookmark (not added) and BookmarkCheck (added) icons. The existing native button styling and overflow action are preserved.

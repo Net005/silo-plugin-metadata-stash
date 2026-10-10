@@ -35,3 +35,36 @@ test('server configuration rejects credentials and scene URLs from other hosts',
  assert.equal(sceneID('https://stash.example.invalid/scenes/42?q=1', 'https://stash.example.invalid'), '42');
  assert.equal(sceneID('https://other.example.invalid/scenes/42', 'https://stash.example.invalid'), null);
 });
+
+const { subtitleEligible, confirmSubtitleOverwrite } = require('./silo-backdrop-hover.user.js');
+test('subtitle action uses exact configurable library names and hides current/unknown subtitles', () => {
+ assert.equal(subtitleEligible(['JAV'], 'JAV', false, null), true);
+ assert.equal(subtitleEligible(['JAV Archive'], 'JAV', false, null), false);
+ assert.equal(subtitleEligible(['JAV'], '', false, null), false);
+ assert.equal(subtitleEligible(['Other'], ' JAV, Other\nThird ', false, null), true);
+ assert.equal(subtitleEligible(['JAV'], 'JAV', true, {sidecar_found:true,up_to_date:true}), false);
+ assert.equal(subtitleEligible(['JAV'], 'JAV', true, {sidecar_found:true,up_to_date:false}), true);
+ assert.equal(subtitleEligible(['JAV'], 'JAV', true, {sidecar_found:false}), true);
+ assert.equal(subtitleEligible(['JAV'], 'JAV', true, {sidecar_found:true,up_to_date:null}), false);
+ assert.equal(subtitleEligible(['JAV'], 'JAV', true, null), false);
+});
+test('replacement prompts match Stash, allow cancellation, and require two approvals for a current backend', async () => {
+ const previous = global.window;
+ try {
+  const prompts=[]; let answer=false;
+  global.window={confirm: text => {prompts.push(text);return answer;}};
+  const operation = status => async input => {
+   assert.equal(input.variables.args.mode,'subtitle_status');
+   assert.equal(input.variables.args.scene_id,'42');
+   return {data:{runPluginOperation:status}};
+  };
+  assert.equal(await confirmSubtitleOverwrite('42',operation({sidecar_found:false})),false);
+  assert.match(prompts.pop(),/Old subtitles/);
+  answer=true;
+  assert.equal(await confirmSubtitleOverwrite('42',operation({sidecar_found:true,up_to_date:false,sidecar_backends:{transcription_backend:'old'},current_backends:{transcription_backend:'new'}})),true);
+  assert.match(prompts.pop(),/old.*\nCurrent: new/s);
+  assert.equal(await confirmSubtitleOverwrite('42',operation({sidecar_found:true,up_to_date:true})),true);
+  assert.match(prompts.pop(),/FORCE OVERWRITE/);
+  assert.match(prompts.pop(),/Already up to date/);
+ } finally {global.window=previous;}
+});

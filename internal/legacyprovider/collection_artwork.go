@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"io"
@@ -193,7 +194,14 @@ func (c *SiloClient) uploadCollectionArtworkBytes(ctx context.Context, path stri
 	return nil
 }
 
-func (c *SiloClient) syncCollectionArtwork(ctx context.Context, collection siloCollection, spec CollectionSpec, now time.Time) (bool, error) {
+func (c *SiloClient) syncCollectionArtwork(ctx context.Context, collection siloCollection, spec CollectionSpec, now time.Time) (changed bool, err error) {
+	// An exhausted collection retains its real cover without blocking the rest
+	// of the batch. Leave the marker due so a new member can be tried next poll.
+	defer func() {
+		if errors.Is(err, errNoUnclaimedMemberCover) {
+			changed, err = false, nil
+		}
+	}()
 	poster, backdrop := artworkChoice(spec, now)
 	if poster.PosterURL == "" && backdrop.BackdropURL == "" {
 		return false, nil
@@ -211,7 +219,7 @@ func (c *SiloClient) syncCollectionArtwork(ctx context.Context, collection siloC
 	for _, id := range spec.MediaIDs {
 		members[id] = true
 	}
-	if previous.Policy == 3 && len(current.SourceConfig[uniquePosterKey]) > 0 && previous.Bucket == bucket && (previous.PosterID == "" || members[previous.PosterID]) && (previous.BackdropID == "" || members[previous.BackdropID]) {
+	if previous.Policy == 4 && len(current.SourceConfig[uniquePosterKey]) > 0 && previous.Bucket == bucket && (previous.PosterID == "" || members[previous.PosterID]) && (previous.BackdropID == "" || members[previous.BackdropID]) {
 		return false, c.SetUniqueCollectionPoster(ctx, collection.ID, append([]CollectionArtwork{poster}, spec.Artwork...))
 	}
 	if c.collectionArtworkResolver != nil {
@@ -233,7 +241,7 @@ func (c *SiloClient) syncCollectionArtwork(ctx context.Context, collection siloC
 		}
 	}
 	if poster.PosterURL != "" {
-		if err := c.SetUniqueCollectionPoster(ctx, collection.ID, append([]CollectionArtwork{poster}, spec.Artwork...)); err != nil {
+		if err := c.rotateUniqueCollectionPoster(ctx, collection.ID, append([]CollectionArtwork{poster}, spec.Artwork...)); err != nil {
 			return false, err
 		}
 	}
@@ -255,7 +263,12 @@ func (c *SiloClient) syncCollectionArtwork(ctx context.Context, collection siloC
 	if config == nil {
 		config = map[string]json.RawMessage{}
 	}
-	marker, err := json.Marshal(artworkMarker{Policy: 3, Bucket: bucket, PosterID: poster.MediaID, BackdropID: backdrop.MediaID})
+	var reserved uniquePosterMarker
+	_ = json.Unmarshal(config[uniquePosterKey], &reserved)
+	if reserved.MediaID != "" {
+		poster.MediaID = reserved.MediaID
+	}
+	marker, err := json.Marshal(artworkMarker{Policy: 4, Bucket: bucket, PosterID: poster.MediaID, BackdropID: backdrop.MediaID})
 	if err != nil {
 		return false, err
 	}

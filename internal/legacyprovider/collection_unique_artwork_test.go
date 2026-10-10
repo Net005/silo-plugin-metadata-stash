@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func solidPoster(c color.RGBA) []byte {
@@ -97,6 +98,13 @@ func TestUniquePosterAcrossCollectionsAndDifferentMemberIDs(t *testing.T) {
 	}
 	if uploads != 1 || !bytes.Equal(uploaded, blue) {
 		t.Fatal("replaced real artwork with fallback")
+	}
+	// Exhaustion is local to this collection and must not abort batch sync.
+	if changed, err := client.syncCollectionArtwork(t.Context(), siloCollection{ID: "target"}, CollectionSpec{MediaIDs: []string{"first"}, Artwork: choices[:1]}, time.Now()); err != nil || changed {
+		t.Fatalf("exhausted collection blocks sync: changed=%v err=%v", changed, err)
+	}
+	if uploads != 1 {
+		t.Fatal("exhausted sync replaced saved cover")
 	}
 	// A legacy generated card has no member reservation. It must be replaced
 	// with the exact real source bytes even when uniqueness is exhausted.
@@ -323,5 +331,72 @@ func TestPosterSourceReferencePreservesMeaningfulVariants(t *testing.T) {
 	}
 	if posterSourceReference("") != "" {
 		t.Fatal("empty source gets cache identity")
+	}
+}
+
+func TestScheduledRotationChangesReservedPosterAndPollsStayStable(t *testing.T) {
+	red := solidPoster(color.RGBA{190, 20, 30, 255})
+	blue := solidPoster(color.RGBA{10, 40, 190, 255})
+	marker := map[string]json.RawMessage{}
+	uploads := 0
+	var uploaded []byte
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("ETag", `"1"`)
+		current := siloCollection{ID: "target", PosterURL: server.URL + "/cached", SourceConfig: marker}
+		switch r.URL.Path {
+		case "/red":
+			w.Write(red)
+		case "/blue":
+			w.Write(blue)
+		case "/api/v2/admin/collections":
+			json.NewEncoder(w).Encode(map[string]any{"items": []siloCollection{current}})
+		case "/api/v2/admin/collections/target/poster":
+			r.ParseMultipartForm(1 << 20)
+			f, _, err := r.FormFile("image")
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			defer f.Close()
+			uploaded, _ = io.ReadAll(f)
+			uploads++
+		case "/api/v2/admin/collections/target":
+			if r.Method == "GET" {
+				json.NewEncoder(w).Encode(current)
+			} else {
+				var patch struct {
+					SourceConfig map[string]json.RawMessage `json:"source_config"`
+				}
+				json.NewDecoder(r.Body).Decode(&patch)
+				marker = patch.SourceConfig
+			}
+		default:
+			t.Errorf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	client := NewSiloClient(server.URL, "key")
+	choices := []CollectionArtwork{{MediaID: "red", PosterURL: server.URL + "/red"}, {MediaID: "blue", PosterURL: server.URL + "/blue"}}
+	if err := client.SetUniqueCollectionPoster(t.Context(), "target", choices); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.rotateUniqueCollectionPoster(t.Context(), "target", choices); err != nil {
+		t.Fatal(err)
+	}
+	if uploads != 2 || !bytes.Equal(uploaded, blue) {
+		t.Fatalf("rotation kept old cover: uploads=%d", uploads)
+	}
+	if err := client.SetUniqueCollectionPoster(t.Context(), "target", choices); err != nil {
+		t.Fatal(err)
+	}
+	if uploads != 2 {
+		t.Fatal("normal poll churned rotated cover")
+	}
+	if err := client.rotateUniqueCollectionPoster(t.Context(), "target", choices); err != nil {
+		t.Fatal(err)
+	}
+	if uploads != 3 || !bytes.Equal(uploaded, red) {
+		t.Fatal("next rotation did not advance")
 	}
 }

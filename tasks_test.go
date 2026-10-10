@@ -66,3 +66,78 @@ func TestMatchTaskAppliesOnlyUniqueExactScenes(t *testing.T) {
 		t.Fatalf("applied %#v", applied)
 	}
 }
+
+// Stale catalog entries used to abort every pass before valid XXX items.
+func TestMatchTaskContinuesPastStaleCatalogItems(t *testing.T) {
+	for _, missingAt := range []string{"files", "apply", "rejected"} {
+		t.Run(missingAt, func(t *testing.T) {
+			applied := []string{}
+			silo := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case strings.Contains(r.URL.Path, "unmatched-items"):
+					_, _ = w.Write([]byte(`{"items":[{"content_id":"orphan","content_type":"movie","library_id":"","title":"01"},{"content_id":"removed","content_type":"movie","library_id":"22"},{"content_id":"valid","content_type":"movie","library_id":"22"}],"page":{"has_more":false}}`))
+				case strings.Contains(r.URL.Path, "orphan"):
+					t.Error("orphan must not be looked up or applied")
+				case strings.HasSuffix(r.URL.Path, "/files"):
+					if strings.Contains(r.URL.Path, "removed") && missingAt == "files" {
+						http.NotFound(w, r)
+						return
+					}
+					_, _ = w.Write([]byte(`{"items":[{"file_path":"/torrent/xxx/file.mp4"}],"page":{"has_more":false}}`))
+				case strings.HasSuffix(r.URL.Path, "/match/apply"):
+					if strings.Contains(r.URL.Path, "removed") {
+						if missingAt == "rejected" {
+							w.WriteHeader(http.StatusUnprocessableEntity)
+							return
+						}
+						http.NotFound(w, r)
+						return
+					}
+					var body struct {
+						LibraryID   string            `json:"library_id"`
+						ProviderIDs map[string]string `json:"provider_ids"`
+					}
+					_ = json.NewDecoder(r.Body).Decode(&body)
+					if body.LibraryID != "22" || body.ProviderIDs["stash"] != "42" {
+						t.Errorf("wrong match: %#v", body)
+					}
+					applied = append(applied, r.URL.Path)
+				default:
+					t.Errorf("unexpected path %s", r.URL.Path)
+				}
+			}))
+			defer silo.Close()
+			stash := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = w.Write([]byte(`{"data":{"exactPath":{"scenes":[{"id":"42","title":"Different canonical title","files":[{"path":"/torrent/xxx/file.mp4"}]}]}}}`))
+			}))
+			defer stash.Close()
+			task := &scheduledTaskServer{runtime: &runtimeServer{client: &stashClient{base: stash.URL, key: "stash-key"}, siloBase: silo.URL, siloKey: "silo-key"}}
+			summary, err := task.match(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantStale, wantRejected := 2, 0
+			if missingAt == "rejected" {
+				wantStale, wantRejected = 1, 1
+			}
+			if summary["matched"] != 1 || summary["stale"] != wantStale || summary["rejected"] != wantRejected || len(applied) != 1 {
+				t.Fatalf("summary=%#v applied=%v", summary, applied)
+			}
+		})
+	}
+}
+
+func TestMatchTaskDoesNotHideSiloAuthorizationFailure(t *testing.T) {
+	silo := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "unmatched-items") {
+			_, _ = w.Write([]byte(`{"items":[{"content_id":"valid","content_type":"movie","library_id":"22"}],"page":{"has_more":false}}`))
+			return
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer silo.Close()
+	task := &scheduledTaskServer{runtime: &runtimeServer{client: &stashClient{base: "https://stash.invalid", key: "stash-key"}, siloBase: silo.URL, siloKey: "silo-key"}}
+	if _, err := task.match(context.Background()); err == nil || !strings.Contains(err.Error(), "HTTP 401") {
+		t.Fatalf("expected auth failure, got %v", err)
+	}
+}
