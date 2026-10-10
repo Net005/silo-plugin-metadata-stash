@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Silo Stash Backdrop Hover
 // @namespace    https://github.com/Net005/silo-plugin-metadata-stash
-// @version      1.1.2
+// @version      1.1.3
 // @downloadURL  https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @updateURL    https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @description  Stash backdrop previews, native Watchlist toolbar toggle and library-scoped subtitle creation.
@@ -159,7 +159,7 @@
     if (!libraryNames.some(name => names.includes(name))) return false;
     return !hasSubtitles || !!status && (!status.sidecar_found || status.up_to_date === false);
   }
-  if (typeof module !== 'undefined' && module.exports) { module.exports = { parseCues, exactScene, createSiloFileReader, stashOrigin, sceneID, subtitleEligible, confirmSubtitleOverwrite, fullReleaseDate }; return; }
+  if (typeof module !== 'undefined' && module.exports) { module.exports = { parseCues, exactScene, createSiloFileReader, stashOrigin, sceneID, subtitleEligible, confirmSubtitleOverwrite, fullReleaseDate, metadataFilterHref }; return; }
   let settings = { ...DEFAULTS, ...GM_getValue('settings', {}) };
   let current = null;
   const overviewStyle = document.createElement('style');
@@ -486,18 +486,67 @@
     const date = new Date(match[1] + 'T00:00:00Z');
     return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === match[1] ? match[1] : '';
   }
+  function metadataFilterHref(library, field, value) {
+    if (!/^\d+$/.test(String(library)) || !['genre', 'studio'].includes(field) || typeof value !== 'string' || !value.trim()) return '';
+    const params = new URLSearchParams({ tab: 'library', 'groups[0][match]': 'all', 'groups[0][rules][0][field]': field, 'groups[0][rules][0][op]': 'is', 'groups[0][rules][0][value]': value });
+    return '/library/' + encodeURIComponent(library) + '?' + params;
+  }
+  function metadataLink(library, field, value, className) {
+    const link = document.createElement('a');
+    link.href = metadataFilterHref(library, field, value);
+    link.target = '_blank'; link.rel = 'noopener noreferrer';
+    link.className = className + ' hover:text-foreground/90 transition-colors';
+    link.textContent = value;
+    link.title = 'Browse ' + field + ': ' + value;
+    return link;
+  }
+  function reconcileMetadataLinks(hero, state) {
+    const oldStudios = hero.querySelector('[data-stash-studios]');
+    if (oldStudios && oldStudios.dataset.stashStudios !== state.id) oldStudios.remove();
+    if (!state.item || !state.library) return;
+    const genres = (state.item.genres || []).filter(value => typeof value === 'string');
+    const studios = [...new Set((state.item.studios || []).filter(value => typeof value === 'string' && value.trim()))];
+    let crewLine = null;
+    for (const span of hero.querySelectorAll('span.text-foreground\\/60')) {
+      if (span.children.length || !genres.includes(span.textContent.trim())) continue;
+      crewLine = span.closest('div');
+      span.replaceWith(metadataLink(state.library, 'genre', span.textContent.trim(), span.className));
+    }
+    for (const span of hero.querySelectorAll('.detail-hero-context span')) {
+      if (!span.children.length && studios.includes(span.textContent.trim())) span.replaceWith(metadataLink(state.library, 'studio', span.textContent.trim(), span.className));
+    }
+    if (!studios.length || hero.querySelector('[data-stash-studios]')) return;
+    const anchor = crewLine || hero.querySelector('.metadata-badge')?.parentElement;
+    if (!anchor) return;
+    const line = document.createElement('div');
+    line.dataset.stashStudios = state.id;
+    line.className = 'text-muted-foreground text-[0.8125rem]';
+    const label = document.createElement('span'); label.className = 'text-muted-foreground/60'; label.textContent = 'Studio: '; line.append(label);
+    studios.forEach((studio, index) => {
+      if (index) { const separator = document.createElement('span'); separator.className = 'text-muted-foreground/40 mx-1.5'; separator.textContent = '·'; line.append(separator); }
+      line.append(metadataLink(state.library, 'studio', studio, 'text-foreground/60'));
+    });
+    anchor.after(line);
+  }
   let releaseDateState = null;
   function reconcileReleaseDate() {
     const id = itemID(), hero = document.querySelector('.item-detail-hero');
     if (!id || !hero) { releaseDateState = null; return; }
     if (releaseDateState?.id !== id) {
-      const state = releaseDateState = { id, date: '' };
+      const state = releaseDateState = { id, date: '', item: null, library: '' };
       siloJSON('/api/v2/catalog/items/' + encodeURIComponent(id)).then(item => {
         if (releaseDateState !== state || itemID() !== id) return;
+        state.item = item;
         state.date = fullReleaseDate(item.release_date);
         reconcileReleaseDate();
+        siloFiles(id).then(files => {
+          if (releaseDateState !== state || itemID() !== id) return;
+          state.library = String(files[0]?.library_id || item.library_id || '');
+          reconcileReleaseDate();
+        }).catch(() => {});
       }).catch(() => {});
     }
+    reconcileMetadataLinks(hero, releaseDateState);
     const date = releaseDateState.date;
     if (!date) return;
     // Target only the year badge, retaining Silo's markup, classes and theme.
