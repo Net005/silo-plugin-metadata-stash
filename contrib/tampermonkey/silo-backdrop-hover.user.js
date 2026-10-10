@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Silo Stash Backdrop Hover
 // @namespace    https://github.com/Net005/silo-plugin-metadata-stash
-// @version      1.1.6
+// @version      1.1.7
 // @downloadURL  https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @updateURL    https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @description  Stash backdrop previews, native Watchlist and O-count toolbar actions, and library-scoped subtitle creation.
@@ -394,7 +394,7 @@
     // to the text sizing used by Silo's link actions in this same toolbar.
     subs.classList.remove('size-11');
     subs.classList.add('h-11', 'px-4', 'text-[0.8125rem]', 'font-semibold', 'tracking-wide');
-    subs.textContent = 'Create Subtitle';
+    subs.textContent = '+ Sub';
     orgasm.dataset.stashOCount = ''; orgasm.hidden = true;
     let counter = null;
     function renderO(value) {
