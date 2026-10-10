@@ -1,87 +1,78 @@
-# Silo Stash Backdrop Hover
+# Silo browser enhancements
 
-Install `silo-backdrop-hover.user.js` using Tampermonkey → Create a new script → replace the editor contents → Save.
+[← Stash Metadata overview](../../README.md)
 
-Before saving, replace the example `@match` line with your Silo URL pattern **in your local Tampermonkey editor only**. Private server addresses are configured locally and must not be committed to this repository. The `@connect *` declaration supports your chosen Stash host; requests are restricted in code to the configured Stash origin. Tampermonkey may ask permission for that host.
+A Tampermonkey userscript that adds Stash previews and compact controls to Silo, using Silo's existing styling.
 
-Open a Silo movie, then use the Tampermonkey menu **Backdrop hover: settings / delay / API keys**.
+## Features
 
-- Set **Hover delay** in milliseconds. Default: **400 ms**, matching the Stash companion.
-- Enter your **Stash server URL** (origin only, without a path).
-- Enter your **Stash API key**. It is kept in Tampermonkey storage, not embedded in the script.
-- Enter your **Silo admin API key** if the current Silo session cannot read the item's file paths. The script first tries the existing browser access token. If the browser access token expires, it uses Silo’s normal refresh endpoint once and saves the renewed session tokens. A configured API key is never replaced or refreshed.
-- **Thumbnail interval** defaults to **700 ms**, matching the companion fallback.
+| Where | Enhancement |
+| --- | --- |
+| **Movie backdrop** | Muted looping Stash preview on hover, with VTT thumbnail fallback. Leaving restores the original artwork and overview. |
+| **Watchlist** | Bookmark toggle in the main toolbar, using Silo's native Watchlist action and profile state. |
+| **O count** | Water-droplet button shows the current positive scene count. Each click records **one O** in Stash and displays the confirmed total. |
+| **Person page** | Water-droplet O-count badge beside age for a linked Stash performer with a positive count. |
+| **Subtitles** | Compact **+ Sub** action for allowed libraries with missing or confirmed outdated subtitles. |
+| **Stash link** | Northeast arrow opens the exact matched scene in a new tab. Hover text: **Open in Stash**. |
+| **Rating** | One star and the selected rating at rest. Hover or keyboard focus reveals all five stars without widening the toolbar row. |
+| **Metadata** | Full release dates as `YYYY-MM-DD`; clickable genres and studios open exact library filters in a new tab. |
 
-Move the mouse over the backdrop outside the poster, title/information and controls. After the delay, a muted looping Stash preview replaces the backdrop. If video is unavailable or cannot play, the script cycles through Stash's VTT thumbnail frames. Moving away restores the original backdrop. Silo's gradient treatment, text and buttons remain in place. The preview is contained so it does not crop faces or show adjacent sprite frames.
+## Install or update
 
-The script finds a scene by a unique exact file-path match. When your Stash and Silo paths differ, use **Backdrop hover: assign Stash scene for this item** and paste the numeric Stash scene ID or scene URL. This assignment is stored per Silo item. Blank clears it.
+1. Install Tampermonkey in your browser.
+2. Open [silo-backdrop-hover.user.js](silo-backdrop-hover.user.js), copy its contents into **Tampermonkey → Create a new script**, and save.
+3. Replace the example `@match` line with your Silo URL pattern **in your local editor**. Keep private server addresses out of this repository.
+4. Open Silo and use **Tampermonkey → Backdrop hover: settings / delay / API keys** to configure the settings below.
+5. Reload Silo after installing or updating. When replacing the script, retain your local `@match` line; settings stored by Tampermonkey are preserved.
 
-Resources are requested only after a hover and reused while that item remains open. Navigation releases previews and object URLs. Hover previews do not change scene metadata, collections, play history or O counts. Toolbar actions are separate explicit clicks: Watchlist updates membership, the water-droplet button adds one to the Stash O count, and Create Subtitle can queue generation after the checks described below.
+Use **version 1.2.0+** for the person-page O-count badge.
 
-If neither a preview nor thumbnails exist, generate those assets in Stash first. Stash must be reachable from your browser. A failed lookup displays a short explanation and keeps the original backdrop.
+## Settings
 
-Verified: JavaScript syntax, VTT sprite coordinates, exact matching and ambiguity rejection. Live browser verification was unavailable because the browser security check rejected access; selectors were checked against the local Silo `DetailHero` frontend source.
+| Setting | What to enter |
+| --- | --- |
+| **Stash server URL** | Your Stash origin, without a path. It must be reachable from the browser. |
+| **Stash API key** | Your Stash key; stored in Tampermonkey rather than embedded in the script. |
+| **Silo admin API key** | Optional when your current Silo session can read item file paths. Use it if file lookup is unavailable to your session. |
+| **Hover delay** | Delay before starting a preview. Default: **400 ms**. |
+| **Thumbnail interval** | Time between fallback frames. Default: **700 ms**. |
+| **Subtitle library names** | Exact names separated by commas, semicolons or newlines. Default: `JAV`. Blank disables **+ Sub**. |
 
-Version 1.0.1 fixes expired-session HTTP 401 lookups, paginates file versions, and
-uses `libraryId` from the item URL to exclude files in other libraries. An expired
-signed S3 avatar URL is not a Stash scene ID and is unrelated to preview lookup.
-After updating the script, reload Silo. If your login cannot refresh, sign in again
-or configure a valid Silo admin API key; non-admin sessions still require an admin
-key or a manual scene assignment.
+The script first uses your existing Silo browser session. If its access token expires, it tries Silo's normal refresh endpoint once and saves the renewed tokens. A configured API key is never refreshed or replaced. Tampermonkey may ask permission to access your Stash host; outgoing Stash requests are restricted to the configured origin.
 
-Version 1.0.2 hides the story/overview (including its expand/translate controls)
-only after a video or thumbnail preview is visible. It restores the overview on
-mouse leave, failed playback, tab hiding, navigation or disabling the script.
-The space is retained to avoid layout jumps; title, metadata and playback controls
-remain visible.
+## Preview a scene
 
-Version 1.0.3 removes deployment-specific domains. Enter the Stash URL locally after updating; existing API keys and hover preferences are retained.
+Hover the backdrop outside the poster, title, metadata and controls. After the configured delay, a muted Stash preview plays. If video is unavailable, the script cycles through Stash's VTT thumbnail frames.
 
-## Toolbar actions (1.1.0)
+The overview hides only while a preview is visible, retaining its space to avoid layout jumps. Leaving the backdrop, hiding the tab, navigating or disabling previews restores it. Preview resources load on demand and are reused while the item stays open.
 
-The settings dialog now includes **Subtitle library names**. It defaults to `JAV`;
-enter exact library names separated by commas, semicolons, or newlines. A blank
-allowlist disables Create Subtitle. Library IDs are resolved to names using
-Silo's library API, and an item URL's `libraryId` scopes the file lookup.
+Matching uses a **unique exact file path**. The URL's `libraryId`, when present, scopes file lookup to that library. If Stash and Silo paths differ, use **Backdrop hover: assign Stash scene for this item** and paste the numeric scene ID or scene URL. A blank assignment clears it.
 
-**Create Subtitle** appears immediately left of More actions only for an
-allowed library with missing subtitles or confirmed old/outdated subtitles.
-Current subtitles and subtitles whose freshness is unknown keep the action
-hidden. The script resolves a unique Stash scene through the same exact-path
-lookup/manual assignment as the backdrop preview, and uses the installed
-`stash-silo-companion` plugin's `subtitle_status` and `subtitles` operations.
-It checks again when clicked. Replacement confirmations use the companion's
-same JavaScript approval/cancellation prompts, including its backend names.
-Cancellation sends no generation request. A status error hides the action
-rather than assuming an existing subtitle is outdated.
+## Record an O
 
-Watchlist is an icon-only native glass button in the main toolbar. It copies
-Silo's own current Plus/Check menu icon, invokes the native Watchlist handler,
-and hides the duplicate Watchlist entry in More actions. This keeps Silo's
-profile state, cache invalidation, and feedback. Both toolbar additions work
-independently of whether backdrop hover is enabled. Their button classes come
-from Silo's current More action, with native text-button sizing for subtitles;
-there are no custom button colors, borders, backgrounds, or theme overrides.
+Click the droplet beside Watchlist to add **one** to the matched scene's Stash O count. Zero or an unset count shows the icon alone; a positive count appears beside it. The button appears only when a unique match or manual assignment resolves and its count can be read.
 
-Update the installed userscript from this file, retaining your local `@match`
-line, then reload Silo. Existing keys and hover settings are preserved. The
-new allowlist is editable from **Backdrop hover: settings / delay / API keys**.
-Syntax and six request/eligibility/confirmation tests pass. The toolbar was
-checked against Silo's current `ActionBar` source; live visual verification
-remains unavailable because the browser policy check cannot grant access.
+The script blocks duplicate clicks while the request is pending and does not automatically retry O mutations. If the result cannot be confirmed, refresh before trying again.
 
-The toolbar Watchlist toggle uses Silo’s Lucide Bookmark (not added) and BookmarkCheck (added) icons. The existing native button styling and overflow action are preserved.
+On person pages, the badge reads the linked **Stash performer's** O count using its exact provider identity or legacy integration link. It hides zero, unavailable counts and people without a Stash identity. The person badge is informational.
 
-Version 1.1.2 displays a complete release date as `YYYY-MM-DD` in the existing item year badge. Missing, partial or invalid dates leave the year unchanged.
+## Request subtitles
 
-Version 1.1.3 makes item genres and studios clickable. Links open a new tab with Silo’s exact-match filter in the item’s library, using native query parameters and existing theme classes.
+First configure **JAVBeacon-Subs base URL** and **API token** in the installed **Stash.Silo Companion** plugin. Then add the desired Silo libraries to the userscript's **Subtitle library names** setting.
 
-Version 1.1.5 adds an O-count action beside Watchlist using Silo’s Lucide Flame icon and native glass button styling. A positive count appears beside the icon; zero or an unset count shows the icon alone. Each click records one O in Stash and displays the confirmed total. Requests are guarded against double clicks and are never automatically retried. If a request cannot be confirmed, refresh the page before trying again. The action appears only for a uniquely matched or manually assigned Stash scene whose count can be read.
+**+ Sub** appears only when the companion reports missing or confirmed outdated subtitles for the exact scene in an allowed library. Current subtitles, unknown freshness and status errors keep it hidden. Library IDs are resolved to names through Silo's library API.
 
-Version 1.1.6 replaces the O-count flame with a water droplet, retaining the native button sizing and Lucide stroke style.
+Clicking checks the status again before submitting. Existing subtitles require the companion's replacement confirmation; cancelling sends no generation request. Requests use the companion's `subtitle_status` and `subtitles` operations.
 
-Version 1.1.8 adds a compact northeast-arrow link beside the toolbar actions. Hover text reads **Open in Stash**; clicking opens the matched or assigned Stash scene in a new tab. The link stays hidden when no scene can be resolved.
+## Troubleshooting
 
-Version 1.1.9 compacts the native toolbar rating to one star and its selected number. Hover or keyboard focus reveals all five stars without widening the toolbar row. Native rating clicks and arrow-key controls remain intact.
+| Symptom | What to check |
+| --- | --- |
+| **Nothing appears** | Ensure the local `@match` pattern covers your Silo URL, enable the script and reload the page. |
+| **No preview or thumbnails** | Generate preview assets in Stash and confirm your browser can reach Stash. |
+| **Scene lookup fails** | Check exact file paths, selected library and API access, or assign the scene manually. Ambiguous matches are rejected. |
+| **HTTP 401** | Sign in to Silo again if session renewal fails, or configure a valid admin API key. |
+| **No person O badge** | The performer needs a Stash identity and a positive readable count. A name match alone is not used. |
+| **No + Sub button** | Check the library allowlist, companion installation, subtitle service settings and subtitle status. |
 
-Version 1.2.0 adds a water-droplet O-count badge beside age on person pages. It reads the exact linked Stash performer’s count using the existing Stash connection settings. Zero, unavailable counts and people without a Stash identity remain hidden.
+Toolbar actions work independently of whether backdrop previews are enabled. Previews never alter scene metadata, Watchlist membership, playback history or O counts.

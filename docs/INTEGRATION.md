@@ -1,0 +1,81 @@
+# Integration details
+
+[← Setup and feature overview](../README.md)
+
+Detailed behavior for artwork storage, metadata migration, recommendations and Watchlist recovery.
+
+## Matching and synchronization
+
+The Go provider matches Stash scenes by an existing `stash` provider ID or an exact normalized scene code, title, or file stem. Configure the optional JAVBeacon URL and API key in the Silo plugin to use its 1000×1500 conformed cover as a poster and its cached screenshots, plus the Stash scene screenshot, as backdrop candidates. JAVBeacon v1.0.284 or newer supplies the cached screenshot paths. An unlinked scene or unavailable artwork service falls back to the Stash screenshot. Ambiguous searches are not auto-selected. Metadata and screenshot URLs come directly from Stash. Completed Silo plays are added to Stash only when their event timestamp is not already in Stash play history; retrying the same event does not add a duplicate. Resume checkpoints are sent without inflating play duration. Stash watched state is applied to exact local Silo items by a separate 30-second worker, because Silo's generic watch-provider importer does not match custom Stash IDs. A bounded exact-match pass runs on startup and every minute when the Silo admin URL and key are configured; it is also exposed as a scheduled task. The companion can queue a targeted Silo refresh after a Stash scene edit in each selected Silo movie or mixed library when the same Silo connection is configured and it finds one exact catalog item per library. For Stash scene updates that edit tags, the companion also updates the existing manual **WatchList** Silo collection in each selected library when the Stash Watchlist tag changes. This covers toggles in StashApp and JAVBeacon for linked local scenes. It uses the collection API; native Silo Watchlist actions are exported through the Go provider to the selected prefixed collection and Stash tag; personal Watchlist import remains disabled. A separate one-minute recovery worker reconciles missed updates to the same existing collection using the selected Stash saved filter as the remote membership source. It requires exact local path or artwork identity and leaves unresolved members untouched. Set the same Watchlist tag ID in the Stash companion as in JAVBeacon, and keep its Silo URL and API key configured. The companion prefers the StashApp-derived WatchList collection when an older JAVBeacon collection has the same title. Set its exact Silo collection ID only where more than one StashApp-derived WatchList collection exists in a library. Stash’s configured Watchlist tag is the only membership source; JAVBeacon’s own Watchlist is ignored.
+
+## Artwork, metadata and collection workers
+
+### Artwork storage
+
+Enable **Keep provider artwork** in Silo's Library & Metadata settings and configure Silo's artwork storage as S3 or local storage. Configure the Silo admin URL and API key in this plugin. **Cache existing Stash artwork** copies the already-selected posters and backdrops into that storage without refreshing metadata or selecting different images. It includes every library accessible to the configured Silo account, including Hentai, and preserves existing metadata locks.
+
+Silo's automatic image downloader can reject Stash/JAVBeacon URLs that resolve to private network addresses. This repair uses Silo's supported admin image API, which permits administrator-selected LAN artwork while retaining Silo's connection checks. Silo generates and serves its own image sizes and immutable revisions. Provider credentials are removed from source references before publication. The worker runs after configuration and checks in bounded batches every minute after each batch finishes; the task page also allows a manual run. Already-stored images are skipped. Failed items wait an hour before retrying, so an unavailable provider does not cause constant downloads. Progress and item failures appear in plugin logs. A full existing-library repair progresses over successive batches; it does not scrape or refresh the whole library.
+
+The Go plugin keeps Stash as the primary metadata source. Configure its optional JAVBeacon URL and API key to restore the functions that still need JAVBeacon: the playback engine (including checkpoints and duplicate-safe forwarding), release saved filters, rotating collection covers, historical play backfill, exact performer profiles, and compatibility for existing JAVBeacon-only releases. JAVBeacon v1.0.285 or newer supplies exact release paths and scene IDs for saved-filter membership, plus the authoritative WatchList recovery marker. The Stash companion remains responsible for realtime Stash tag changes and fill-missing enrichment.
+
+Configure the Silo admin URL and API key in Stash Metadata for its background and scheduled tasks. Metadata refresh discovers enabled movie and mixed libraries automatically, including pathless changes; no library ID is required. Stash and JAVBeacon saved-filter selections and prefixes are independent. Blank JAVBeacon selection imports all release filters; blank Stash selection disables Stash saved-filter import. For Stash collections, enter comma-separated scene saved-filter IDs or exact names, such as `Favorite performers,Favorite directors`. The worker reads the selected filters directly from Stash in pages of 200 scenes and caches the export for one minute. Large filters no longer depend on a single JAVBeacon export request. Collections contain only uniquely matched local scenes in each enabled Silo movie or mixed library; a filter with no local members in a library does not create an empty collection there. Select the Stash Watchlist saved filter here. The companion updates its existing prefixed collections immediately when the Stash Watchlist tag changes; the saved-filter worker reconciles them periodically.
+
+The restored scheduled tasks are **Sync saved-filter collections**, **Sync Stash Watchlist saved-filter collections**, **Match unmatched Stash scenes**, **Repair matched Stash metadata**, **Refresh changed metadata**, **Import Stash watched state**, and **Backfill completed Silo plays**. The background workers run independently so a slow collection sync does not postpone watched or metadata changes. The backfill reads finalized Silo sessions and lets JAVBeacon reject already-present or ambiguous Stash history; partial sessions and O counts are never backfilled. A completed Silo play does not imply an O and never calls Stash’s O mutation.
+
+Existing `javbeacon-*` collection slugs and their ownership marker are retained so collections keep their Silo IDs. Stash saved-filter collection artwork is resolved from the selected Stash scene, using JAVBeacon's resized poster and screenshots when available, then uploaded into Silo storage. Previous TMDB artwork is not trusted as a scene source. Upgrades replace legacy artwork rotation markers so incorrect old collection covers are repaired without a full library refresh. The companion's realtime hook and separate one-minute recovery task update the same prefixed Stash Watchlist saved-filter collections. They read the configured Stash prefix and never select an unrelated unprefixed collection. Neither uses Silo's personal Watchlist.
+
+Collection posters are reserved across all libraries. Recommendations and imported saved filters use different verified member images even when their memberships overlap. Selection checks member IDs, decoded image fingerprints, and normalized visual signatures (to catch the same photo after resizing or compression). Existing user collection posters also participate in collision checks, but are never edited. Reservations are stored in each managed collection's source configuration and reused across restarts and routine syncs. Saved-filter collection posters rotate every six hours, preferring another available unique member cover; the current cover remains a fallback when no alternative is available. If all member posters are already used, the plugin preserves the existing real cover and lets the other collections continue updating. Artwork errors preserve existing images and are reported rather than replacing them with unrelated artwork. The policy affects posters only; backdrops may be shared.
+
+
+[Feature parity audit](../FEATURE_PARITY.md) documents each old capability and its replacement.
+
+## Existing Silo metadata
+
+Installing this plugin does not delete Silo's stored metadata. To move Silo's cached fields into Stash **without a metadata refresh**, use the companion's **Preview existing Silo metadata migration** task, then **Import existing Silo metadata**. Configure the companion’s Silo URL and API key. Leave **Silo movie library IDs** blank to scan every enabled movie or mixed library, or enter comma-separated IDs to limit the scan. These IDs come from each existing Silo library’s settings URL; no new library or old JAVBeacon plugin is needed. Run **Preview existing Silo metadata migration** first, then **Import existing Silo metadata**. The task reads matched catalog records, identifies a Stash scene by the exact stored scene ID or a unique exact code/title/file-stem match, and fills only empty Stash fields. Ambiguous rows are skipped. It does not change plays, O counts or existing Stash values. The per-run limit defaults to 200 Silo items across the selected libraries. If a result has `next_library_id`, rerun the same task with `start_library_id`, `start_cursor`, and `start_index` set to the returned values; repeat until those fields are null. A preview has its own cursor and does not advance the import cursor. No Silo metadata refresh is needed.
+
+The companion's separate **Migrate cached metadata to Stash** task fills remaining empty fields from JAVBeacon's already indexed releases by exact Stash scene ID; it does not scrape or refresh Silo. JAVBeacon v1.0.280 or newer is required for that task.
+
+## Weekly recommendations
+
+See [RECOMMENDATIONS.md](../RECOMMENDATIONS.md) for weekly recommendation collections, settings, reports and spending controls.
+
+### Recommendation report history
+
+The report page uses your signed-in Silo administrator session, renews expired login and plugin credentials, and displays a clear sign-in message for unauthenticated or locked profiles. It does not expose report data publicly. Use **Saved reports** to review any retained run and **JSON report** to download the selected result.
+
+Completed, preview and failed runs retain their ordered picks, scene IDs, titles, reasons, confidence, source statistics and reported token usage for six calendar months. Every run is saved in a separate compressed, hidden Silo record so retention does not inflate the current control document beyond Silo’s write limit. Old report records are pruned during report maintenance and new runs; live recommendation collections and learning history are preserved. The upgrade archives the existing latest report without calling OpenAI or rebuilding collections. Reports already overwritten by earlier versions cannot be recovered from this new archive.
+
+### Silo → Stash Watchlist changes
+
+Native Silo Watchlist add/remove events update the selected, prefixed Stash Watchlist collection first and then add/remove the configured Stash Watchlist tag. The tag ID is read from the Stash Silo companion settings (no JAVBeacon Watchlist dependency). Enable Watchlist export and removal synchronization in the Stash watch-provider connection. Personal Watchlist import remains unsupported; remote membership is reconciled through the selected saved-filter collections.
+
+Edits made directly to those collections are detected every 5 seconds. The same worker recovers native profile Watchlist changes for local Stash items that Silo skips because they lack IMDb/TMDB IDs; it applies the prefixed collection change before the Stash tag mutation. Each library stores a baseline and a durable pending-action journal in its collection source configuration. Failed actions retry across plugin restarts, and older native events cannot undo newer choices. Inbound saved-filter sync waits for pending local exports before reconciling, then advances baselines only for the inbound changes it actually applies; it does not turn an empty or incomplete remote snapshot into a request to remove Stash tags. Initial setup seeds baselines without exporting an existing library snapshot. The separate **Backfill Silo Watchlist changes to Stash** task can run on demand; its one-minute schedule registers on the next Silo server restart. The resident 5-second retry timer runs immediately after plugin configuration. Updates use incremental Stash tag mutations and never write play counts, O counts or other scene fields.
+
+Companion v0.2.11 delegates incoming Watchlist hooks to the authenticated Go reconciliation endpoint when a durable journal exists. This prevents late companion callbacks from bypassing pending local actions. Existing nonjournaled installations retain their previous direct-mirroring behavior until the Go plugin seeds their collection journals.
+
+## Additional local helpers
+
+See [POSTER_LAYOUTS.md](../POSTER_LAYOUTS.md) for opt-in local non-JAV poster repair and [RECOMMENDATIONS.md](../RECOMMENDATIONS.md) for the sixteen collection kinds. The five added collection kinds reuse feedback without additional OpenAI calls. The [Tampermonkey backdrop-hover script](../contrib/tampermonkey/silo-backdrop-hover.user.js) is published as a release asset and has configurable hover timing; see its [setup guide](../contrib/tampermonkey/README.md). Native Silo For You enrichment and inbound playback-history imports are not implemented.
+
+### Watchlist recovery for shared Silo items
+
+Watchlist export verifies only files belonging to the target collection's library.
+A Silo item can also exist in ordinary Movies or another Stash library; those
+other files cannot block an exact match in the selected library. File pagination
+and the requirement for one verified Stash scene remain enforced. No play/O
+counters are written by Watchlist recovery.
+
+If a queued Watchlist item's files leave that library during a scan, the action
+is parked in the durable `inactive_library_actions` journal. Other matching
+items continue syncing. The parked action resumes when the library has a file
+again; a newer local action takes precedence.
+
+Scheduled Watchlist export acknowledges an active worker instead of waiting on
+the watch-event lock. Longer recovery uses its own two-minute context and a
+one-second control acknowledgement; RPC timeouts cannot cancel queued recovery.
+A completed admission is not proof that every action has been exported: pending
+and inactive actions remain in the durable collection journal.
+
+Native Watchlist re-adds are recovered using Silo addition timestamps, including a missed re-add behind a newer title. Exported native additions follow their actual date added, newest first, even during delayed recovery; collection-only members retain their relative order; saved-filter reconciliation leaves that Watchlist order intact.
+
+Companion v0.2.14 and Silo plugin v0.3.60 send explicit Watchlist add/remove events through Stash’s job queue. Tag saves do not wait for Silo scans; a re-add moves the exact local item to the first collection position. Incoming events retain their timestamps in the protected journal for retries and stale-event rejection.
