@@ -71,3 +71,5 @@ checked against Silo's current `ActionBar` source; live visual verification
 remains unavailable because the browser policy check cannot grant access.
 
 The toolbar Watchlist toggle uses Silo’s Lucide Bookmark (not added) and BookmarkCheck (added) icons. The existing native button styling and overflow action are preserved.
+
+Version 1.1.2 displays a complete release date as `YYYY-MM-DD` in the existing item year badge. Missing, partial or invalid dates leave the year unchanged.

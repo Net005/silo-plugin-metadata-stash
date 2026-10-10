@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Improved
+
+- Tampermonkey v1.1.2 shows the full release date (`YYYY-MM-DD`) in Silo’s existing item year badge, preserving its styling and retaining the year when a complete date is unavailable.
+
 ## [0.3.57] - 2026-10-10
 
 ### Fixed

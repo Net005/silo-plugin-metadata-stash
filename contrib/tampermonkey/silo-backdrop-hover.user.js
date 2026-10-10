@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Silo Stash Backdrop Hover
 // @namespace    https://github.com/Net005/silo-plugin-metadata-stash
-// @version      1.1.1
+// @version      1.1.2
 // @downloadURL  https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @updateURL    https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @description  Stash backdrop previews, native Watchlist toolbar toggle and library-scoped subtitle creation.
@@ -159,7 +159,7 @@
     if (!libraryNames.some(name => names.includes(name))) return false;
     return !hasSubtitles || !!status && (!status.sidecar_found || status.up_to_date === false);
   }
-  if (typeof module !== 'undefined' && module.exports) { module.exports = { parseCues, exactScene, createSiloFileReader, stashOrigin, sceneID, subtitleEligible, confirmSubtitleOverwrite }; return; }
+  if (typeof module !== 'undefined' && module.exports) { module.exports = { parseCues, exactScene, createSiloFileReader, stashOrigin, sceneID, subtitleEligible, confirmSubtitleOverwrite, fullReleaseDate }; return; }
   let settings = { ...DEFAULTS, ...GM_getValue('settings', {}) };
   let current = null;
   const overviewStyle = document.createElement('style');
@@ -479,7 +479,33 @@
     if (toolbar?.id === id && toolbar.more === more && more.parentElement.querySelector('[data-stash-subtitles]')) return;
     toolbar?.dispose(); toolbar = attachToolbar(more, id);
   }
+  function fullReleaseDate(value) {
+    if (typeof value !== 'string') return '';
+    const match = /^(\d{4}-\d{2}-\d{2})(?:$|T)/.exec(value.trim());
+    if (!match) return '';
+    const date = new Date(match[1] + 'T00:00:00Z');
+    return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === match[1] ? match[1] : '';
+  }
+  let releaseDateState = null;
+  function reconcileReleaseDate() {
+    const id = itemID(), hero = document.querySelector('.item-detail-hero');
+    if (!id || !hero) { releaseDateState = null; return; }
+    if (releaseDateState?.id !== id) {
+      const state = releaseDateState = { id, date: '' };
+      siloJSON('/api/v2/catalog/items/' + encodeURIComponent(id)).then(item => {
+        if (releaseDateState !== state || itemID() !== id) return;
+        state.date = fullReleaseDate(item.release_date);
+        reconcileReleaseDate();
+      }).catch(() => {});
+    }
+    const date = releaseDateState.date;
+    if (!date) return;
+    // Target only the year badge, retaining Silo's markup, classes and theme.
+    const badge = [...hero.querySelectorAll('.metadata-badge')].find(el => el.textContent.trim() === date.slice(0, 4));
+    if (badge) badge.textContent = date;
+  }
   function reconcile() {
+    reconcileReleaseDate();
     reconcileToolbar();
     const id = itemID(), hero = document.querySelector('.item-detail-hero');
     const backdrop = hero?.querySelector('.hero-backdrop-artwork');
