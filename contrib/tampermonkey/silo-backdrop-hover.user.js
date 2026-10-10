@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Silo Stash Backdrop Hover
 // @namespace    https://github.com/Net005/silo-plugin-metadata-stash
-// @version      1.1.3
+// @version      1.1.4
 // @downloadURL  https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @updateURL    https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @description  Stash backdrop previews, native Watchlist toolbar toggle and library-scoped subtitle creation.
@@ -488,7 +488,7 @@
   }
   function metadataFilterHref(library, field, value) {
     if (!/^\d+$/.test(String(library)) || !['genre', 'studio'].includes(field) || typeof value !== 'string' || !value.trim()) return '';
-    const params = new URLSearchParams({ tab: 'library', 'groups[0][match]': 'all', 'groups[0][rules][0][field]': field, 'groups[0][rules][0][op]': 'is', 'groups[0][rules][0][value]': value });
+    const params = new URLSearchParams({ tab: 'library', sort: 'release_date', order: 'desc', 'groups[0][match]': 'all', 'groups[0][rules][0][field]': field, 'groups[0][rules][0][op]': 'is', 'groups[0][rules][0][value]': value });
     return '/library/' + encodeURIComponent(library) + '?' + params;
   }
   function metadataLink(library, field, value, className) {
