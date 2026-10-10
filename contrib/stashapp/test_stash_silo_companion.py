@@ -61,7 +61,7 @@ class HookAndScanTests(unittest.TestCase):
         enrich.assert_called_once()
 
     def test_tag_only_save_syncs_watchlist_without_metadata_work(self):
-        payload = {"args": {"mode": "hook", "hookContext": {"id": "42", "type": "Scene.Update.Post", "inputFields": ["id", "tag_ids"]}}}
+        payload = {"args": {"mode": "hook", "hookContext": {"id": "42", "type": "Scene.Update.Post", "inputFields": ["ids", "tag_ids"]}}}
         with patch.object(plugin.json, "load", return_value=payload), \
              patch.object(plugin, "_settings", return_value={"watchlist_tag_id":"9"}), \
              patch.object(plugin, "_scene", return_value={"tags":[{"id":"9"}]}), \

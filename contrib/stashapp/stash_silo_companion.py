@@ -685,7 +685,7 @@ def main():
     elif mode == "hook":
         settings = _settings(payload)
         hook = args.get("hookContext") or {}
-        edited = set(hook.get("inputFields") or []) - {"id", "clientMutationId"}
+        edited = set(hook.get("inputFields") or []) - {"id", "ids", "clientMutationId"}
         if hook.get("type") == "Scene.Update.Post" and edited == {"tag_ids"}:
             scene_id = str(hook.get("id") or (hook.get("input") or {}).get("id") or "")
             scene = _scene(payload, scene_id)
