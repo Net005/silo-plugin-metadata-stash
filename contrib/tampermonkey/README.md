@@ -16,7 +16,7 @@ Move the mouse over the backdrop outside the poster, title/information and contr
 
 The script finds a scene by a unique exact file-path match. When your Stash and Silo paths differ, use **Backdrop hover: assign Stash scene for this item** and paste the numeric Stash scene ID or scene URL. This assignment is stored per Silo item. Blank clears it.
 
-Resources are requested only after a hover and reused while that item remains open. Navigation releases previews and object URLs. Hover previews do not change scene metadata, collections, play history or O counts. Toolbar actions are separate explicit clicks: Watchlist updates membership, the Flame button adds one to the Stash O count, and Create Subtitle can queue generation after the checks described below.
+Resources are requested only after a hover and reused while that item remains open. Navigation releases previews and object URLs. Hover previews do not change scene metadata, collections, play history or O counts. Toolbar actions are separate explicit clicks: Watchlist updates membership, the water-droplet button adds one to the Stash O count, and Create Subtitle can queue generation after the checks described below.
 
 If neither a preview nor thumbnails exist, generate those assets in Stash first. Stash must be reachable from your browser. A failed lookup displays a short explanation and keeps the original backdrop.
 
@@ -77,3 +77,5 @@ Version 1.1.2 displays a complete release date as `YYYY-MM-DD` in the existing i
 Version 1.1.3 makes item genres and studios clickable. Links open a new tab with Silo’s exact-match filter in the item’s library, using native query parameters and existing theme classes.
 
 Version 1.1.5 adds an O-count action beside Watchlist using Silo’s Lucide Flame icon and native glass button styling. A positive count appears beside the icon; zero or an unset count shows the icon alone. Each click records one O in Stash and displays the confirmed total. Requests are guarded against double clicks and are never automatically retried. If a request cannot be confirmed, refresh the page before trying again. The action appears only for a uniquely matched or manually assigned Stash scene whose count can be read.
+
+Version 1.1.6 replaces the O-count flame with a water droplet, retaining the native button sizing and Lucide stroke style.

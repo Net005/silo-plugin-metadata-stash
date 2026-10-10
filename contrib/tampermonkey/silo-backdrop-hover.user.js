@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Silo Stash Backdrop Hover
 // @namespace    https://github.com/Net005/silo-plugin-metadata-stash
-// @version      1.1.5
+// @version      1.1.6
 // @downloadURL  https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @updateURL    https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @description  Stash backdrop previews, native Watchlist and O-count toolbar actions, and library-scoped subtitle creation.
@@ -398,11 +398,11 @@
     orgasm.dataset.stashOCount = ''; orgasm.hidden = true;
     let counter = null;
     function renderO(value) {
-      // Lucide Flame, also used by Silo's popular/trending row assets.
+      // Water droplet with the same Lucide stroke weight and sizing as Silo controls.
       const icon = watchlistIcon(false);
       icon.replaceChildren();
       const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      path.setAttribute('d', 'M8.5 14.5A6 6 0 0 1 10 10a8 8 0 0 0 1 2 6 6 0 0 0 1-8c5 1 8 5 8 9a8 8 0 1 1-16 0c0-2.3.6-4.4 2-6a6 6 0 0 0 2.5 7.5z');
+      path.setAttribute('d', 'M12 22a7 7 0 0 0 7-7c0-4-7-13-7-13S5 11 5 15a7 7 0 0 0 7 7z M9 15a3 3 0 0 0 3 3');
       icon.append(path);
       orgasm.replaceChildren(icon);
       orgasm.classList.toggle('size-11', value === 0);
