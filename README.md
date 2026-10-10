@@ -88,3 +88,5 @@ A completed admission is not proof that every action has been exported: pending
 and inactive actions remain in the durable collection journal.
 
 Native Watchlist re-adds are recovered using Silo addition timestamps, including a missed re-add behind a newer title. Exported native additions follow their actual date added, newest first, even during delayed recovery; collection-only members retain their relative order; saved-filter reconciliation leaves that Watchlist order intact.
+
+Companion v0.2.14 and Silo plugin v0.3.60 send explicit Watchlist add/remove events through Stash’s job queue. Tag saves do not wait for Silo scans; a re-add moves the exact local item to the first collection position. Incoming events retain their timestamps in the protected journal for retries and stale-event rejection.

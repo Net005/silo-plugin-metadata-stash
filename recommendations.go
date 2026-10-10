@@ -934,12 +934,21 @@ func (s *recommendationServer) Handle(ctx context.Context, req *pluginv1.HandleH
 		if s.runtime.legacy == nil {
 			return respond(503, map[string]any{"error": "Watchlist reconciler unavailable"})
 		}
-		// Acknowledge only after the current membership is applied. Otherwise a
-		// remove followed by an add can collapse into one background snapshot,
-		// retaining the previous member's addition date and position.
+		var change inboundWatchlistChange
+		if err := json.Unmarshal(req.Body, &change); err != nil {
+			return respond(400, map[string]any{"error": "invalid Watchlist change"})
+		}
+		if change.Desired != nil {
+			if err := s.runtime.applyInboundWatchlist(ctx, change); err != nil {
+				return respond(503, map[string]any{"error": err.Error()})
+			}
+			return respond(200, map[string]any{"status": "applied"})
+		}
+		// Older companions retain snapshot recovery; explicit events use the
+		// targeted path above and carry their original addition time.
 		s.runtime.legacy.Provider().InvalidateStashSavedFilters()
-		if e := s.runtime.legacy.ReconcileWatchlist(ctx); e != nil {
-			return respond(503, map[string]any{"error": e.Error()})
+		if err := s.runtime.legacy.ReconcileWatchlist(ctx); err != nil {
+			return respond(503, map[string]any{"error": err.Error()})
 		}
 		return respond(200, map[string]any{"status": "applied"})
 	case req.Method == "POST" && (path == "/recommendations/run" || path == "/recommendations/preview"):

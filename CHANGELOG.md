@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.60] - 2026-10-10
+
+- Apply explicit Stash Watchlist events to exact local files instead of scanning every library per click. Re-adds move to the first collection position, even when snapshot membership is unchanged. Journal incoming events before applying them; retry failures and ignore older delayed events.
+- Stash companion v0.2.14 saves Watchlist tags atomically and enqueues a server-side sync job in the same GraphQL request. Native tag-only hooks also queue sync instead of blocking on Silo. Keep unrelated tags and release the button after the save and enqueue response.
+
 ## Unreleased
 
 - Silo plugin v0.3.59 waits for inbound Watchlist reconciliation before acknowledging a Stash hook, preventing a quick remove/add from collapsing into an unchanged membership snapshot.

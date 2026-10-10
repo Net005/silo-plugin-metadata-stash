@@ -73,7 +73,7 @@ global.window = {
               if (query.includes("StashSiloUpdateSceneWatchlist")) {
                 if (watchlistSaveError) throw watchlistSaveError;
                 const input = options.variables.input;
-                return { data: { sceneUpdate: { id: input.id, tags: input.tag_ids.map(id => ({ id })) } } };
+                return { data: { bulkSceneUpdate: [{ id: input.ids[0], tags: input.tag_ids.mode === "ADD" ? [{id:"9"}] : [{id:"4"}] }], runPluginTask:"job-1" } };
               }
               return { data: {} };
             },
@@ -307,8 +307,14 @@ assert.equal(lazyQueryCalls.length, 1);
 assert.equal(lazyQueryCalls[0].options.variables, undefined);
 assert.deepEqual(lazyQueryCalls[0].executeOptions.variables, { id: "39382" });
 assert.deepEqual(mutationCalls.at(-1).options.variables, {
-  input: { id: "39382", tag_ids: ["9"] },
+  input: { ids:["39382"], tag_ids:{ids:["9"],mode:"ADD"} },
+  pluginId:"stash-silo-companion",
+  args:mutationCalls.at(-1).options.variables.args,
 });
+assert.equal(mutationCalls.at(-1).options.variables.args.desired, true);
+assert.equal(mutationCalls.at(-1).options.variables.args.scene_id, "39382");
+assert.match(mutationCalls.at(-1).query, /runPluginTask/);
+assert.match(mutationCalls.at(-1).query, /bulkSceneUpdate/);
 settingsQueryResult.data.configuration.plugins[
   "stash-silo-companion"
 ].subs_scene_path_filters = "/COLLECTIONS/jav/";
@@ -451,7 +457,9 @@ await completedWatchlistAction.props.children.props.onClick({
   stopPropagation() {},
 });
 assert.deepEqual(mutationCalls.at(-1).options.variables, {
-  input: { id: "39382", tag_ids: ["4"] },
+  input: { ids:["39382"], tag_ids:{ids:["9"],mode:"REMOVE"} },
+  pluginId:"stash-silo-companion",
+  args:mutationCalls.at(-1).options.variables.args,
 });
 
 // A failed save restores the original membership and releases the click guard.

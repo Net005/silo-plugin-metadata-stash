@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Fill missing Stash scene fields from exactly linked JAVBeacon releases."""
 
+from datetime import datetime, timezone
 import base64
 import json
 import os
@@ -487,7 +488,8 @@ def _sync_silo_watchlist_collection(payload, settings, hook):
     scene = _scene(payload, scene_id)
     if not scene:
         return {"state": "missing_scene"}
-    desired = any(str(tag.get("id")) == str(settings["watchlist_tag_id"]) for tag in scene.get("tags") or [])
+    desired = hook.get("desired", any(str(tag.get("id")) == str(settings["watchlist_tag_id"]) for tag in scene.get("tags") or []))
+    changed_at = hook.get("changed_at") or datetime.now(timezone.utc).isoformat()
     allowed = set(_silo_movie_libraries(settings))
     collections = _silo_get(settings, "/api/v2/admin/collections").get("items") or []
     # Use the same prefix as the selected Stash saved-filter importer. Never
@@ -522,7 +524,7 @@ def _sync_silo_watchlist_collection(payload, settings, hook):
         plugins = [row for row in installs if row.get("plugin_id") == "stash.metadata" and row.get("enabled", True)]
         if len(plugins) != 1:
             return {"state": "watchlist_reconciler_unavailable"}
-        result = _silo_post(settings, "/api/v2/plugin-content/plugins/" + str(plugins[0]["id"]) + "/recommendations/watchlist/reconcile", {"scene_id": scene_id})
+        result = _silo_post(settings, "/api/v2/plugin-content/plugins/" + str(plugins[0]["id"]) + "/recommendations/watchlist/reconcile", {"scene_id": scene_id, "desired": desired, "changed_at": changed_at, "paths": [f["path"] for f in scene.get("files") or [] if f.get("path")]})
         return {"state": "protected_reconcile", "result": result}
     results = [_sync_silo_watchlist_collection_one(settings, scene, scene_id, desired, collection) for collection in selected]
     return results[0] if len(results) == 1 else {"state": "multiple", "results": results}
@@ -671,7 +673,7 @@ def main():
         result = _import_silo(payload, _settings(payload), dry_run=_bool(args.get("dry_run"), True), cursor=str(args.get("start_cursor") or ""), start_index=args.get("start_index") or 0, start_library_id=str(args.get("start_library_id") or ""))
     elif mode == "watchlist_sync":
         scene_id = str(args.get("scene_id") or "")
-        result = _sync_silo_watchlist_collection(payload, _settings(payload), {"id": scene_id, "type": "Scene.Update.Post", "inputFields": ["tag_ids"]})
+        result = _sync_silo_watchlist_collection(payload, _settings(payload), {"id": scene_id, "type": "Scene.Update.Post", "inputFields": ["tag_ids"], **{key: args[key] for key in ("desired", "changed_at") if key in args}})
     elif mode == "scan":
         result = _scan(payload, _settings(payload), dry_run=_bool(args.get("dry_run"), True), start_page=args.get("start_page") or 1, start_index=args.get("start_index") or 0)
     elif mode == "subtitles":
@@ -683,6 +685,13 @@ def main():
     elif mode == "hook":
         settings = _settings(payload)
         hook = args.get("hookContext") or {}
+        edited = set(hook.get("inputFields") or []) - {"id", "clientMutationId"}
+        if hook.get("type") == "Scene.Update.Post" and edited == {"tag_ids"}:
+            scene_id = str(hook.get("id") or (hook.get("input") or {}).get("id") or "")
+            scene = _scene(payload, scene_id)
+            desired = any(str(tag.get("id")) == str(settings.get("watchlist_tag_id")) for tag in (scene or {}).get("tags") or [])
+            queued = _stash_graphql(payload, 'mutation($plugin:ID!,$args:Map!){runPluginTask(plugin_id:$plugin,description:"Sync Watchlist change to Silo",args_map:$args)}', {"plugin": PLUGIN_ID, "args": {"mode": "watchlist_sync", "scene_id": scene_id, "desired": desired, "changed_at": datetime.now(timezone.utc).isoformat()}})
+            return {"output": {"watchlist_job": queued.get("runPluginTask")}}
         if settings.get("silo_url") and settings.get("silo_api_key"):
             try:
                 _notify_silo_recommendations(payload, settings, hook)
@@ -700,12 +709,6 @@ def main():
         except Exception as error:
             silo_collection = {"state": "error", "error": str(error)}
             _log("Silo WatchList collection update failed: " + str(error))
-        # Tag-only edits (including Watchlist) do not alter descriptive metadata
-        # or playback. Avoid enrichment and targeted metadata refresh on their
-        # synchronous save path; recommendations and collection sync still run.
-        edited = set(hook.get("inputFields") or []) - {"id", "clientMutationId"}
-        if hook.get("type") == "Scene.Update.Post" and edited == {"tag_ids"}:
-            return {"output": {"silo_collection": silo_collection, "metadata": "unchanged"}}
         if settings.get("javbeacon_url") and settings.get("webhook_secret"):
             try:
                 realtime = features.request_realtime_sync(payload, args)

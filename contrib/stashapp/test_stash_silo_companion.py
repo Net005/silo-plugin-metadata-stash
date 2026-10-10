@@ -63,17 +63,18 @@ class HookAndScanTests(unittest.TestCase):
     def test_tag_only_save_syncs_watchlist_without_metadata_work(self):
         payload = {"args": {"mode": "hook", "hookContext": {"id": "42", "type": "Scene.Update.Post", "inputFields": ["id", "tag_ids"]}}}
         with patch.object(plugin.json, "load", return_value=payload), \
-             patch.object(plugin, "_settings", return_value={}), \
-             patch.object(plugin, "_sync_silo_watchlist_collection", return_value={"state": "synced"}) as sync, \
+             patch.object(plugin, "_settings", return_value={"watchlist_tag_id":"9"}), \
+             patch.object(plugin, "_scene", return_value={"tags":[{"id":"9"}]}), \
+             patch.object(plugin, "_stash_graphql", return_value={"runPluginTask":"job-1"}) as queued, \
+             patch.object(plugin, "_sync_silo_watchlist_collection") as sync, \
              patch.object(plugin, "_enrich_scene") as enrich, \
-             patch.object(plugin, "_refresh_silo_scene") as refresh, \
-             patch.object(plugin.features, "request_realtime_sync") as realtime:
+             patch.object(plugin, "_refresh_silo_scene") as refresh:
             result = plugin.main()["output"]
-        sync.assert_called_once()
+        sync.assert_not_called()
         enrich.assert_not_called()
         refresh.assert_not_called()
-        realtime.assert_not_called()
-        self.assertEqual(result["silo_collection"]["state"], "synced")
+        self.assertEqual(result["watchlist_job"], "job-1")
+        self.assertTrue(queued.call_args.args[2]["args"]["desired"])
 
     @patch.object(plugin, "_enrich_scene", return_value={"state": "unchanged"})
     @patch.object(plugin, "_stash_graphql")

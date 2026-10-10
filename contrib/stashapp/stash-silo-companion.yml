@@ -1,6 +1,6 @@
 name: Stash.Silo Companion
 description: Enrich linked metadata, keep selected Silo Watchlist collections current and notify weekly recommendations of Stash changes.
-version: 0.2.13
+version: 0.2.14
 ui:
   javascript:
     - stash_silo_subtitles.js

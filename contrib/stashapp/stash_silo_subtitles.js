@@ -101,14 +101,15 @@
   `;
 
   const UPDATE_SCENE_WATCHLIST = gql`
-    mutation StashSiloUpdateSceneWatchlist($input: SceneUpdateInput!) {
-      sceneUpdate(input: $input) {
+    mutation StashSiloUpdateSceneWatchlist($input: BulkSceneUpdateInput!, $pluginId: ID!, $args: Map!) {
+      bulkSceneUpdate(input: $input) {
         id
         tags {
           id
           name
         }
       }
+      runPluginTask(plugin_id: $pluginId, description: "Sync Watchlist change to Silo", args_map: $args)
     }
   `;
 
@@ -367,7 +368,7 @@
       saving.current = true;
       setPending(true);
       const previousMembership = membershipOverride;
-      // Paint immediately while the native scene save runs its realtime sync hook.
+      // Paint immediately; tag save and server-side job enqueue are the only awaited work.
       setMembershipOverride(!inWatchlist);
       try {
         const currentScene = await resolveScene();
@@ -375,12 +376,14 @@
         const currentMembership = membershipOverride ?? currentScene.tags.some((tag) => String(tag?.id) === tagID);
         const desired = !currentMembership;
         setMembershipOverride(desired);
-        const existing = currentScene.tags.map((tag) => String(tag.id));
-        const tagIDs = desired ? [...new Set([...existing, tagID])] : existing.filter((id) => id !== tagID);
         const response = await updateScene({
-          variables: { input: { id: String(scene.id), tag_ids: tagIDs } },
+          variables: {
+            input: { ids: [String(scene.id)], tag_ids: { ids: [tagID], mode: desired ? "ADD" : "REMOVE" } },
+            pluginId: PLUGIN_ID,
+            args: { mode: "watchlist_sync", scene_id: String(scene.id), desired, changed_at: new Date().toISOString() },
+          },
         });
-        const saved = response.data?.sceneUpdate;
+        const saved = response.data?.bulkSceneUpdate?.find(item => String(item.id) === String(scene.id));
         if (!Array.isArray(saved?.tags)) throw new Error("Watchlist save could not be confirmed. Refresh before retrying.");
         const confirmed = saved.tags.some((tag) => String(tag.id) === tagID);
         setMembershipOverride(confirmed);

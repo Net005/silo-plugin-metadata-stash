@@ -31,6 +31,7 @@ type watchlistActionVersion struct {
 	Desired bool      `json:"desired"`
 }
 type watchlistJournal struct {
+	Incoming          map[string]watchlistIntent        `json:"incoming_stash_actions,omitempty"`
 	OrderPolicy       int                               `json:"order_policy,omitempty"`
 	NativeHeadAddedAt time.Time                         `json:"native_head_added_at,omitempty"`
 	NativeBaseline    map[string]bool                   `json:"native_baseline,omitempty"`
@@ -456,6 +457,9 @@ func (s *runtimeServer) backfillWatchlistLocked(ctx context.Context) (int, error
 	nativeAdded := map[string]time.Time{head: headEntry.AddedAt}
 	tagID := ""
 	for _, row := range rows {
+		if err := s.drainInboundWatchlist(ctx, row.ID); err != nil {
+			return done, err
+		}
 		r, j, tag, e := s.watchlistState(ctx, row.ID)
 		if e != nil {
 			return done, e
