@@ -4,6 +4,12 @@
 
 - Browser userscript v1.2.1 records explicit O increments at the matched Stash scene's latest last-played timestamp, read fresh on each click. Scenes without playback history retain the current-time default.
 
+## [0.3.63] - 2026-10-11
+
+- Measure active Silo playback from fresh advancing session telemetry every five seconds, scoped to the configured owner profile. Pauses, stale sessions, long gaps and large seeks cannot credit a video's full runtime.
+- Save pending duration checkpoints in private host instance state and send additive Stash activity without overwriting resume positions. Reserve mutations before sending so uncertain responses cannot double count on retries or restarts. Known Stash read failures retain pending checkpoints.
+- Use one duration writer for measured playback; keep resume and completed-play sync separate from duration. Add an admin-only measurement status endpoint. Requires SDK v0.24 private host state support; native Stash player tracking is unchanged.
+
 ## [0.3.62] - 2026-10-11
 
 - Discard parked and pending Watchlist retries superseded by a newer completed action or queued Stash event. File availability recovery can no longer replay an older action over the user's newer choice.

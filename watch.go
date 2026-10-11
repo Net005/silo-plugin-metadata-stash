@@ -82,7 +82,7 @@ func (s *watchSyncServer) applyOne(ctx context.Context, e *pluginv1.WatchSyncEve
 		id = ""
 	}
 	id = stashPlaybackID(id)
-	if id == "" && releaseID == 0 && e.GetMedia().GetMediaItemId() != "" {
+	if id == "" && e.GetMedia().GetMediaItemId() != "" {
 		s.runtime.mu.RLock()
 		base, key := s.runtime.siloBase, s.runtime.siloKey
 		s.runtime.mu.RUnlock()
@@ -100,7 +100,9 @@ func (s *watchSyncServer) applyOne(ctx context.Context, e *pluginv1.WatchSyncEve
 	if c != nil && c.excludedScenes[id] {
 		return result
 	}
-	if s.runtime.legacy != nil && s.runtime.legacy.Provider().Configured() && (id != "" || releaseID > 0) {
+	// A measured session has one duration writer. Keep resume/completion here,
+	// without also sending elapsed-time events to the legacy playback engine.
+	if s.runtime.legacy != nil && s.runtime.legacy.Provider().Configured() && (id != "" || releaseID > 0) && !s.runtime.measuredPlaybackConfigured() {
 		return s.applyViaJAVBeacon(ctx, e, id, releaseID)
 	}
 	if id == "" {

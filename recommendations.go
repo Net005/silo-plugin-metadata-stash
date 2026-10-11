@@ -882,6 +882,9 @@ func (s *recommendationServer) Handle(ctx context.Context, req *pluginv1.HandleH
 		return &pluginv1.HandleHTTPResponse{StatusCode: int32(status), Headers: map[string]string{"Content-Type": "application/json", "Cache-Control": "no-store"}, Body: b}, nil
 	}
 	path := strings.TrimSuffix(req.Path, "/")
+	if req.Method == "GET" && path == "/recommendations/playtime/status" {
+		return respond(200, s.runtime.playtimeStatus())
+	}
 	if req.Method == "GET" && (path == "/recommendations" || path == "/recommendations/admin") {
 		return recommendationPage(ctx)
 	}

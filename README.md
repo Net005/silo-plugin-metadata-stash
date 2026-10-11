@@ -30,7 +30,7 @@
 | Feature | What you get |
 | --- | --- |
 | **Metadata & people** | Stash scene metadata, artwork and linked performer profiles in Silo. Exact matching skips ambiguous results. |
-| **Playback sync** | Completed Silo plays and resume checkpoints sent to Stash, with duplicate protection. A separate worker imports Stash watched state into matched local Silo items. |
+| **Playback sync** | Active Silo playtime, completed plays and resume checkpoints sent to Stash, with duplicate protection. A separate worker imports Stash watched state into matched local Silo items. |
 | **Watchlist sync** | Stash tag changes and Silo Watchlist actions update the selected saved-filter collections. Re-adding an item moves it to the top. Changes queue for background sync and retry after failures. |
 | **Saved-filter collections** | Selected Stash scene filters become Silo collections, with optional JAVBeacon release filters and rotating member artwork. |
 | **Artwork storage** | Cache selected posters and backdrops in Silo's local or S3 storage. Optional JAVBeacon adds conformed covers and cached screenshots. |
@@ -144,3 +144,9 @@ node --test contrib/stashapp/test_stash_silo_subtitles.js contrib/stashapp/test_
 The plugin exposes `metadata_provider.v1`, `image_resolver.v1` and `watch_sync_provider.v1`.
 
 <sub>Stash and Silo logos identify the projects this integration connects. Silo's name and logo are trademarks of Silo Media L.L.C.; this is an independent plugin.</sub>
+
+Active Silo playtime is measured every five seconds for the **Active playtime owner profile ID** (blank uses the recommendation owner). Configure the Silo admin connection and use a Silo build supporting SDK v0.24 private instance state. Check the admin-only plugin route `/recommendations/playtime/status` for `enabled`, `private_state_ready` and `last_check`.
+
+The worker credits wall time between fresh advancing session reports, rejecting pauses, large seeks, stalled positions and gaps over 30 seconds. Resume position and completed plays remain separate. Expect a small undercount at startup, pause/resume transitions and session end; brief buffering or small seeks between reports cannot be distinguished perfectly. Server telemetry cannot establish whether someone is watching the screen.
+
+Pending duration survives restarts and known Stash read failures. Additive Stash mutations are reserved before sending and are not replayed after an uncertain response, so a failed write can lose its reserved checkpoint instead of counting it twice. Plugin downtime is not backfilled. Existing inaccurate totals are not rewritten, and Silo's native history display and Stash's native browser tracker are unchanged. Disable active measurement in connection settings to restore legacy playback forwarding.

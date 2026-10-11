@@ -44,6 +44,10 @@ type runtimeServer struct {
 	pollOnce                                                 sync.Once
 	watchlistMu                                              sync.Mutex
 	watchlistPollOnce                                        sync.Once
+	playtimePollOnce                                         sync.Once
+	playtimeDisabled                                         bool
+	playtimeProfile                                          string
+	playtimeHealth                                           map[string]any
 	task                                                     *scheduledTaskServer
 	legacy                                                   *legacytasks.Manager
 	stashFilters, stashPrefix, releaseFilters, releasePrefix string
@@ -81,6 +85,8 @@ func (s *runtimeServer) Configure(_ context.Context, req *pluginv1.ConfigureRequ
 		}
 		s.artwork = &artworkClient{base: strings.TrimRight(text(v["javbeacon_url"]), "/"), key: artKey}
 		s.siloBase = strings.TrimRight(text(v["silo_base_url"]), "/")
+		s.playtimeDisabled, _ = v["playtime_tracking_disabled"].(bool)
+		s.playtimeProfile = text(v["playtime_profile_id"])
 		siloKey := text(v["silo_api_key"])
 		if siloKey != "" {
 			s.siloKey = siloKey
@@ -121,6 +127,7 @@ func (s *runtimeServer) Configure(_ context.Context, req *pluginv1.ConfigureRequ
 	if s.recommendations != nil {
 		s.recommendations.pollOnce.Do(func() { go s.recommendations.poll() })
 	}
+	s.playtimePollOnce.Do(func() { go s.pollPlaytime() })
 	return &pluginv1.ConfigureResponse{}, nil
 }
 func text(v any) string { s, _ := v.(string); return strings.TrimSpace(s) }

@@ -324,6 +324,21 @@ func (c *stashClient) imageURL(raw string) string {
 	full.RawQuery = q.Encode()
 	return full.String()
 }
+
+// Duration-only writes preserve resume updates from concurrent players.
+func (c *stashClient) addPlayDuration(ctx context.Context, id string, delta float64) error {
+	var out struct {
+		OK bool `json:"sceneSaveActivity"`
+	}
+	err := c.graphql(ctx, fmt.Sprintf(`mutation { sceneSaveActivity(id:%q,playDuration:%.3f) }`, id, delta), nil, &out)
+	if err != nil {
+		return err
+	}
+	if !out.OK {
+		return errors.New("Stash rejected play duration")
+	}
+	return nil
+}
 func (c *stashClient) saveActivity(ctx context.Context, id string, resume, delta float64) error {
 	if resume < 0 {
 		resume = 0

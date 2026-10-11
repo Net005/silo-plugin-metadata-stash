@@ -1,6 +1,6 @@
 {
   "plugin_id": "stash.metadata",
-  "version": "0.3.62",
+  "version": "0.3.63",
   "checksum": "__CHECKSUM__",
   "silo_api_version": "v1",
   "presentation": {
@@ -162,7 +162,7 @@
       "key": "connection",
       "title": "StashApp Connection",
       "description": "Direct StashApp GraphQL connection.",
-      "json_schema": "{\"type\":\"object\",\"properties\":{\"base_url\":{\"type\":\"string\",\"format\":\"uri\",\"minLength\":1},\"api_key\":{\"type\":\"string\",\"minLength\":1},\"silo_base_url\":{\"type\":\"string\",\"format\":\"uri\"},\"silo_api_key\":{\"type\":\"string\"},\"javbeacon_url\":{\"type\":\"string\",\"format\":\"uri\"},\"javbeacon_api_key\":{\"type\":\"string\"},\"stash_saved_filter_selection\":{\"type\":\"string\"},\"stash_saved_filter_prefix\":{\"type\":\"string\"},\"saved_filter_selection\":{\"type\":\"string\"},\"saved_filter_prefix\":{\"type\":\"string\"},\"playback_excluded_scene_ids\":{\"type\":\"string\"},\"nonjav_poster_repair_enabled\":{\"type\":\"boolean\"},\"nonjav_poster_layout\":{\"type\":\"string\",\"enum\":[\"smart\",\"contain\",\"face\"]}},\"required\":[\"base_url\"],\"additionalProperties\":false}",
+      "json_schema": "{\"type\":\"object\",\"properties\":{\"base_url\":{\"type\":\"string\",\"format\":\"uri\",\"minLength\":1},\"api_key\":{\"type\":\"string\",\"minLength\":1},\"silo_base_url\":{\"type\":\"string\",\"format\":\"uri\"},\"silo_api_key\":{\"type\":\"string\"},\"javbeacon_url\":{\"type\":\"string\",\"format\":\"uri\"},\"javbeacon_api_key\":{\"type\":\"string\"},\"stash_saved_filter_selection\":{\"type\":\"string\"},\"stash_saved_filter_prefix\":{\"type\":\"string\"},\"saved_filter_selection\":{\"type\":\"string\"},\"saved_filter_prefix\":{\"type\":\"string\"},\"playback_excluded_scene_ids\":{\"type\":\"string\"},\"nonjav_poster_repair_enabled\":{\"type\":\"boolean\"},\"nonjav_poster_layout\":{\"type\":\"string\",\"enum\":[\"smart\",\"contain\",\"face\"]},\"playtime_profile_id\":{\"type\":\"string\"},\"playtime_tracking_disabled\":{\"type\":\"boolean\"}},\"required\":[\"base_url\"],\"additionalProperties\":false}",
       "required": true,
       "admin_form": {
         "fields": [
@@ -251,6 +251,21 @@
             "control": "ADMIN_FORM_CONTROL_TEXT",
             "default_value": "smart",
             "description": "smart renders sharp 1200x1800 face-focused covers through JAVBeacon v1.0.286+. Keeps fitting face groups; otherwise selects a confident face with at least one third of the frame for surrounding detail. Existing close-ups remain unchanged if no face fits with context. Rotated faces supported; no-face images use a centre crop. contain keeps the full original; face uses the legacy detector."
+          },
+          {
+            "key": "playtime_profile_id",
+            "label": "Active playtime owner profile ID",
+            "control": "ADMIN_FORM_CONTROL_TEXT",
+            "required": false,
+            "description": "Measures active Silo playback for this profile only. Blank uses the recommendation owner profile. Requires Silo admin credentials and private host state support."
+          },
+          {
+            "key": "playtime_tracking_disabled",
+            "label": "Disable active playtime measurement",
+            "control": "ADMIN_FORM_CONTROL_SWITCH",
+            "required": false,
+            "default_value": false,
+            "description": "Disables the measured duration worker and restores legacy JAVBeacon playback forwarding."
           }
         ]
       }
@@ -462,6 +477,13 @@
       ],
       "access": "admin",
       "id": "poster-renewal-start"
+    },
+    {
+      "path": "/recommendations/playtime/status",
+      "methods": [
+        "GET"
+      ],
+      "access": "admin"
     }
   ]
 }
