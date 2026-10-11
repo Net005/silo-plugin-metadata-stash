@@ -98,6 +98,7 @@ func (s *runtimeServer) applyInboundWatchlist(ctx context.Context, change inboun
 				continue
 			}
 			j.Incoming[media] = watchlistIntent{Desired: *change.Desired, SceneID: change.SceneID, Changed: change.Changed}
+			delete(j.Inactive, media)
 			// Persist before touching membership/order so the normal retry worker can finish a partial application.
 			if err = s.saveWatchlistState(ctx, r, j, tag); err != nil {
 				return err

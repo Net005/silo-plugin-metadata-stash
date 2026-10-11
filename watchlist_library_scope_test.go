@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestWatchlistResolveRejectsSharedMovieIdentityAcrossPages(t *testing.T) {
@@ -50,15 +51,18 @@ func TestWatchlistResolveRejectsSharedMovieIdentityAcrossPages(t *testing.T) {
 
 func TestWatchlistParksMissingLibraryIntentAndContinues(t *testing.T) {
 	for _, deleted := range []bool{false, true} {
-		t.Run(fmt.Sprintf("deleted=%v", deleted), func(t *testing.T) { testWatchlistInactiveRetry(t, deleted) })
+		for _, superseded := range []string{"", "completed", "incoming", "pending-completed", "pending-incoming"} {
+			t.Run(fmt.Sprintf("deleted=%v/superseded=%s", deleted, superseded), func(t *testing.T) { testWatchlistInactiveRetry(t, deleted, superseded) })
+		}
 	}
 }
 
-func testWatchlistInactiveRetry(t *testing.T, deleted bool) {
+func testWatchlistInactiveRetry(t *testing.T, deleted bool, superseded string) {
 	journal := watchlistJournal{Version: 1, NativeSeeded: true, Baseline: map[string]bool{"gone": true, "valid": true}, Pending: map[string]watchlistIntent{"gone": {Desired: true}, "valid": {Desired: true}}}
 	config := map[string]json.RawMessage{}
 	config[watchlistJournalKey], _ = json.Marshal(journal)
 	back := false
+	retrying := false
 	silo := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("ETag", `"one"`)
 		switch r.URL.Path {
@@ -84,7 +88,16 @@ func testWatchlistInactiveRetry(t *testing.T, deleted bool) {
 				w.WriteHeader(204)
 			}
 		case "/api/v2/admin/collections/wl/items":
+			if retrying && strings.HasSuffix(superseded, "incoming") {
+				fmt.Fprint(w, `{"items":[{"media_item_id":"valid"}]}`)
+				return
+			}
 			fmt.Fprint(w, `{"items":[{"media_item_id":"gone"},{"media_item_id":"valid"}]}`)
+		case "/api/v2/admin/collections/wl/items/gone":
+			if !retrying || !strings.HasSuffix(superseded, "incoming") || r.Method != "PUT" {
+				t.Errorf("unexpected retry mutation %s", r.Method)
+			}
+			w.WriteHeader(http.StatusNotFound)
 		case "/api/v2/admin/items/gone/files":
 			if back {
 				fmt.Fprint(w, `{"items":[{"library_id":"16","file_path":"/stash/scene.mp4"}]}`)
@@ -134,14 +147,39 @@ func testWatchlistInactiveRetry(t *testing.T, deleted bool) {
 		t.Fatal("missing-library intent not preserved")
 	}
 	back = true
+	retrying = true
+	if superseded != "" {
+		// A newer action arrived while the old add was parked. Exercise both
+		// journals from older installs and an unavailable incoming Stash event.
+		journal.LastActions = map[string]watchlistActionVersion{}
+		if strings.HasSuffix(superseded, "completed") {
+			journal.LastActions["gone"] = watchlistActionVersion{Desired: false, Changed: time.Now().UTC()}
+		} else {
+			journal.Incoming = map[string]watchlistIntent{"gone": {Desired: true, Changed: time.Now().UTC()}}
+			delete(journal.Baseline, "gone")
+			back = false
+		}
+		if strings.HasPrefix(superseded, "pending-") {
+			journal.Pending["gone"] = journal.Inactive["gone"]
+			delete(journal.Inactive, "gone")
+		}
+		config[watchlistJournalKey], _ = json.Marshal(journal)
+	}
 	n, err = rt.backfillWatchlist(t.Context())
-	if err != nil || n != 1 {
+	want := 1
+	if superseded != "" {
+		want = 0
+	}
+	if err != nil || n != want {
 		t.Fatalf("restored processed=%d err=%v", n, err)
 	}
 	journal = watchlistJournal{}
 	json.Unmarshal(config[watchlistJournalKey], &journal)
 	if len(journal.Pending) != 0 || len(journal.Inactive) != 0 {
 		t.Fatal("restored intent not acknowledged")
+	}
+	if strings.HasSuffix(superseded, "incoming") && !journal.Incoming["gone"].Desired {
+		t.Fatal("newer unavailable Stash action was lost")
 	}
 }
 

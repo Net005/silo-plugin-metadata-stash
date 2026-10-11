@@ -62,6 +62,12 @@ type watchlistCollection struct {
 	SourceConfig map[string]json.RawMessage `json:"source_config"`
 }
 
+// Parked and pending retries must not overwrite a newer local or Stash action.
+func (j watchlistJournal) superseded(media string, intent watchlistIntent) bool {
+	return j.LastActions[media].Changed.After(intent.Changed) ||
+		j.Incoming[media].Changed.After(intent.Changed)
+}
+
 func (s *runtimeServer) siloWatchlistRequest(ctx context.Context, method, path string, payload, target any, etag string) (string, error) {
 	s.mu.RLock()
 	base, key, profile := s.siloBase, s.siloKey, s.recommendationConfig.Profile
@@ -621,6 +627,17 @@ func (s *runtimeServer) backfillWatchlistLocked(ctx context.Context) (int, error
 		// queued. Retain it durably without blocking every other library. Resume
 		// it if a file returns, unless a newer local action superseded it.
 		for media, intent := range j.Inactive {
+			if j.superseded(media, intent) || j.Pending[media].Changed.After(intent.Changed) {
+				delete(j.Inactive, media)
+				if e = s.saveWatchlistState(ctx, r, j, tag); e != nil {
+					return done, e
+				}
+				r, j, tag, e = s.watchlistState(ctx, row.ID)
+				if e != nil {
+					return done, e
+				}
+				continue
+			}
 			paths, err := fileClient.ItemFilePathsForLibrary(ctx, media, row.LibraryID)
 			if err != nil {
 				return done, err
@@ -641,6 +658,17 @@ func (s *runtimeServer) backfillWatchlistLocked(ctx context.Context) (int, error
 			}
 		}
 		for media, intent := range j.Pending {
+			if j.superseded(media, intent) {
+				delete(j.Pending, media)
+				if e = s.saveWatchlistState(ctx, r, j, tag); e != nil {
+					return done, e
+				}
+				r, j, tag, e = s.watchlistState(ctx, row.ID)
+				if e != nil {
+					return done, e
+				}
+				continue
+			}
 			paths, err := fileClient.ItemFilePathsForLibrary(ctx, media, row.LibraryID)
 			if err != nil {
 				return done, err
