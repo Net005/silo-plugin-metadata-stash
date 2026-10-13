@@ -406,20 +406,30 @@ func (s *metadataServer) GetImages(ctx context.Context, req *pluginv1.GetImagesR
 		}
 		if row != nil {
 			out := &pluginv1.GetImagesResponse{}
+			seen := map[string]bool{}
+			add := func(kind, path string) {
+				if path == "" || seen[kind+"\x00"+path] {
+					return
+				}
+				seen[kind+"\x00"+path] = true
+				out.Images = append(out.Images, &pluginv1.ImageRecord{Kind: kind, Url: path})
+			}
 			art := s.runtime.sceneArtwork(ctx, id)
 			if art != nil && art.PosterPath != "" {
-				out.Images = append(out.Images, &pluginv1.ImageRecord{Kind: "poster", Url: backendImagePath(art.PosterPath)})
+				add("poster", backendImagePath(art.PosterPath))
 			}
-			if row.Paths.Screenshot != "" && len(out.Images) == 0 {
-				out.Images = append(out.Images, &pluginv1.ImageRecord{Kind: "poster", Url: coverPath(id)})
+			// Keep the conformed poster first, but let the artwork picker also
+			// offer the original Stash screenshot as a poster.
+			if row.Paths.Screenshot != "" {
+				add("poster", coverPath(id))
 			}
 			if art != nil {
 				for _, path := range art.BackdropPaths {
-					out.Images = append(out.Images, &pluginv1.ImageRecord{Kind: "backdrop", Url: backendImagePath(path)})
+					add("backdrop", backendImagePath(path))
 				}
 			}
 			if row.Paths.Screenshot != "" {
-				out.Images = append(out.Images, &pluginv1.ImageRecord{Kind: "backdrop", Url: coverPath(id)})
+				add("backdrop", coverPath(id))
 			}
 			return out, nil
 		}

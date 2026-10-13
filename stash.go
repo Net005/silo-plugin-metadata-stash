@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -150,7 +151,7 @@ func (c *stashClient) search(ctx context.Context, query string) ([]scene, error)
 	// A complete media path identifies the file, even when titles are blank,
 	// duplicated, or assigned to the wrong part. Do not mix weaker title hits
 	// into an exact-path result and turn a verified file match ambiguous.
-	if filepath.IsAbs(strings.TrimSpace(query)) {
+	if path.IsAbs(strings.TrimSpace(query)) || filepath.IsAbs(strings.TrimSpace(query)) {
 		var data struct {
 			Found struct {
 				Scenes []scene `json:"scenes"`

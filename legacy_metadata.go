@@ -97,8 +97,10 @@ func legacyMetadataItem(m *provider.Metadata) *pluginv1.MetadataItem {
 
 func legacyImages(m *provider.Metadata) []*pluginv1.ImageRecord {
 	images := []*pluginv1.ImageRecord{}
+	seen := map[string]bool{}
 	add := func(kind, path string) {
-		if url := legacyImagePath(path); url != "" {
+		if url := legacyImagePath(path); url != "" && !seen[kind+"\x00"+url] {
+			seen[kind+"\x00"+url] = true
 			images = append(images, &pluginv1.ImageRecord{Kind: kind, Url: url})
 		}
 	}

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	legacyprovider "github.com/Net005/silo-plugin-metadata-stash/internal/legacyprovider"
 	legacytasks "github.com/Net005/silo-plugin-metadata-stash/internal/legacytasks"
 	pluginv1 "github.com/Silo-Server/silo-plugin-sdk/pkg/pluginproto/silo/plugin/v1"
 )
@@ -71,5 +72,20 @@ func TestLegacyReleaseIDResolvesToLinkedStashScene(t *testing.T) {
 	ids := item.GetProviderIds().AsMap()
 	if item.GetTitle() != "Curated Stash Title" || ids["stash"] != "42" || ids["javbeacon"] != "7" {
 		t.Fatalf("item=%v ids=%v", item, ids)
+	}
+}
+
+func TestLegacyImageChoicesDeduplicateWithinEachKind(t *testing.T) {
+	images := legacyImages(&legacyprovider.Metadata{
+		CoverPath: "/covers/7/poster", CoverBackdropPath: "/covers/7/original",
+		BackdropURLs:   []string{"/covers/7/original", "/screenshots/7/0", "/screenshots/7/0"},
+		StashPosterURL: "/covers/7/poster", StashScreenshotURL: "/screenshots/7/0",
+	})
+	if len(images) != 3 || images[0].Kind != "poster" || images[0].Url != "javbeacon://covers/7/poster" || images[1].Url != "javbeacon://covers/7/original" || images[2].Url != "javbeacon://screenshots/7/0" {
+		t.Fatalf("duplicate or reordered image choices: %v", images)
+	}
+	images = legacyImages(&legacyprovider.Metadata{CoverPath: "/covers/7/poster", CoverBackdropPath: "/covers/7/poster"})
+	if len(images) != 2 || images[0].Kind != "poster" || images[1].Kind != "backdrop" {
+		t.Fatalf("one image must remain usable in both roles: %v", images)
 	}
 }

@@ -40,13 +40,16 @@ func TestConformedPosterAndScreenshotsBecomeSiloImages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(images.GetImages()) != 4 {
+	if len(images.GetImages()) != 5 {
 		t.Fatalf("images=%v", images.GetImages())
 	}
 	if images.GetImages()[0].GetKind() != "poster" || images.GetImages()[0].GetUrl() != "stash://backend/covers/7/stash-poster" {
 		t.Fatalf("first image=%v", images.GetImages()[0])
 	}
-	for _, image := range images.GetImages()[1:] {
+	if got := images.GetImages()[1]; got.GetKind() != "poster" || got.GetUrl() != coverPath("42") {
+		t.Fatalf("original screenshot poster=%v", got)
+	}
+	for _, image := range images.GetImages()[2:] {
 		if image.GetKind() != "backdrop" {
 			t.Fatalf("non-backdrop=%v", image)
 		}
@@ -115,7 +118,7 @@ func TestUnlinkedStashCoverStillUsesPosterCropAndRawBackdrop(t *testing.T) {
 		t.Fatalf("metadata=%v err=%v", metadata, err)
 	}
 	images, err := server.GetImages(t.Context(), &pluginv1.GetImagesRequest{ProviderId: "stash:42", ItemType: "movie"})
-	if err != nil || len(images.GetImages()) != 2 || images.Images[0].Url != want || images.Images[1].Url != coverPath("42") {
+	if err != nil || len(images.GetImages()) != 3 || images.Images[0].Url != want || images.Images[1].Kind != "poster" || images.Images[1].Url != coverPath("42") || images.Images[2].Kind != "backdrop" || images.Images[2].Url != coverPath("42") {
 		t.Fatalf("images=%v err=%v", images, err)
 	}
 	resolved := server.resolveImageURL(runtime.client, want)
@@ -144,5 +147,30 @@ func TestSmartPosterRejectsInvalidRendererImage(t *testing.T) {
 	defer server.Close()
 	if _, err := (&artworkClient{base: server.URL, key: "key"}).renderScenePoster(context.Background(), []byte("source")); err == nil {
 		t.Fatal("accepted invalid crop")
+	}
+}
+
+func TestImageChoicesDeduplicateWithinEachKind(t *testing.T) {
+	stash := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"data":{"findScene":{"id":"42","title":"Scene","paths":{"screenshot":"/scene/42/screenshot"}}}}`))
+	}))
+	defer stash.Close()
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"scene_id":"42","poster_path":"/covers/7/stash-poster","backdrop_paths":["/covers/7/original","/covers/7/original","/screenshots/7/0","/screenshots/7/0"]}`))
+	}))
+	defer backend.Close()
+	server := &metadataServer{runtime: &runtimeServer{
+		client:  &stashClient{base: stash.URL, key: "stash-key"},
+		artwork: &artworkClient{base: backend.URL, key: "artwork-key"},
+	}}
+	images, err := server.GetImages(t.Context(), &pluginv1.GetImagesRequest{ProviderId: "stash:42", ItemType: "movie"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(images.GetImages()) != 5 {
+		t.Fatalf("images=%v", images.GetImages())
+	}
+	if images.Images[0].Url != "stash://backend/covers/7/stash-poster" || images.Images[1].Kind != "poster" || images.Images[1].Url != coverPath("42") || images.Images[4].Kind != "backdrop" || images.Images[4].Url != coverPath("42") {
+		t.Fatalf("preferred poster or screenshot choices changed: %v", images.Images)
 	}
 }

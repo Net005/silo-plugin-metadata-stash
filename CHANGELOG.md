@@ -4,6 +4,13 @@
 
 - Browser userscript v1.2.1 records explicit O increments at the matched Stash scene's latest last-played timestamp, read fresh on each click. Scenes without playback history retain the current-time default.
 
+## [0.3.64] - 2026-10-13
+
+- Offer the original Stash screenshot alongside the conformed poster in Silo's artwork picker, keeping the conformed poster first and the automatic metadata poster unchanged.
+- Deduplicate repeated backdrop choices while retaining the same image as both a poster and a backdrop.
+- Recognize absolute Unix library paths independently of the build host when performing exact scene lookup.
+- Update to Silo plugin SDK v0.25.0 and its current gRPC dependency.
+
 ## [0.3.63] - 2026-10-11
 
 - Measure active Silo playback from fresh advancing session telemetry every five seconds, scoped to the configured owner profile. Pauses, stale sessions, long gaps and large seeks cannot credit a video's full runtime.
