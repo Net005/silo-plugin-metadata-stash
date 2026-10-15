@@ -15,7 +15,7 @@ import (
 type PlaybackSession struct {
 	ID        string    `json:"session_id"`
 	ContentID string    `json:"content_id"`
-	FileID    int64     `json:"media_file_id"`
+	FileID    int64     `json:"media_file_id,string"`
 	Profile   string    `json:"profile_id"`
 	MediaType string    `json:"media_type"`
 	Position  float64   `json:"position_seconds"`

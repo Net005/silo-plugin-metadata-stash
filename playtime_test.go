@@ -19,6 +19,78 @@ import (
 func playtimeRow(at time.Time, pos float64) provider.PlaybackSession {
 	return provider.PlaybackSession{ID: "session", ContentID: "item", FileID: 7, Profile: "owner", MediaType: "movie", Position: pos, Updated: at}
 }
+
+func TestPlaytimeCreditsSiloStringFileIDTelemetry(t *testing.T) {
+	at := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	poll := 0
+	silo := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v2/admin/sessions" || r.Header.Get("Authorization") != "Bearer test-key" {
+			t.Errorf("unexpected session request: %s", r.URL.Path)
+		}
+		fileID := "7"
+		if poll == 2 {
+			fileID = "8"
+		}
+		// Silo's v2 API serializes database IDs as strings, even though
+		// position_seconds is numeric. Keep this fixture independent of the DTO.
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"items": []map[string]any{{
+				"session_id": "session", "content_id": "item", "media_file_id": fileID,
+				"profile_id": "owner", "media_type": "movie", "is_paused": false,
+				"position_seconds": 100 + poll*10,
+				"updated_at":       at.Add(time.Duration(poll) * 10 * time.Second).Format(time.RFC3339Nano),
+			}},
+			"page": map[string]any{"has_more": false},
+		})
+		poll++
+	}))
+	defer silo.Close()
+	client := provider.NewSiloClient(silo.URL, "test-key")
+	state := &playtimeState{Pending: map[string]float64{}, Samples: map[string]playtimeSample{}}
+	resolves := 0
+	for i := 0; i < 3; i++ {
+		rows, err := client.PlaybackSessions(t.Context())
+		if err != nil {
+			t.Fatalf("poll %d: %v", i, err)
+		}
+		if err := state.observe(rows, "owner", at.Add(time.Duration(i)*10*time.Second), func(provider.PlaybackSession) (string, error) {
+			resolves++
+			return "42", nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Only the advancing observations of the same file earn time. A file
+	// change must re-resolve identity and establish a new baseline.
+	if state.Pending["42"] != 10 || resolves != 2 || state.Samples["session"].Session.FileID != 8 {
+		t.Fatalf("pending=%v resolves=%d sample=%+v", state.Pending, resolves, state.Samples["session"])
+	}
+	writes := 0
+	stash := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var input struct{ Query string }
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			t.Error(err)
+		}
+		if strings.Contains(input.Query, "sceneSaveActivity") {
+			writes++
+			if !strings.Contains(input.Query, "playDuration:10.000") || strings.Contains(input.Query, "resume_time") {
+				t.Errorf("unexpected duration checkpoint: %s", input.Query)
+			}
+			_, _ = w.Write([]byte(`{"data":{"sceneSaveActivity":true}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":{"findScene":{"id":"42"}}}`))
+	}))
+	defer stash.Close()
+	store := &memoryPlaytimeStore{}
+	if err := state.flush(t.Context(), store, "test", &stashClient{base: stash.URL, key: "test"}); err != nil {
+		t.Fatal(err)
+	}
+	if writes != 1 || len(state.Pending) != 0 {
+		t.Fatalf("writes=%d pending=%v", writes, state.Pending)
+	}
+}
+
 func TestActivePlaytime(t *testing.T) {
 	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	before := playtimeRow(at, 120)
