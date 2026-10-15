@@ -2,9 +2,11 @@
 
 ## Unreleased
 
-- Decode Silo's string-valued media file IDs in live session telemetry so active playback duration checkpoints reach Stash. Preserve file identity checks, resume positions and retry protections.
-
 - Browser userscript v1.2.1 records explicit O increments at the matched Stash scene's latest last-played timestamp, read fresh on each click. Scenes without playback history retain the current-time default.
+
+## [0.3.65] - 2026-10-15
+
+- Decode Silo's string-valued media file IDs in live session telemetry so active playback duration checkpoints reach Stash. Preserve file identity checks, resume positions and retry protections.
 
 ## [0.3.64] - 2026-10-13
 
