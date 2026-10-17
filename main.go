@@ -57,6 +57,20 @@ func (s *runtimeServer) GetManifest(context.Context, *pluginv1.GetManifestReques
 	return &pluginv1.GetManifestResponse{Manifest: s.manifest}, nil
 }
 func (s *runtimeServer) Configure(_ context.Context, req *pluginv1.ConfigureRequest) (*pluginv1.ConfigureResponse, error) {
+	// Validate the complete request before changing a working connection or
+	// starting workers; an invalid later entry must not partially apply it.
+	for _, entry := range req.GetConfig() {
+		var err error
+		switch entry.GetKey() {
+		case "connection":
+			_, err = connectionPosterLayout(entry.GetValue().AsMap())
+		case "recommendations":
+			_, err = parseRecommendationConfig(entry.GetValue().AsMap(), recommendationConfig{})
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
 	for _, entry := range req.GetConfig() {
 		if entry.GetKey() == "recommendations" {
 			s.mu.Lock()
@@ -73,6 +87,7 @@ func (s *runtimeServer) Configure(_ context.Context, req *pluginv1.ConfigureRequ
 			continue
 		}
 		v := entry.GetValue().AsMap()
+		posterLayout, _ := connectionPosterLayout(v)
 		s.mu.Lock()
 		key := text(v["api_key"])
 		if key == "" && s.client != nil {
@@ -91,14 +106,7 @@ func (s *runtimeServer) Configure(_ context.Context, req *pluginv1.ConfigureRequ
 		if siloKey != "" {
 			s.siloKey = siloKey
 		}
-		s.posterLayout = text(v["nonjav_poster_layout"])
-		if s.posterLayout == "" {
-			s.posterLayout = "smart"
-		}
-		if s.posterLayout != "contain" && s.posterLayout != "face" && s.posterLayout != "smart" {
-			s.mu.Unlock()
-			return nil, fmt.Errorf("invalid poster layout")
-		}
+		s.posterLayout = posterLayout
 		s.posterRepair, _ = v["nonjav_poster_repair_enabled"].(bool)
 		s.stashFilters = text(v["stash_saved_filter_selection"])
 		s.stashPrefix = literalText(v["stash_saved_filter_prefix"])
@@ -130,6 +138,17 @@ func (s *runtimeServer) Configure(_ context.Context, req *pluginv1.ConfigureRequ
 	s.playtimePollOnce.Do(func() { go s.pollPlaytime() })
 	return &pluginv1.ConfigureResponse{}, nil
 }
+func connectionPosterLayout(v map[string]any) (string, error) {
+	layout := text(v["nonjav_poster_layout"])
+	if layout == "" {
+		layout = "smart"
+	}
+	if layout != "contain" && layout != "face" && layout != "smart" {
+		return "", fmt.Errorf("invalid poster layout")
+	}
+	return layout, nil
+}
+
 func text(v any) string { s, _ := v.(string); return strings.TrimSpace(s) }
 
 // Prefix whitespace is intentional: it separates the prefix from the title.
@@ -212,8 +231,17 @@ func searchResult(s scene) *pluginv1.ProviderSearchResult {
 	if s.Paths.Screenshot != "" {
 		imagePath = coverPath(s.ID)
 	}
-	return &pluginv1.ProviderSearchResult{ProviderId: "stash:" + s.ID, ItemType: "movie", Title: displayTitle(s), Overview: s.Details, ProviderIds: providerIDs(s.ID), ImageUrl: imagePath}
+	return &pluginv1.ProviderSearchResult{ProviderId: "stash:" + s.ID, ItemType: "movie", Title: displayTitle(s), Year: sceneYear(s), Overview: s.Details, ProviderIds: providerIDs(s.ID), ImageUrl: imagePath}
 }
+func sceneYear(s scene) int32 {
+	if len(s.Date) >= 4 {
+		if n, err := strconv.Atoi(s.Date[:4]); err == nil && n > 0 {
+			return int32(n)
+		}
+	}
+	return 0
+}
+
 func coverPath(id string) string {
 	if id == "" {
 		return ""
@@ -364,17 +392,11 @@ func metadataItem(s scene) *pluginv1.MetadataItem {
 	if s.Studio != nil && s.Studio.Name != "" {
 		studios = append(studios, s.Studio.Name)
 	}
-	year := int32(0)
-	if len(s.Date) >= 4 {
-		if n, e := strconv.Atoi(s.Date[:4]); e == nil {
-			year = int32(n)
-		}
-	}
 	imagePath := ""
 	if s.Paths.Screenshot != "" {
 		imagePath = coverPath(s.ID)
 	}
-	return &pluginv1.MetadataItem{ProviderId: "stash:" + s.ID, ItemType: "movie", Title: displayTitle(s), OriginalTitle: s.Title, SortTitle: displayTitle(s), Year: year, Overview: s.Details, Runtime: runtimeMinutes(s), Genres: genres, ProviderIds: providerIDs(s.ID), ReleaseDate: s.Date, PosterPath: imagePath, BackdropPath: imagePath, People: people, Studios: studios}
+	return &pluginv1.MetadataItem{ProviderId: "stash:" + s.ID, ItemType: "movie", Title: displayTitle(s), OriginalTitle: s.Title, SortTitle: displayTitle(s), Year: sceneYear(s), Overview: s.Details, Runtime: runtimeMinutes(s), Genres: genres, ProviderIds: providerIDs(s.ID), ReleaseDate: s.Date, PosterPath: imagePath, BackdropPath: imagePath, People: people, Studios: studios}
 }
 func (s *metadataServer) GetSeasons(context.Context, *pluginv1.GetSeasonsRequest) (*pluginv1.GetSeasonsResponse, error) {
 	return &pluginv1.GetSeasonsResponse{}, nil

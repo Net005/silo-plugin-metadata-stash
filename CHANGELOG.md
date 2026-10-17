@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.66] - 2026-10-17
+
+- Validate complete configuration requests before changing connections or starting background workers. Invalid settings preserve the working configuration.
+- Include Stash release years in metadata search results to improve matching.
+
 ## Unreleased
 
 - Browser userscript v1.2.1 records explicit O increments at the matched Stash scene's latest last-played timestamp, read fresh on each click. Scenes without playback history retain the current-time default.
