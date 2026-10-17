@@ -108,6 +108,14 @@ Use **Silo plugin 0.3.61+** with **Stash companion 0.2.14+** for queued incoming
 
 Previewing, Watchlist synchronization and completed plays do not increment O counts. Only an explicit O-button click records one.
 
+### Preview missing completed plays
+
+Run **Preview missing completed Stash plays** (`play-backfill-preview`) from Silo's task page. It requires the Stash and Silo admin connections plus an explicit **Active playtime owner profile ID**, falling back to the recommendation owner profile; JAVBeacon is optional. The task reads all Silo history pages before comparing at most the 100 newest unique completed movie sessions with fresh Stash history. Exact file paths must agree; ambiguous identities or failed lookups stop the preview rather than producing a misleading report.
+
+The output reports checked, missing, already-present, unresolved, excluded and incomplete-history counts. `status: partial` and `remaining` explicitly identify sessions outside the 100-session comparison window. Missing timestamps use the existing 30-second tolerance and are candidates, not authorization to replay an additive mutation. This task never changes plays, duration, resume positions or O counts; the existing write backfill still requires JAVBeacon's duplicate-safe endpoint. Restart Silo if the new task is not listed after upgrading.
+
+The same read-only output is available immediately through the admin-only plugin route `GET /recommendations/playback/preview`, under `/api/v2/plugin-content/plugins/<installation ID>`. Recommendation generation does not need to be enabled.
+
 ## Troubleshooting
 
 | Symptom | Check |

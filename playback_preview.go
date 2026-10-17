@@ -1,0 +1,105 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"sort"
+	"time"
+
+	provider "github.com/Net005/silo-plugin-metadata-stash/internal/legacyprovider"
+)
+
+// previewCompletedPlays never writes activity. A missing timestamp is only a
+// candidate: Stash has no durable cross-process session idempotency contract.
+func (s *scheduledTaskServer) previewCompletedPlays(ctx context.Context) (map[string]any, error) {
+	s.runtime.mu.RLock()
+	base, key, profile := s.runtime.siloBase, s.runtime.siloKey, s.runtime.playtimeProfile
+	if profile == "" {
+		profile = s.runtime.recommendationConfig.Profile
+	}
+	s.runtime.mu.RUnlock()
+	c := s.runtime.stash()
+	if base == "" || key == "" || profile == "" || !c.configured() {
+		return map[string]any{"status": "not_configured", "read_only": true, "detail": "Configure Stash, Silo admin access and the active playtime or recommendation owner profile"}, nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	silo := provider.NewSiloClient(base, key)
+	// Fail closed if any history page is unavailable or the cursor is invalid.
+	attempts, err := silo.CompletedPlaybackHistory(ctx, profile)
+	if err != nil {
+		return nil, fmt.Errorf("playback preview: unable to read complete Silo history")
+	}
+	unique := make(map[string]provider.CompletedPlayback)
+	rows := make([]provider.CompletedPlayback, 0, len(attempts))
+	duplicates, skipped := 0, 0
+	for _, row := range attempts {
+		if !row.Completed || row.MediaType != "movie" || row.SessionID == "" || row.MediaItemID == "" || row.EndedAt.IsZero() {
+			skipped++
+			continue
+		}
+		if old, ok := unique[row.SessionID]; ok {
+			if old.MediaItemID != row.MediaItemID || !old.EndedAt.Equal(row.EndedAt) {
+				return nil, fmt.Errorf("playback preview: conflicting session identities")
+			}
+			duplicates++
+			continue
+		}
+		unique[row.SessionID] = row
+		rows = append(rows, row)
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].EndedAt.Equal(rows[j].EndedAt) {
+			return rows[i].SessionID < rows[j].SessionID
+		}
+		return rows[i].EndedAt.After(rows[j].EndedAt)
+	})
+	total := len(rows)
+	const limit = 100
+	if len(rows) > limit {
+		rows = rows[:limit]
+	}
+	missing, present, unresolved, excluded, incomplete := 0, 0, 0, 0, 0
+	for _, row := range rows {
+		paths, err := silo.ItemFilePaths(ctx, row.MediaItemID)
+		if err != nil {
+			return nil, fmt.Errorf("playback preview: unable to read Silo file identity")
+		}
+		id, err := c.sceneIDForExactPaths(ctx, paths)
+		if err != nil {
+			return nil, fmt.Errorf("playback preview: Stash identity lookup failed or is ambiguous")
+		}
+		if id == "" {
+			unresolved++
+			continue
+		}
+		if c.excludedScenes[id] {
+			excluded++
+			continue
+		}
+		scene, err := c.findScene(ctx, id)
+		if err != nil {
+			return nil, fmt.Errorf("playback preview: unable to read fresh Stash history")
+		}
+		if scene == nil {
+			unresolved++
+			continue
+		}
+		if scene.hasPlayAt(row.EndedAt) {
+			present++
+		} else if scene.PlayCount > len(scene.PlayHistory) {
+			incomplete++
+		} else {
+			missing++
+		}
+	}
+	status := "complete"
+	if total > len(rows) {
+		status = "partial"
+	}
+	return map[string]any{
+		"status": status, "read_only": true, "eligible": total, "checked": len(rows), "remaining": total - len(rows),
+		"missing": missing, "already_present": present, "unresolved": unresolved, "excluded": excluded, "incomplete_history": incomplete, "duplicates": duplicates, "skipped": skipped,
+		"detail": "Newest 100 unique completed movie sessions at most; exact file identity and fresh Stash history, with a 30-second timestamp tolerance. Missing plays are candidates only. No plays, duration, resume positions or O counts are written.",
+	}, nil
+}

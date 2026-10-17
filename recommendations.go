@@ -882,6 +882,13 @@ func (s *recommendationServer) Handle(ctx context.Context, req *pluginv1.HandleH
 		return &pluginv1.HandleHTTPResponse{StatusCode: int32(status), Headers: map[string]string{"Content-Type": "application/json", "Cache-Control": "no-store"}, Body: b}, nil
 	}
 	path := strings.TrimSuffix(req.Path, "/")
+	if req.Method == "GET" && path == "/recommendations/playback/preview" {
+		summary, err := (&scheduledTaskServer{runtime: s.runtime}).previewCompletedPlays(ctx)
+		if err != nil {
+			return respond(503, map[string]any{"error": err.Error(), "read_only": true})
+		}
+		return respond(200, summary)
+	}
 	if req.Method == "GET" && path == "/recommendations/playtime/status" {
 		return respond(200, s.runtime.playtimeStatus())
 	}

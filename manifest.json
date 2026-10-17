@@ -1,6 +1,6 @@
 {
   "plugin_id": "stash.metadata",
-  "version": "0.3.67",
+  "version": "0.3.68",
   "checksum": "__CHECKSUM__",
   "silo_api_version": "v1",
   "presentation": {
@@ -113,6 +113,12 @@
       "id": "play-backfill",
       "display_name": "Backfill completed Silo plays",
       "description": "Safely backfill completed Silo sessions to Stash through JAVBeacon without duplicate plays."
+    },
+    {
+      "type": "scheduled_task.v1",
+      "id": "play-backfill-preview",
+      "display_name": "Preview missing completed Stash plays",
+      "description": "Read-only comparison of up to 100 newest unique completed Silo movie sessions with fresh Stash history. Requires Silo admin access and an explicit active playtime or recommendation owner profile; JAVBeacon is not required. Reports partial coverage and incomplete Stash history. Never changes plays, duration, resume positions or O counts."
     },
     {
       "type": "scheduled_task.v1",
@@ -388,6 +394,11 @@
     }
   ],
   "http_routes": [
+    {
+      "path": "/recommendations/playback/preview",
+      "methods": ["GET"],
+      "access": "admin"
+    },
     {
       "path": "/recommendations/report",
       "methods": [

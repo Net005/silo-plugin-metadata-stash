@@ -38,6 +38,13 @@ type scheduledTaskServer struct {
 
 func (s *scheduledTaskServer) Run(ctx context.Context, req *pluginv1.RunScheduledTaskRequest) (*pluginv1.RunScheduledTaskResponse, error) {
 	key := req.GetTaskKey()
+	if key == "play-backfill-preview" || strings.HasSuffix(key, ":play-backfill-preview") {
+		summary, err := s.previewCompletedPlays(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return taskOutput(summary)
+	}
 	if key == "nonjav-poster-repair" || strings.HasSuffix(key, ":nonjav-poster-repair") {
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)

@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.3.68] - 2026-10-17
+
+- Add a read-only completed-play backfill preview that works without JAVBeacon. Compare up to 100 newest unique completed movie sessions against exact Stash file identities and fresh history, report partial coverage and incomplete history, and never write activity.
+
 ## [0.3.67] - 2026-10-17
 
 - Respect Silo's provider artwork storage setting in artwork caching and poster repair. Pause without losing cache progress when storage is disabled, and skip writes when the setting cannot be read.
