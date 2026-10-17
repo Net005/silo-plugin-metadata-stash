@@ -343,7 +343,7 @@
     );
   }
 
-  function SceneCardWatchlistAction({ scene, settings, resolveScene }) {
+  function SceneCardWatchlistAction({ scene, settings, resolveScene, compact = false }) {
     const Toast = window.PluginApi.hooks.useToast();
     const [updateScene] = useMutation(UPDATE_SCENE_WATCHLIST);
     const [pending, setPending] = React.useState(false);
@@ -427,7 +427,7 @@
         React.createElement(
           "span",
           { "aria-hidden": "true" },
-          inWatchlist ? "✓ Watchlist" : "+ Watchlist"
+          `${inWatchlist ? "✓" : "+"} ${compact ? "WL" : "Watchlist"}`
         )
       )
     );
@@ -723,7 +723,7 @@
       React.createElement(
         React.Fragment,
         null,
-        React.createElement(SceneCardWatchlistAction, { key: String(sceneId), scene, settings, resolveScene }),
+        React.createElement(SceneCardWatchlistAction, { key: String(sceneId), scene, settings, resolveScene, compact: true }),
         showSubtitles
           ? React.createElement(SubtitleButton, { completed, sceneId })
           : null

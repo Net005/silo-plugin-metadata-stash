@@ -513,7 +513,7 @@ assert.equal(detailsWatchlist.props.key, "73001", "scene navigation must reset m
 assert.equal(detailsSubtitles.props.sceneId, "73001");
 let detailsButton = detailsWatchlist.type(detailsWatchlist.props).props.children;
 assert.equal(detailsButton.props["aria-pressed"], false);
-assert.equal(detailsButton.props.children.props.children, "+ Watchlist");
+assert.equal(detailsButton.props.children.props.children, "+ WL");
 captionQueryResult = { data: { findScene: { id: "73001", captions: [], tags: [{ id: "4" }] } }, loading: false };
 await detailsButton.props.onClick({ preventDefault() {}, stopPropagation() {} });
 assert.equal(lazyQueryCalls.at(-1).options.fetchPolicy, "network-only");
@@ -527,7 +527,7 @@ assert.equal(detailsSubtitles, null, "subtitle filters must not hide Watchlist")
 assert.equal(detailsWatchlist.props.key, "73002");
 detailsButton = detailsWatchlist.type(detailsWatchlist.props).props.children;
 assert.equal(detailsButton.props["aria-pressed"], true);
-assert.equal(detailsButton.props.children.props.children, "✓ Watchlist");
+assert.equal(detailsButton.props.children.props.children, "✓ WL");
 captionQueryResult = { data: { findScene: { id: "73002", tags: [{ id: "9" }, { id: "4" }] } }, loading: false };
 await detailsButton.props.onClick({ preventDefault() {}, stopPropagation() {} });
 assert.deepEqual(mutationCalls.at(-1).options.variables.input, { ids: ["73002"], tag_ids: { ids: ["9"], mode: "REMOVE" } });
