@@ -665,14 +665,24 @@
   function ScenePageSubtitleAction({ scene }) {
     const { settings, loading, error } = usePluginSettings();
     const captionsKnown = Object.prototype.hasOwnProperty.call(scene, "captions");
+    const tagsKnown = Object.prototype.hasOwnProperty.call(scene, "tags");
     const statusQuery = useQuery(FIND_SCENE_CAPTIONS, {
       fetchPolicy: "cache-first",
-      skip: captionsKnown,
+      skip: captionsKnown && tagsKnown,
       variables: { id: String(scene.id) },
     });
-    const resolvedScene = captionsKnown
-      ? scene
-      : { ...scene, captions: statusQuery.data?.findScene?.captions };
+    const [loadScene] = useLazyQuery(FIND_SCENE_CAPTIONS, {
+      fetchPolicy: "network-only",
+    });
+    const resolvedScene = {
+      ...scene,
+      captions: captionsKnown ? scene.captions : statusQuery.data?.findScene?.captions,
+      tags: tagsKnown ? scene.tags : statusQuery.data?.findScene?.tags,
+    };
+    const resolveScene = async () => {
+      const result = await loadScene({ variables: { id: String(scene.id) } });
+      return result.data?.findScene;
+    };
     if (loading || error || settings == null) return null;
     const showSubtitles =
       sceneMatchesPathFilters(scene, settings) &&
@@ -682,10 +692,13 @@
       completed: hasLinkedSubtitles(resolvedScene),
       sceneId: scene.id,
       showSubtitles,
+      scene: resolvedScene,
+      settings,
+      resolveScene,
     });
   }
 
-  function SubtitleToolbarPortal({ sceneId, completed, showSubtitles = true }) {
+  function SubtitleToolbarPortal({ sceneId, completed, showSubtitles = true, scene, settings, resolveScene }) {
     const [mountNode, setMountNode] = React.useState(null);
 
     React.useLayoutEffect(() => {
@@ -707,9 +720,14 @@
 
     if (!mountNode) return null;
     return ReactDOM.createPortal(
-      showSubtitles
-        ? React.createElement(SubtitleButton, { completed, sceneId })
-        : null,
+      React.createElement(
+        React.Fragment,
+        null,
+        React.createElement(SceneCardWatchlistAction, { key: String(sceneId), scene, settings, resolveScene }),
+        showSubtitles
+          ? React.createElement(SubtitleButton, { completed, sceneId })
+          : null
+      ),
       mountNode
     );
   }

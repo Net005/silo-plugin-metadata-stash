@@ -1,6 +1,6 @@
 name: Stash.Silo Companion
 description: Enrich linked metadata, keep selected Silo Watchlist collections current and notify weekly recommendations of Stash changes.
-version: 0.2.14
+version: 0.2.15
 ui:
   javascript:
     - stash_silo_subtitles.js
@@ -59,7 +59,7 @@ settings:
     type: STRING
   watchlist_tag_id:
     displayName: Watchlist tag ID
-    description: Stash tag ID used by the always-visible Watchlist button on scene cards.
+    description: Stash tag ID used by the Watchlist button on scene cards and scene details pages.
     type: STRING
   subs_base_url:
     displayName: JAVBeacon-Subs base URL

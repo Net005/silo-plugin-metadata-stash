@@ -495,6 +495,44 @@ assert.deepEqual(mutationCalls.at(-1).options.variables.args, {
   mode: "subtitles", scene_id: "39400", overwrite: false,
 });
 
+// Details reuse the card control, before +CC, even outside subtitle path filters.
+function renderDetailsToolbar(scene) {
+  const patched = afterPatches.ScenePage({ scene }, legacyContext, renderedScene);
+  const action = patched.props.children[1];
+  const portal = action.type(action.props);
+  const savedUseState = React.useState;
+  React.useState = initial => [initial === null ? {} : initial, () => {}];
+  try { return portal.type(portal.props); }
+  finally { React.useState = savedUseState; }
+}
+const detailsScene = { id: "73001", captions: [], tags: [], files: [{ path: "/media/example.mp4" }] };
+let detailsToolbar = renderDetailsToolbar(detailsScene);
+let [detailsWatchlist, detailsSubtitles] = detailsToolbar.props.children;
+assert.equal(detailsWatchlist.type.name, "SceneCardWatchlistAction");
+assert.equal(detailsWatchlist.props.key, "73001", "scene navigation must reset membership state");
+assert.equal(detailsSubtitles.props.sceneId, "73001");
+let detailsButton = detailsWatchlist.type(detailsWatchlist.props).props.children;
+assert.equal(detailsButton.props["aria-pressed"], false);
+assert.equal(detailsButton.props.children.props.children, "+ Watchlist");
+captionQueryResult = { data: { findScene: { id: "73001", captions: [], tags: [{ id: "4" }] } }, loading: false };
+await detailsButton.props.onClick({ preventDefault() {}, stopPropagation() {} });
+assert.equal(lazyQueryCalls.at(-1).options.fetchPolicy, "network-only");
+assert.deepEqual(lazyQueryCalls.at(-1).executeOptions.variables, { id: "73001" });
+assert.deepEqual(mutationCalls.at(-1).options.variables.input, { ids: ["73001"], tag_ids: { ids: ["9"], mode: "ADD" } });
+
+settingsQueryResult.data.configuration.plugins["stash-silo-companion"].subs_scene_path_filters = "/other/";
+detailsToolbar = renderDetailsToolbar({ ...detailsScene, id: "73002", tags: [{ id: "9" }, { id: "4" }] });
+[detailsWatchlist, detailsSubtitles] = detailsToolbar.props.children;
+assert.equal(detailsSubtitles, null, "subtitle filters must not hide Watchlist");
+assert.equal(detailsWatchlist.props.key, "73002");
+detailsButton = detailsWatchlist.type(detailsWatchlist.props).props.children;
+assert.equal(detailsButton.props["aria-pressed"], true);
+assert.equal(detailsButton.props.children.props.children, "✓ Watchlist");
+captionQueryResult = { data: { findScene: { id: "73002", tags: [{ id: "9" }, { id: "4" }] } }, loading: false };
+await detailsButton.props.onClick({ preventDefault() {}, stopPropagation() {} });
+assert.deepEqual(mutationCalls.at(-1).options.variables.input, { ids: ["73002"], tag_ids: { ids: ["9"], mode: "REMOVE" } });
+settingsQueryResult.data.configuration.plugins["stash-silo-companion"].subs_scene_path_filters = "";
+
 console.log("Scene page and card patches preserve results after legacy context");
 })().catch((error) => {
   console.error(error);
