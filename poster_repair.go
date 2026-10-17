@@ -102,6 +102,11 @@ func (s *scheduledTaskServer) repairSelectedPosters(ctx context.Context, library
 	if base == "" || key == "" || profile == "" || !stash.configured() {
 		return nil, fmt.Errorf("poster repair requires Silo/Stash connections and owner profile")
 	}
+	if enabled, err := providerArtworkStorageEnabled(ctx, base, key); err != nil {
+		return nil, err
+	} else if !enabled {
+		return map[string]any{"status": "storage_disabled"}, nil
+	}
 	client := provider.NewSiloClient(base, key)
 	libs, err := client.ListJAVBeaconMovieLibraries(ctx)
 	if err != nil {

@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.3.67] - 2026-10-17
+
+- Respect Silo's provider artwork storage setting in artwork caching and poster repair. Pause without losing cache progress when storage is disabled, and skip writes when the setting cannot be read.
+
 ## [0.3.66] - 2026-10-17
 
 - Validate complete configuration requests before changing connections or starting background workers. Invalid settings preserve the working configuration.

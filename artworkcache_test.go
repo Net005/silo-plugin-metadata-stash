@@ -7,7 +7,115 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"testing"
+	"time"
 )
+
+func TestProviderArtworkStorageSetting(t *testing.T) {
+	for _, tc := range []struct {
+		name, body string
+		status     int
+		want       bool
+		wantErr    bool
+	}{
+		{"enabled", `{"key":"metadata.cache_images","value":"true"}`, 200, true, false},
+		{"disabled", `{"key":"metadata.cache_images","value":"false"}`, 200, false, false},
+		{"numeric disabled", `{"key":"metadata.cache_images","value":"0"}`, 200, false, false},
+		{"default", `{}`, 404, true, false},
+		{"forbidden", `{}`, 403, false, true},
+		{"unavailable", `{}`, 503, false, true},
+		{"invalid boolean", `{"key":"metadata.cache_images","value":"invalid"}`, 200, false, true},
+		{"wrong key", `{"key":"other","value":"true"}`, 200, false, true},
+		{"missing value", `{"key":"metadata.cache_images"}`, 200, false, true},
+		{"malformed", `{`, 200, false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet || r.URL.Path != "/api/v2/admin/settings/metadata.cache_images" || r.Header.Get("Authorization") != "Bearer key" {
+					t.Errorf("unexpected setting request: %s %s", r.Method, r.URL.Path)
+				}
+				w.WriteHeader(tc.status)
+				w.Write([]byte(tc.body))
+			}))
+			defer server.Close()
+			got, err := providerArtworkStorageEnabled(t.Context(), server.URL, "key")
+			if got != tc.want || (err != nil) != tc.wantErr {
+				t.Fatalf("enabled=%t err=%v", got, err)
+			}
+		})
+	}
+}
+
+func TestArtworkWorkersPauseWithoutChangingState(t *testing.T) {
+	for _, status := range []int{http.StatusOK, http.StatusServiceUnavailable} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet || r.URL.Path != "/api/v2/admin/settings/metadata.cache_images" {
+					t.Errorf("paused worker made unexpected request: %s %s", r.Method, r.URL.Path)
+					http.Error(w, "unexpected", 500)
+					return
+				}
+				w.WriteHeader(status)
+				w.Write([]byte(`{"key":"metadata.cache_images","value":"false"}`))
+			}))
+			defer server.Close()
+			task := &scheduledTaskServer{
+				runtime:       &runtimeServer{siloBase: server.URL, siloKey: "key", posterRepair: true, client: &stashClient{base: server.URL, key: "key"}, recommendationConfig: recommendationConfig{Profile: "profile"}},
+				artworkCursor: "resume-page", artworkRetry: map[string]time.Time{"item": time.Now().Add(time.Hour)},
+			}
+			for _, run := range []func(context.Context) (map[string]any, error){task.cacheArtwork, task.repairPosters} {
+				result, err := run(t.Context())
+				if status == http.StatusOK {
+					if err != nil || result["status"] != "storage_disabled" {
+						t.Fatalf("result=%v err=%v", result, err)
+					}
+				} else if err == nil {
+					t.Fatal("unreadable setting admitted worker")
+				}
+			}
+			if task.artworkCursor != "resume-page" || len(task.artworkRetry) != 1 {
+				t.Fatal("paused worker changed progress")
+			}
+		})
+	}
+}
+
+func TestArtworkCacheResumesAfterStorageEnabled(t *testing.T) {
+	enabled, pages, reads := true, 0, 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v2/admin/settings/metadata.cache_images":
+			reads++
+			json.NewEncoder(w).Encode(map[string]any{"key": "metadata.cache_images", "value": map[bool]string{true: "true", false: "false"}[enabled]})
+		case "/api/v2/profiles":
+			w.Write([]byte(`{"items":[{"id":"profile"}]}`))
+		case "/api/v2/catalog":
+			pages++
+			if pages == 1 {
+				enabled = false
+				w.Write([]byte(`{"items":[],"page":{"has_more":true,"next_cursor":"page2"}}`))
+			} else {
+				if r.URL.Query().Get("cursor") != "page2" {
+					t.Error("worker lost its cursor while paused")
+				}
+				w.Write([]byte(`{"items":[],"page":{"has_more":false}}`))
+			}
+		default:
+			t.Errorf("unexpected request %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	task := &scheduledTaskServer{runtime: &runtimeServer{siloBase: server.URL, siloKey: "key"}}
+	result, err := task.cacheArtwork(t.Context())
+	if err != nil || result["status"] != "storage_disabled" || task.artworkCursor != "page2" || pages != 1 || reads != 2 {
+		t.Fatalf("pause result=%v pages=%d reads=%d err=%v", result, pages, reads, err)
+	}
+	enabled = true
+	result, err = task.cacheArtwork(t.Context())
+	if err != nil || result["status"] != "complete" || task.artworkCursor != "" || pages != 2 {
+		t.Fatalf("resume result=%v pages=%d err=%v", result, pages, err)
+	}
+}
 
 func TestArtworkCacheSource(t *testing.T) {
 	for _, tc := range []struct{ raw, want string }{

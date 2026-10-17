@@ -18,6 +18,8 @@ func TestPosterRenewalDrainsPagesAndPersistsItemFailures(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("ETag", `"1"`)
 		switch r.URL.Path {
+		case "/api/v2/admin/settings/metadata.cache_images":
+			json.NewEncoder(w).Encode(map[string]string{"key": "metadata.cache_images", "value": "true"})
 		case "/api/v2/libraries":
 			json.NewEncoder(w).Encode(map[string]any{"items": []map[string]any{{"id": "19", "type": "movies", "enabled": true}}})
 		case "/api/v2/libraries/19/providers":

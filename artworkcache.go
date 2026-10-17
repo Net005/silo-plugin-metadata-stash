@@ -7,11 +7,37 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
 
 const artworkLockField = 10 // Silo metadata.FieldImages
+
+// Read only the relevant server setting. An absent stored value uses Silo's
+// default (on); other failures must not admit background storage writes.
+func providerArtworkStorageEnabled(ctx context.Context, base, key string) (bool, error) {
+	var setting struct {
+		Key   string `json:"key"`
+		Value string `json:"value"`
+	}
+	err := siloRequest(ctx, base, key, http.MethodGet, "/api/v2/admin/settings/metadata.cache_images", nil, &setting)
+	if err != nil {
+		var httpErr *siloHTTPError
+		if errors.As(err, &httpErr) && httpErr.code == http.StatusNotFound {
+			return true, nil
+		}
+		return false, fmt.Errorf("artwork storage setting: %w", err)
+	}
+	if setting.Key != "metadata.cache_images" {
+		return false, fmt.Errorf("artwork storage setting: unexpected key")
+	}
+	enabled, err := strconv.ParseBool(setting.Value)
+	if err != nil {
+		return false, fmt.Errorf("artwork storage setting: invalid boolean")
+	}
+	return enabled, nil
+}
 
 type cacheArtworkItem struct {
 	ContentID    string `json:"content_id"`
@@ -121,6 +147,11 @@ func (s *scheduledTaskServer) cacheArtwork(ctx context.Context) (map[string]any,
 	if base == "" || key == "" {
 		return map[string]any{"status": "not_configured"}, nil
 	}
+	if enabled, err := providerArtworkStorageEnabled(ctx, base, key); err != nil {
+		return nil, err
+	} else if !enabled {
+		return map[string]any{"status": "storage_disabled"}, nil
+	}
 	var profiles struct {
 		Items []struct {
 			ID string `json:"id"`
@@ -143,6 +174,14 @@ func (s *scheduledTaskServer) cacheArtwork(ctx context.Context) (map[string]any,
 	}
 	cached, failed, scanned := 0, 0, 0
 	for page := 0; page < 5; page++ {
+		// Re-check between pages so a long pass stops after a settings change.
+		if page > 0 {
+			if enabled, err := providerArtworkStorageEnabled(ctx, base, key); err != nil {
+				return nil, err
+			} else if !enabled {
+				return map[string]any{"status": "storage_disabled", "cached": cached, "failed": failed, "scanned": scanned}, nil
+			}
+		}
 		// No library filter: include all accessible libraries, including Hentai.
 		path := "/api/v2/catalog?limit=200&skip_total=true&status=matched&sort=-added_at"
 		if s.artworkCursor != "" {
