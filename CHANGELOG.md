@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Browser userscript v1.3.2 clears the hero while a backdrop preview plays: the context line, title, date/quality badges, overview, director/genre/studio lines and the cover fade out, leaving only the action toolbar. Layout is preserved so the toolbar does not move, and everything returns when the preview stops.
+
 - Browser userscript v1.3.1 sizes **Listed in Collections** covers exactly like **More Like This** by mirroring the native poster-size wrapper inside each carousel slide.
 
 - Browser userscript v1.3.0 adds a **Listed in Collections** row below **More Like This** on item pages. It lists every collection in the viewed library (plus personal collections) that contains the release, in Silo's collection order, with posters and links to each collection, and hides itself when there are none. Membership comes from the complete per-library collection lists (Silo's server-wide listing is a capped preview) and is cached for 10 minutes; an unreadable collection is retried instead of being cached as empty.

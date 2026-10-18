@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Silo Stash Backdrop Hover
 // @namespace    https://github.com/Net005/silo-plugin-metadata-stash
-// @version      1.3.1
+// @version      1.3.2
 // @downloadURL  https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @updateURL    https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @description  Stash backdrop previews, native Watchlist and O-count toolbar actions, library-scoped subtitle creation, and a Listed in Collections row on item pages.
@@ -293,7 +293,16 @@
   let settings = { ...DEFAULTS, ...GM_getValue('settings', {}) };
   let current = null;
   const overviewStyle = document.createElement('style');
-  overviewStyle.textContent = '.item-detail-hero[data-stash-hover-preview] .detail-hero-description{visibility:hidden!important;pointer-events:none!important}';
+  // While a preview plays, fade out everything over the backdrop except the
+  // action bar: context line, title, badges, overview, director/studio lines
+  // and the cover. visibility keeps the layout so the toolbar does not move.
+  const previewHidden = [
+    '.detail-hero-copy > :not(.detail-action-bar)',
+    '.detail-hero-copy > .contents > *',
+    '.detail-hero-primary-content > .media-card-image',
+  ].map(s => '.item-detail-hero[data-stash-hover-preview] ' + s).join(',');
+  overviewStyle.textContent = '.detail-hero-copy > *, .detail-hero-copy > .contents > *, .detail-hero-primary-content > .media-card-image{transition:opacity .2s ease,visibility .2s}' +
+    previewHidden + '{opacity:0!important;visibility:hidden!important;pointer-events:none!important}';
   document.head.append(overviewStyle);
   const itemID = () => /^\/item\/([^/]+)$/.exec(location.pathname)?.[1];
   const delay = () => Math.max(0, Math.min(30000, Number(settings.delay) || 0));

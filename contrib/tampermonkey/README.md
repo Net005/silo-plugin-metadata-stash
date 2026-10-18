@@ -8,7 +8,7 @@ A Tampermonkey userscript that adds Stash previews and compact controls to Silo,
 
 | Where | Enhancement |
 | --- | --- |
-| **Movie backdrop** | Muted looping Stash preview on hover, with VTT thumbnail fallback. Leaving restores the original artwork and overview. |
+| **Movie backdrop** | Muted looping Stash preview on hover, with VTT thumbnail fallback. While it plays, the title, badges, overview, director/studio lines and cover fade out so only the toolbar remains; leaving restores everything. |
 | **Watchlist** | Bookmark toggle in the main toolbar, using Silo's native Watchlist action and profile state. |
 | **O count** | Water-droplet button shows the current positive scene count. Each click records **one O** in Stash and displays the confirmed total. |
 | **Person page** | Water-droplet O-count badge beside age for a linked Stash performer with a positive count. |
