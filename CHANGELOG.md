@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+
+- Browser userscript v1.3.0 adds a **Listed in Collections** row below **More Like This** on item pages. It lists every collection in the viewed library (plus personal collections) that contains the release, in Silo's collection order, with posters and links to each collection, and hides itself when there are none. Membership comes from the complete per-library collection lists (Silo's server-wide listing is a capped preview) and is cached for 10 minutes; an unreadable collection is retried instead of being cached as empty.
+
 ## [0.3.70] - 2026-10-18
 
 - Add opt-in automatic recovery for scanned Stash files that lack a catalog association after yearless matching fails. Restrict recovery to enabled Stash movie/mixed libraries, exact source file identity and a verified release date.

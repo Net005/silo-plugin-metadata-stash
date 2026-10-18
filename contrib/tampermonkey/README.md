@@ -16,6 +16,7 @@ A Tampermonkey userscript that adds Stash previews and compact controls to Silo,
 | **Stash link** | Northeast arrow opens the exact matched scene in a new tab. Hover text: **Open in Stash**. |
 | **Rating** | One star and the selected rating at rest. Hover or keyboard focus reveals all five stars without widening the toolbar row. |
 | **Metadata** | Full release dates as `YYYY-MM-DD`; clickable genres and studios open exact library filters in a new tab. |
+| **Listed in Collections** | Row below **More Like This** showing every library or personal collection containing the release, styled like the native row. Each card opens that collection. Membership is read once from Silo's collection lists and refreshed every 10 minutes; the row is hidden when the release is in no collection. |
 
 ## Install or update
 

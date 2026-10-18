@@ -70,7 +70,7 @@ node --test contrib/stashapp/test_stash_silo_subtitles.js contrib/stashapp/test_
 
 # Browser userscript
 node --check contrib/tampermonkey/silo-backdrop-hover.user.js
-node --test contrib/tampermonkey/test_silo_backdrop_hover.js
+node --test contrib/tampermonkey/test_silo_backdrop_hover.js contrib/tampermonkey/test_silo_collections.js
 
 # All changes
 git diff --check

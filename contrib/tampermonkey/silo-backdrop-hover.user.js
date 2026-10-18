@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         Silo Stash Backdrop Hover
 // @namespace    https://github.com/Net005/silo-plugin-metadata-stash
-// @version      1.2.1
+// @version      1.3.0
 // @downloadURL  https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @updateURL    https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
-// @description  Stash backdrop previews, native Watchlist and O-count toolbar actions, and library-scoped subtitle creation.
+// @description  Stash backdrop previews, native Watchlist and O-count toolbar actions, library-scoped subtitle creation, and a Listed in Collections row on item pages.
 // @match        https://silo.example.invalid/*
 // @connect      *
 // @grant        GM_getValue
@@ -206,6 +206,82 @@
     } catch (_) {}
     return '';
   }
+  function collectionHref(c) {
+    const p = new URLSearchParams();
+    p.set('source', c.kind === 'user' ? 'user_collection' : 'library_collection');
+    p.set('collection_id', String(c.id));
+    if (c.title) p.set('title', c.title);
+    if (c.kind !== 'user' && c.library_id != null) p.set('library_id', String(c.library_id));
+    return '/catalog?' + p.toString();
+  }
+  // Silo has no "collections containing this item" endpoint, so build a
+  // membership index per library (plus personal collections) from the full
+  // per-library lists; /collections/server is only a capped preview.
+  function createCollectionIndex({ fetchJSON, ttl = 10 * 60 * 1000, now = Date.now, concurrency = 6 }) {
+    const caches = new Map();
+    async function membership(collections, itemsPath) {
+      const members = new Map();
+      let partial = false, next = 0;
+      async function worker() {
+        while (next < collections.length) {
+          const c = collections[next++];
+          try {
+            const result = await fetchJSON(itemsPath(c));
+            for (const item of result.items || []) {
+              const id = item.content_id || item.id;
+              if (!id) continue;
+              if (!members.has(id)) members.set(id, []);
+              members.get(id).push(c);
+            }
+          } catch (_) { partial = true; }
+        }
+      }
+      await Promise.all(Array.from({ length: Math.min(concurrency, collections.length) }, worker));
+      return { members, partial };
+    }
+    async function buildLibrary(library) {
+      const listing = await fetchJSON('/api/v1/library/' + encodeURIComponent(library) + '/collections');
+      const collections = (listing.collections || []).map((c, order) => {
+        const entry = { ...c, kind: 'library', library_id: c.library_id ?? listing.library_id ?? library, order };
+        entry.href = collectionHref(entry);
+        return entry;
+      });
+      return membership(collections, c => '/api/v1/library/' + encodeURIComponent(c.library_id) + '/collections/' + encodeURIComponent(c.id) + '/items');
+    }
+    async function buildPersonal() {
+      let listing;
+      try { listing = await fetchJSON('/api/v2/collections'); } catch (_) { return { members: new Map(), partial: true }; }
+      const collections = (listing.items || listing.collections || []).map((c, order) => {
+        const entry = { ...c, kind: 'user', order };
+        entry.href = collectionHref(entry);
+        return entry;
+      });
+      return membership(collections, c => '/api/v1/collections/' + encodeURIComponent(c.id) + '/items');
+    }
+    function cached(key, build) {
+      let entry = caches.get(key);
+      if (!entry || now() - entry.at >= ttl || (entry.value && entry.value.partial)) {
+        entry = { at: now(), value: null, promise: null };
+        entry.promise = build().then(value => { entry.value = value; return value; });
+        entry.promise.catch(() => { if (caches.get(key) === entry) caches.delete(key); });
+        caches.set(key, entry);
+      }
+      return entry.promise;
+    }
+    return async function lookup(id, library) {
+      let libraries = library ? [String(library)] : null;
+      if (!libraries) {
+        const server = await cached('server', () => fetchJSON('/api/v1/collections/server'));
+        libraries = (server.libraries || []).map(l => String(l.library_id));
+      }
+      const indexes = await Promise.all(libraries.map(lib => cached('library:' + lib, () => buildLibrary(lib))));
+      const personal = await cached('personal', buildPersonal);
+      const libraryHits = indexes.flatMap(index => (index.members.get(id) || [])
+        .slice().sort((a, b) => (a.sort_order ?? 1e9) - (b.sort_order ?? 1e9) || a.order - b.order));
+      const personalHits = (personal.members.get(id) || []).slice().sort((a, b) => a.order - b.order);
+      return [...libraryHits, ...personalHits].map(({ order, ...c }) => c);
+    };
+  }
   async function personOCount(person, request) {
     const id = performerID(person);
     if (!id) return null;
@@ -213,7 +289,7 @@
     const count = data?.findPerformer?.o_counter;
     return Number.isSafeInteger(count) && count > 0 ? count : null;
   }
-  if (typeof module !== 'undefined' && module.exports) { module.exports = { performerID, personOCount, createOCounter, parseCues, exactScene, createSiloFileReader, stashOrigin, sceneID, subtitleEligible, confirmSubtitleOverwrite, fullReleaseDate, metadataFilterHref }; return; }
+  if (typeof module !== 'undefined' && module.exports) { module.exports = { performerID, personOCount, createOCounter, parseCues, exactScene, createSiloFileReader, stashOrigin, sceneID, subtitleEligible, confirmSubtitleOverwrite, fullReleaseDate, metadataFilterHref, collectionHref, createCollectionIndex }; return; }
   let settings = { ...DEFAULTS, ...GM_getValue('settings', {}) };
   let current = null;
   const overviewStyle = document.createElement('style');
@@ -722,9 +798,95 @@
     const age = [...row.querySelectorAll('.metadata-badge')].find(el => /years old|\(age /i.test(el.textContent));
     if (age) age.after(badge); else row.append(badge);
   }
+  const collectionLookup = createCollectionIndex({ fetchJSON: siloJSON });
+  let collectionState = null;
+  function collectionCard(c, template) {
+    const wrap = document.createElement('div');
+    wrap.className = template?.className || 'w-[130px] sm:w-[150px] lg:w-[178px]';
+    wrap.style.flex = '0 0 auto';
+    const card = document.createElement('div'); card.className = 'group/card';
+    const media = document.createElement('div'); media.className = 'group/media relative';
+    const link = document.createElement('a'); link.href = c.href; link.className = 'group block'; link.setAttribute('aria-label', c.title);
+    const frame = document.createElement('div'); frame.className = 'relative aspect-[2/3] overflow-hidden rounded-lg bg-surface';
+    const placeholder = () => {
+      frame.replaceChildren();
+      const label = document.createElement('div');
+      label.className = 'text-muted-foreground flex h-full w-full items-center justify-center p-3 text-center text-sm font-medium';
+      label.textContent = c.title; frame.append(label);
+    };
+    if (c.poster_url) {
+      const img = document.createElement('img');
+      img.src = c.poster_url; img.alt = c.title; img.loading = 'lazy'; img.decoding = 'async';
+      img.className = 'h-full w-full object-cover transition-transform group-hover:scale-105';
+      img.addEventListener('error', placeholder, { once: true });
+      frame.append(img);
+    } else placeholder();
+    link.append(frame); media.append(link);
+    const caption = document.createElement('a'); caption.href = c.href; caption.className = 'mt-1.5 block truncate text-sm font-medium hover:underline'; caption.textContent = c.title;
+    card.append(media, caption); wrap.append(card);
+    return wrap;
+  }
+  function spaNavigate(event) {
+    const a = event.target.closest('a[href]');
+    if (!a || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    history.pushState(null, '', a.getAttribute('href'));
+    window.dispatchEvent(new PopStateEvent('popstate', { state: null }));
+    window.scrollTo(0, 0);
+  }
+  function buildCollectionsRow(collections, mlt) {
+    let row;
+    if (mlt) {
+      row = mlt.cloneNode(true);
+      row.querySelectorAll('button[aria-label^="Scroll"], .pointer-events-none.absolute').forEach(el => el.remove());
+      row.querySelectorAll('[aria-label^="Explore all"]').forEach(el => el.remove());
+      const h2 = row.querySelector('h2'); if (h2) h2.textContent = 'Listed in Collections';
+    } else {
+      row = document.createElement('section');
+      row.className = 'section-row media-carousel relative isolate';
+      row.innerHTML = '<div class="mb-5 flex items-end justify-between gap-4"><div class="flex items-center gap-2"><h2 class="text-foreground text-xl font-semibold tracking-tight">Listed in Collections</h2></div></div><div class="relative"><div class="embla__viewport -mt-1 overflow-hidden pt-1"><div class="embla__container flex list-none gap-4 lg:gap-5"></div></div></div>';
+    }
+    row.dataset.stashCollections = '';
+    row.removeAttribute('id');
+    const viewport = row.querySelector('.embla__viewport');
+    const container = row.querySelector('.embla__container');
+    const template = mlt?.querySelector('.embla__container')?.firstElementChild;
+    if (viewport) { viewport.style.overflowX = 'auto'; viewport.style.scrollbarWidth = 'thin'; viewport.style.cursor = 'auto'; viewport.setAttribute('aria-label', 'Collections'); }
+    if (container) { container.style.transform = 'none'; container.style.cursor = 'auto'; container.replaceChildren(...collections.map(c => collectionCard(c, template))); }
+    row.addEventListener('click', spaNavigate);
+    return row;
+  }
+  function moreLikeThisSection() {
+    return [...document.querySelectorAll('section.section-row h2')].find(h => h.textContent.trim() === 'More Like This')?.closest('section') || null;
+  }
+  function reconcileCollections() {
+    const id = itemID(), hero = document.querySelector('.item-detail-hero');
+    if (!id || !hero) { collectionState = null; document.querySelectorAll('[data-stash-collections]').forEach(el => el.remove()); return; }
+    if (collectionState?.id !== id) {
+      document.querySelectorAll('[data-stash-collections]').forEach(el => el.remove());
+      const state = collectionState = { id, collections: null };
+      collectionLookup(decodeURIComponent(id), new URLSearchParams(location.search).get('libraryId') || '').then(list => {
+        if (collectionState !== state || itemID() !== id) return;
+        state.collections = list;
+        reconcileCollections();
+      }).catch(() => {});
+    }
+    const list = collectionState.collections;
+    const existing = document.querySelector('[data-stash-collections]');
+    if (!list || !list.length) { existing?.remove(); return; }
+    const mlt = moreLikeThisSection();
+    const anchor = mlt || [...document.querySelectorAll('section.section-row')].filter(s => !s.hasAttribute('data-stash-collections')).pop();
+    if (!anchor) return;
+    if (existing && existing.dataset.stashCollectionsFor === id && existing.previousElementSibling === anchor) return;
+    existing?.remove();
+    const row = buildCollectionsRow(list, mlt);
+    row.dataset.stashCollectionsFor = id;
+    anchor.after(row);
+  }
   function reconcile() {
     reconcilePersonO();
     reconcileReleaseDate();
+    reconcileCollections();
     reconcileToolbar();
     const id = itemID(), hero = document.querySelector('.item-detail-hero');
     const backdrop = hero?.querySelector('.hero-backdrop-artwork');
