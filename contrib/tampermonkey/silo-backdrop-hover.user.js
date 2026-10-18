@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Silo Stash Backdrop Hover
 // @namespace    https://github.com/Net005/silo-plugin-metadata-stash
-// @version      1.3.0
+// @version      1.3.1
 // @downloadURL  https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @updateURL    https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @description  Stash backdrop previews, native Watchlist and O-count toolbar actions, library-scoped subtitle creation, and a Listed in Collections row on item pages.
@@ -801,9 +801,17 @@
   const collectionLookup = createCollectionIndex({ fetchJSON: siloJSON });
   let collectionState = null;
   function collectionCard(c, template) {
-    const wrap = document.createElement('div');
-    wrap.className = template?.className || 'w-[130px] sm:w-[150px] lg:w-[178px]';
-    wrap.style.flex = '0 0 auto';
+    // More Like This nests Silo's poster-size class one level inside the
+    // carousel slide; mirror both levels so covers render at the same width.
+    const slide = document.createElement('div');
+    slide.className = template?.className || '';
+    slide.style.flex = '0 0 auto';
+    const sizeSource = template?.querySelector('.group\\/card')?.parentElement;
+    const wrap = sizeSource && sizeSource !== template ? document.createElement('div') : slide;
+    if (wrap !== slide) { wrap.className = sizeSource.className; slide.append(wrap); }
+    if (!template) wrap.className = 'w-[130px] sm:w-[150px] lg:w-[178px]';
+    const measured = template?.querySelector('.aspect-\\[2\\/3\\]')?.getBoundingClientRect().width;
+    if (measured && !(sizeSource && sizeSource !== template)) wrap.style.width = Math.round(measured) + 'px';
     const card = document.createElement('div'); card.className = 'group/card';
     const media = document.createElement('div'); media.className = 'group/media relative';
     const link = document.createElement('a'); link.href = c.href; link.className = 'group block'; link.setAttribute('aria-label', c.title);
@@ -824,7 +832,7 @@
     link.append(frame); media.append(link);
     const caption = document.createElement('a'); caption.href = c.href; caption.className = 'mt-1.5 block truncate text-sm font-medium hover:underline'; caption.textContent = c.title;
     card.append(media, caption); wrap.append(card);
-    return wrap;
+    return slide;
   }
   function spaNavigate(event) {
     const a = event.target.closest('a[href]');
