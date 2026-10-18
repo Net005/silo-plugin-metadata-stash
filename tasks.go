@@ -33,6 +33,7 @@ type scheduledTaskServer struct {
 	posterLastRun   time.Time
 	artworkMu       sync.Mutex
 	artworkCursor   string
+	orphanStore     playtimeStore
 	artworkRetry    map[string]time.Time
 }
 
@@ -156,6 +157,18 @@ func (s *scheduledTaskServer) start() bool {
 	s.mu.Unlock()
 	go func() {
 		defer func() { s.mu.Lock(); s.running = false; s.mu.Unlock() }()
+		// A separate deadline and error boundary keeps orphan-file recovery
+		// independent of catalog matching (which cannot see these file rows).
+		repairCtx, repairCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		repairSummary, repairErr := s.repairUnassociatedFiles(repairCtx)
+		repairCancel()
+		if repairErr != nil {
+			// Filesystem and HTTP errors can contain private paths; log only
+			// an aggregate outcome here, never raw recovery errors.
+			s.log.Warn("Stash orphan file recovery interrupted", "status", "failed")
+		} else {
+			s.log.Info("Stash orphan file recovery", "summary", repairSummary)
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()
 		summary, err := s.match(ctx)

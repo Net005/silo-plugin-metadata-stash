@@ -13,7 +13,7 @@ Stash Metadata uses StashApp for primary scene metadata. JAVBeacon remains an op
 | Stash watched state in Silo | Independent 30-second worker and `watched-sync` task mark exact local unplayed items watched. |
 | JAVBeacon and Stash saved-filter collections | `collection-sync` preserves old Silo collection slugs/IDs, source order and six-hour cover rotation. Exact release path, linked scene ID and artwork identity precede unique code/title fallbacks. |
 | Stash WatchList collection | Stash companion updates the selected prefixed Watchlist saved-filter collections in realtime; a one-minute worker and `watchlist-collection-sync` task recover missed hooks directly from the selected Stash saved filter. Silo's personal Watchlist is intentionally excluded. |
-| Unmatched and partial match repair | One-minute exact filename matcher and `repair-matched` task reapply only verified linked Stash scenes missing cast or metadata. |
+| Unmatched and partial match repair | One-minute exact filename matcher and `repair-matched` task reapply only verified linked Stash scenes missing cast or metadata. Optional orphan-file recovery also handles scanned files with no catalog item using verified per-file release-date metadata and a targeted scan. |
 | Incremental metadata refresh | Fifteen-second worker and `metadata-refresh` task submit bounded Silo refresh jobs, verify completion, then acknowledge the JAVBeacon change cursor. |
 | Concurrent metadata/artwork calls | Concurrent Stash scene requests are coalesced; play-history checks always fetch fresh state. The JAVBeacon compatibility client retains its bounded metadata cache. |
 

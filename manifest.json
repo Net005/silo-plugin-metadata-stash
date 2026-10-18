@@ -1,6 +1,6 @@
 {
   "plugin_id": "stash.metadata",
-  "version": "0.3.69",
+  "version": "0.3.70",
   "checksum": "__CHECKSUM__",
   "silo_api_version": "v1",
   "presentation": {
@@ -168,7 +168,7 @@
       "key": "connection",
       "title": "StashApp Connection",
       "description": "Direct StashApp GraphQL connection.",
-      "json_schema": "{\"type\":\"object\",\"properties\":{\"base_url\":{\"type\":\"string\",\"format\":\"uri\",\"minLength\":1},\"api_key\":{\"type\":\"string\",\"minLength\":1},\"silo_base_url\":{\"type\":\"string\",\"format\":\"uri\"},\"silo_api_key\":{\"type\":\"string\"},\"javbeacon_url\":{\"type\":\"string\",\"format\":\"uri\"},\"javbeacon_api_key\":{\"type\":\"string\"},\"stash_saved_filter_selection\":{\"type\":\"string\"},\"stash_saved_filter_prefix\":{\"type\":\"string\"},\"saved_filter_selection\":{\"type\":\"string\"},\"saved_filter_prefix\":{\"type\":\"string\"},\"playback_excluded_scene_ids\":{\"type\":\"string\"},\"nonjav_poster_repair_enabled\":{\"type\":\"boolean\"},\"nonjav_poster_layout\":{\"type\":\"string\",\"enum\":[\"smart\",\"contain\",\"face\"]},\"playtime_profile_id\":{\"type\":\"string\"},\"playtime_tracking_disabled\":{\"type\":\"boolean\"}},\"required\":[\"base_url\"],\"additionalProperties\":false}",
+      "json_schema": "{\"type\":\"object\",\"properties\":{\"base_url\":{\"type\":\"string\",\"format\":\"uri\",\"minLength\":1},\"api_key\":{\"type\":\"string\",\"minLength\":1},\"silo_base_url\":{\"type\":\"string\",\"format\":\"uri\"},\"silo_api_key\":{\"type\":\"string\"},\"javbeacon_url\":{\"type\":\"string\",\"format\":\"uri\"},\"javbeacon_api_key\":{\"type\":\"string\"},\"stash_saved_filter_selection\":{\"type\":\"string\"},\"stash_saved_filter_prefix\":{\"type\":\"string\"},\"saved_filter_selection\":{\"type\":\"string\"},\"saved_filter_prefix\":{\"type\":\"string\"},\"playback_excluded_scene_ids\":{\"type\":\"string\"},\"nonjav_poster_repair_enabled\":{\"type\":\"boolean\"},\"nonjav_poster_layout\":{\"type\":\"string\",\"enum\":[\"smart\",\"contain\",\"face\"]},\"playtime_profile_id\":{\"type\":\"string\"},\"playtime_tracking_disabled\":{\"type\":\"boolean\"},\"orphan_file_repair_enabled\":{\"type\":\"boolean\",\"default\":false}},\"required\":[\"base_url\"],\"additionalProperties\":false}",
       "required": true,
       "admin_form": {
         "fields": [
@@ -272,6 +272,13 @@
             "required": false,
             "default_value": false,
             "description": "Disables the measured duration worker and restores legacy JAVBeacon playback forwarding."
+          },
+          {
+            "key": "orphan_file_repair_enabled",
+            "label": "Automatically recover unassociated Stash files",
+            "control": "ADMIN_FORM_CONTROL_SWITCH",
+            "default_value": false,
+            "description": "Checks every minute for orphan files rejected by the yearless matcher. Creates only absent per-file NFO metadata from one verified exact Stash file/date, then scans only that file. Requires writable media and private host state. Existing sidecars, videos and playback history are preserved; native matcher backoff still applies."
           }
         ]
       }
@@ -396,7 +403,9 @@
   "http_routes": [
     {
       "path": "/recommendations/playback/preview",
-      "methods": ["GET"],
+      "methods": [
+        "GET"
+      ],
       "access": "admin"
     },
     {

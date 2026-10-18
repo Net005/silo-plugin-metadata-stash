@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.70] - 2026-10-18
+
+- Add opt-in automatic recovery for scanned Stash files that lack a catalog association after yearless matching fails. Restrict recovery to enabled Stash movie/mixed libraries, exact source file identity and a verified release date.
+- Preserve existing sidecars and media files, create only missing per-file NFO metadata, and request only a targeted file scan. Keep native matcher backoff and global confidence thresholds intact; report admitted work separately from verified completion.
+- Expose the recovery opt-in in the connection settings and reject invalid values before applying any configuration changes. No companion or browser update is required.
+
 ## [0.3.69] - 2026-10-18
 
 - Add bounded per-session diagnostics to the read-only playback backfill preview: exact session/item identities, completion time, matched Stash scene ID where available and a missing/present/unresolved/excluded/incomplete-history outcome. Keep file paths out of the report.

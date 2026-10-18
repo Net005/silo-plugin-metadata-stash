@@ -29,6 +29,22 @@ Collection posters are reserved across all libraries. Recommendations and import
 
 [Feature parity audit](../FEATURE_PARITY.md) documents each old capability and its replacement.
 
+## Automatic recovery of unassociated files
+
+The normal matcher repairs existing unmatched catalog items. A scanned file can instead have **no catalog association at all**, so it never appears in that queue. A yearless filename can cause this even when Stash returns the correct scene: a sole provider result must pass a stricter confidence gate than the general acceptance floor.
+
+Enable **Automatically recover unassociated Stash files** in the plugin's connection settings to include these files in the existing one-minute worker. This setting is off by default and requires Silo admin credentials, private plugin instance state, and writable access to the configured media paths. JAVBeacon, the Stash companion and a new scheduled task are not required.
+
+Recovery is deliberately narrow:
+
+- Read the scanned-file inventory and matcher diagnostics with validated pagination. Only enabled movie/mixed libraries with the Stash metadata provider are eligible.
+- Require a unique exact Stash file-path identity, a current valid release date and the known rejected-candidate condition. Similar titles and incomplete or ambiguous responses are not authorization to write.
+- Create only an absent `<video-stem>.nfo` with truthful title/code, year, release date and Stash identity. Preserve existing sidecars, including case variants; reject unsafe paths, symlinks and inaccessible media. Skip reserved `movie.nfo`/`tvshow.nfo` names and same-stem sibling videos that would share the sidecar. Do not force an identity on a shared library root.
+- Submit only the exact media path and library ID to Silo's file scan API. Never change matching thresholds, retry an entire library, write SQL, rename/download the video, or write playback history/O counts.
+- Track admitted work as pending until the catalog and exact file/provider association can be verified. A successful scan admission is not a completed repair. Existing native matcher backoff still applies; parked or unresolved work needs inspection rather than an unsafe force-match.
+
+The per-file sidecar remains useful on subsequent scans and restarts. Disabling the setting stops automatic recovery but does not delete metadata that has already been created.
+
 ## Existing Silo metadata
 
 Installing this plugin does not delete Silo's stored metadata. To move Silo's cached fields into Stash **without a metadata refresh**, use the companion's **Preview existing Silo metadata migration** task, then **Import existing Silo metadata**. Configure the companion’s Silo URL and API key. Leave **Silo movie library IDs** blank to scan every enabled movie or mixed library, or enter comma-separated IDs to limit the scan. These IDs come from each existing Silo library’s settings URL; no new library or old JAVBeacon plugin is needed. Run **Preview existing Silo metadata migration** first, then **Import existing Silo metadata**. The task reads matched catalog records, identifies a Stash scene by the exact stored scene ID or a unique exact code/title/file-stem match, and fills only empty Stash fields. Ambiguous rows are skipped. It does not change plays, O counts or existing Stash values. The per-run limit defaults to 200 Silo items across the selected libraries. If a result has `next_library_id`, rerun the same task with `start_library_id`, `start_cursor`, and `start_index` set to the returned values; repeat until those fields are null. A preview has its own cursor and does not advance the import cursor. No Silo metadata refresh is needed.

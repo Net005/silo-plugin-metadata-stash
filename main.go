@@ -38,6 +38,7 @@ type runtimeServer struct {
 	artwork                                                  *artworkClient
 	posterLayout                                             string
 	posterRepair                                             bool
+	orphanRepairEnabled                                      bool
 	posterPollOnce                                           sync.Once
 	siloBase                                                 string
 	siloKey                                                  string
@@ -64,6 +65,9 @@ func (s *runtimeServer) Configure(_ context.Context, req *pluginv1.ConfigureRequ
 		switch entry.GetKey() {
 		case "connection":
 			_, err = connectionPosterLayout(entry.GetValue().AsMap())
+			if err == nil {
+				_, err = connectionOrphanRepairEnabled(entry.GetValue().AsMap())
+			}
 		case "recommendations":
 			_, err = parseRecommendationConfig(entry.GetValue().AsMap(), recommendationConfig{})
 		}
@@ -88,6 +92,7 @@ func (s *runtimeServer) Configure(_ context.Context, req *pluginv1.ConfigureRequ
 		}
 		v := entry.GetValue().AsMap()
 		posterLayout, _ := connectionPosterLayout(v)
+		orphanRepairEnabled, _ := connectionOrphanRepairEnabled(v)
 		s.mu.Lock()
 		key := text(v["api_key"])
 		if key == "" && s.client != nil {
@@ -108,6 +113,7 @@ func (s *runtimeServer) Configure(_ context.Context, req *pluginv1.ConfigureRequ
 		}
 		s.posterLayout = posterLayout
 		s.posterRepair, _ = v["nonjav_poster_repair_enabled"].(bool)
+		s.orphanRepairEnabled = orphanRepairEnabled
 		s.stashFilters = text(v["stash_saved_filter_selection"])
 		s.stashPrefix = literalText(v["stash_saved_filter_prefix"])
 		s.releaseFilters = text(v["saved_filter_selection"])
@@ -147,6 +153,18 @@ func connectionPosterLayout(v map[string]any) (string, error) {
 		return "", fmt.Errorf("invalid poster layout")
 	}
 	return layout, nil
+}
+
+func connectionOrphanRepairEnabled(v map[string]any) (bool, error) {
+	raw, exists := v["orphan_file_repair_enabled"]
+	if !exists {
+		return false, nil
+	}
+	enabled, ok := raw.(bool)
+	if !ok {
+		return false, fmt.Errorf("orphan_file_repair_enabled must be a boolean")
+	}
+	return enabled, nil
 }
 
 func text(v any) string { s, _ := v.(string); return strings.TrimSpace(s) }

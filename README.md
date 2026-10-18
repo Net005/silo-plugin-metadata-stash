@@ -34,6 +34,7 @@
 | **Watchlist sync** | Stash tag changes and Silo Watchlist actions update the selected saved-filter collections. Re-adding an item moves it to the top. Changes queue for background sync and retry after failures. |
 | **Saved-filter collections** | Selected Stash scene filters become Silo collections, with optional JAVBeacon release filters and rotating member artwork. |
 | **Artwork storage** | Cache selected posters and backdrops in Silo's local or S3 storage. Optional JAVBeacon adds conformed covers and cached screenshots. |
+| **Missing-file recovery** | Opt-in recovery for scanned Stash files with no catalog entry: verify exact identity and release date, create an absent per-file NFO and scan only that file. Existing sidecars and videos remain unchanged. |
 | **Recommendations** | Weekly collections, feedback, preview reports, retained report history and spending controls. [Guide →](RECOMMENDATIONS.md) |
 | **Stash companion** | Watchlist controls, subtitle requests, cover previews, large seek previews, targeted Silo refresh and fill-only metadata migration. |
 | **Silo browser script** | Backdrop previews, compact ratings, O-count controls, person O-count badges, **+ Sub**, **Open in Stash**, full release dates and clickable genre/studio filters. [Guide →](contrib/tampermonkey/README.md) |
@@ -86,6 +87,7 @@ A [release ZIP](https://github.com/Net005/silo-plugin-metadata-stash/releases/la
 | **Enhance the Silo UI** | Install the [Tampermonkey userscript](contrib/tampermonkey/README.md) and configure its Stash connection locally. |
 | **Build recommendations** | Follow the [recommendations guide](RECOMMENDATIONS.md), starting in preview mode. |
 | **Migrate cached metadata** | Run **Preview existing Silo metadata migration** before **Import existing Silo metadata** in Stash. [Migration details →](docs/INTEGRATION.md#existing-silo-metadata) |
+| **Recover missing Stash scenes automatically** | Enable **Automatically recover unassociated Stash files** in the Silo plugin connection settings. Requires writable media and private host state. Runs with the existing one-minute matcher; native matcher backoff may delay the final association. [Recovery safeguards →](docs/INTEGRATION.md#automatic-recovery-of-unassociated-files) |
 
 ## Watchlist setup
 
