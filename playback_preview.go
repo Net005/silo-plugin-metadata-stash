@@ -60,7 +60,16 @@ func (s *scheduledTaskServer) previewCompletedPlays(ctx context.Context) (map[st
 		rows = rows[:limit]
 	}
 	missing, present, unresolved, excluded, incomplete := 0, 0, 0, 0, 0
+	results := make([]any, 0, len(rows))
+	// Cache only inside this invocation: repeated sessions compare against one
+	// fresh history read, and the next preview must observe any new Stash plays.
+	histories := make(map[string]*scene)
 	for _, row := range rows {
+		result := map[string]any{
+			"session_id": row.SessionID, "media_item_id": row.MediaItemID,
+			"ended_at": row.EndedAt.UTC().Format(time.RFC3339Nano), "outcome": "unresolved",
+		}
+		results = append(results, result)
 		paths, err := silo.ItemFilePaths(ctx, row.MediaItemID)
 		if err != nil {
 			return nil, fmt.Errorf("playback preview: unable to read Silo file identity")
@@ -73,23 +82,32 @@ func (s *scheduledTaskServer) previewCompletedPlays(ctx context.Context) (map[st
 			unresolved++
 			continue
 		}
+		result["stash_scene_id"] = id
 		if c.excludedScenes[id] {
+			result["outcome"] = "excluded"
 			excluded++
 			continue
 		}
-		scene, err := c.findScene(ctx, id)
-		if err != nil {
-			return nil, fmt.Errorf("playback preview: unable to read fresh Stash history")
+		scene, loaded := histories[id]
+		if !loaded {
+			scene, err = c.findScene(ctx, id)
+			if err != nil {
+				return nil, fmt.Errorf("playback preview: unable to read fresh Stash history")
+			}
+			histories[id] = scene
 		}
 		if scene == nil {
 			unresolved++
 			continue
 		}
 		if scene.hasPlayAt(row.EndedAt) {
+			result["outcome"] = "already_present"
 			present++
 		} else if scene.PlayCount > len(scene.PlayHistory) {
+			result["outcome"] = "incomplete_history"
 			incomplete++
 		} else {
+			result["outcome"] = "missing"
 			missing++
 		}
 	}
@@ -100,6 +118,7 @@ func (s *scheduledTaskServer) previewCompletedPlays(ctx context.Context) (map[st
 	return map[string]any{
 		"status": status, "read_only": true, "eligible": total, "checked": len(rows), "remaining": total - len(rows),
 		"missing": missing, "already_present": present, "unresolved": unresolved, "excluded": excluded, "incomplete_history": incomplete, "duplicates": duplicates, "skipped": skipped,
-		"detail": "Newest 100 unique completed movie sessions at most; exact file identity and fresh Stash history, with a 30-second timestamp tolerance. Missing plays are candidates only. No plays, duration, resume positions or O counts are written.",
+		"results": results,
+		"detail":  "Newest 100 unique completed movie sessions at most; exact file identity and fresh Stash history, with a 30-second timestamp tolerance. Missing plays are candidates only. No plays, duration, resume positions or O counts are written.",
 	}, nil
 }

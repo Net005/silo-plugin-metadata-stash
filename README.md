@@ -116,6 +116,8 @@ The output reports checked, missing, already-present, unresolved, excluded and i
 
 The same read-only output is available immediately through the admin-only plugin route `GET /recommendations/playback/preview`, under `/api/v2/plugin-content/plugins/<installation ID>`. Recommendation generation does not need to be enabled.
 
+Plugin 0.3.69+ includes a bounded `results` array with one entry per checked session, newest first: `session_id`, `media_item_id`, UTC `ended_at`, `stash_scene_id` when matched, and `outcome` (`missing`, `already_present`, `unresolved`, `excluded` or `incomplete_history`). These diagnostics let an administrator identify candidates without exposing file paths. Treat the report as private playback data; do not publish it in issues or logs. Each matched scene's history is read once per preview and fetched fresh again on the next preview. There is still no replay/apply operation.
+
 ## Troubleshooting
 
 | Symptom | Check |

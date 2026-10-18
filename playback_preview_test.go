@@ -123,6 +123,19 @@ func TestPlaybackPreviewCoverageAndFailureBoundaries(t *testing.T) {
 			if tc.unresolved && (out["unresolved"] != 1 || out["missing"] != 0) {
 				t.Fatalf("identity %#v", out)
 			}
+			results := out["results"].([]any)
+			if len(results) != out["checked"].(int) {
+				t.Fatalf("diagnostic coverage: %d vs %v", len(results), out["checked"])
+			}
+			counts := map[string]int{}
+			for _, result := range results {
+				counts[result.(map[string]any)["outcome"].(string)]++
+			}
+			for _, outcome := range []string{"missing", "already_present", "unresolved", "excluded", "incomplete_history"} {
+				if counts[outcome] != out[outcome].(int) {
+					t.Fatalf("diagnostic tally %s: %d vs %v", outcome, counts[outcome], out[outcome])
+				}
+			}
 		})
 	}
 }
@@ -162,6 +175,9 @@ func TestPlaybackPreviewIncompleteHistoryIsNotMissing(t *testing.T) {
 	if out["missing"] != 0 || out["incomplete_history"] != 1 {
 		t.Fatalf("summary: %#v", out)
 	}
+	if out["results"].([]any)[0].(map[string]any)["outcome"] != "incomplete_history" {
+		t.Fatalf("diagnostic: %#v", out["results"])
+	}
 }
 
 func TestPlaybackPreviewTaskReadsOnlyAndDeduplicatesSessions(t *testing.T) {
@@ -182,6 +198,7 @@ func TestPlaybackPreviewTaskReadsOnlyAndDeduplicatesSessions(t *testing.T) {
 		}
 	}))
 	defer silo.Close()
+	historyReads := 0
 	stash := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Query string `json:"query"`
@@ -193,6 +210,7 @@ func TestPlaybackPreviewTaskReadsOnlyAndDeduplicatesSessions(t *testing.T) {
 		if strings.Contains(body.Query, "findScenes") {
 			_, _ = w.Write([]byte(`{"data":{"findScenes":{"count":1,"scenes":[{"id":"42","files":[{"path":"/media/example.mp4"}]}]}}}`))
 		} else {
+			historyReads++
 			_, _ = w.Write([]byte(`{"data":{"findScene":{"id":"42","play_history":["2026-01-01T12:00:00Z"]}}}`))
 		}
 	}))
@@ -205,5 +223,30 @@ func TestPlaybackPreviewTaskReadsOnlyAndDeduplicatesSessions(t *testing.T) {
 	got := out.Output.AsMap()
 	if got["status"] != "complete" || got["checked"] != float64(2) || got["missing"] != float64(1) || got["already_present"] != float64(1) || got["duplicates"] != float64(1) || got["read_only"] != true {
 		t.Fatalf("preview summary: %#v", got)
+	}
+	results, ok := got["results"].([]any)
+	if !ok || len(results) != 2 {
+		t.Fatalf("expected one diagnostic per checked session: %#v", got["results"])
+	}
+	for i, want := range []struct{ session, ended, outcome string }{
+		{"two", "2026-01-02T12:00:00Z", "missing"},
+		{"one", "2026-01-01T12:00:00Z", "already_present"},
+	} {
+		row := results[i].(map[string]any)
+		if row["session_id"] != want.session || row["media_item_id"] != "movie:one" || row["ended_at"] != want.ended || row["stash_scene_id"] != "42" || row["outcome"] != want.outcome {
+			t.Fatalf("diagnostic %d: %#v", i, row)
+		}
+		if _, exists := row["file_paths"]; exists {
+			t.Fatal("diagnostics should not disclose file paths")
+		}
+	}
+	if historyReads != 1 {
+		t.Fatalf("expected one fresh scene history per preview, got %d", historyReads)
+	}
+	if _, err := task.previewCompletedPlays(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if historyReads != 2 {
+		t.Fatalf("a new preview must fetch fresh history, got %d total reads", historyReads)
 	}
 }

@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.69] - 2026-10-18
+
+- Add bounded per-session diagnostics to the read-only playback backfill preview: exact session/item identities, completion time, matched Stash scene ID where available and a missing/present/unresolved/excluded/incomplete-history outcome. Keep file paths out of the report.
+- Read each matched scene's history once per preview, sharing the fresh result across repeated sessions without caching it between previews. Preserve all no-write and incomplete-pagination safeguards.
+
 ## [0.3.68] - 2026-10-17
 
 - Add a read-only completed-play backfill preview that works without JAVBeacon. Compare up to 100 newest unique completed movie sessions against exact Stash file identities and fresh history, report partial coverage and incomplete history, and never write activity.
