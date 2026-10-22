@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Browser userscript v1.4.0 adds always-visible **watched** and **O count** indicators to collection posters. Silo only shows its watched eye while hovering; the userscript keeps that same green eye chip in the poster's bottom-left corner for watched releases, with the exact Stash scene's O count in a matching chip beside it (shown when above zero). Both step aside while Silo's own hover buttons use that corner, refresh after you toggle watched, load only for posters near the viewport, and batch the Stash O-count reads.
+
 - Browser userscript v1.3.3 gives **Listed in Collections** the same carousel controls as **More Like This**: hover-revealed left/right arrow buttons with edge gradients, a left fade once scrolled, arrow-key scrolling, and no visible scrollbar.
 
 - Browser userscript v1.3.2 clears the hero while a backdrop preview plays: the context line, title, date/quality badges, overview, director/genre/studio lines and the cover fade out, leaving only the action toolbar. Layout is preserved so the toolbar does not move, and everything returns when the preview stops.

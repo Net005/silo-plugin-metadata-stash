@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         Silo Stash Backdrop Hover
 // @namespace    https://github.com/Net005/silo-plugin-metadata-stash
-// @version      1.3.3
+// @version      1.4.0
 // @downloadURL  https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @updateURL    https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
-// @description  Stash backdrop previews, native Watchlist and O-count toolbar actions, library-scoped subtitle creation, and a Listed in Collections row on item pages.
+// @description  Stash backdrop previews, native Watchlist and O-count toolbar actions, library-scoped subtitle creation, a Listed in Collections row on item pages, and watched / O-count indicators on collection posters.
 // @match        https://silo.example.invalid/*
 // @connect      *
 // @grant        GM_getValue
@@ -289,7 +289,56 @@
     const count = data?.findPerformer?.o_counter;
     return Number.isSafeInteger(count) && count > 0 ? count : null;
   }
-  if (typeof module !== 'undefined' && module.exports) { module.exports = { performerID, personOCount, createOCounter, parseCues, exactScene, createSiloFileReader, stashOrigin, sceneID, subtitleEligible, confirmSubtitleOverwrite, fullReleaseDate, metadataFilterHref, collectionHref, createCollectionIndex }; return; }
+  // Poster-card state for grid views: Silo's own played flag plus the exact
+  // Stash scene's O count. Item reads are bounded; O counts are batched.
+  function createCardStateLoader({ fetchItem, resolveScene, readOCounts, concurrency = 4, ttl = 2 * 60 * 1000, now = Date.now }) {
+    const cache = new Map(), scenes = new Map(), queue = [];
+    let active = 0, batch = null;
+    function limited(task) {
+      return new Promise((resolve, reject) => {
+        queue.push(() => task().then(resolve, reject));
+        pump();
+      });
+    }
+    function pump() {
+      while (active < concurrency && queue.length) {
+        active++;
+        queue.shift()().finally(() => { active--; pump(); });
+      }
+    }
+    function oCount(scene) {
+      if (!batch) {
+        const current = batch = { ids: new Set(), result: null };
+        current.result = new Promise(r => setTimeout(r, 25)).then(() => { batch = null; return readOCounts([...current.ids]); });
+      }
+      batch.ids.add(scene);
+      return batch.result.then(counts => {
+        const value = counts?.[scene];
+        if (value == null) return 0;
+        return Number.isSafeInteger(value) && value >= 0 ? value : null;
+      });
+    }
+    function sceneOf(id) {
+      if (!scenes.has(id)) scenes.set(id, limited(() => resolveScene(id)).then(s => s ? String(s) : null).catch(() => null));
+      return scenes.get(id);
+    }
+    async function load(id) {
+      const [item, scene] = await Promise.all([limited(() => fetchItem(id)), sceneOf(id)]);
+      const count = scene ? await oCount(scene).catch(() => null) : null;
+      return { played: item?.user_state?.played === true, oCount: count };
+    }
+    return {
+      get(id) {
+        const hit = cache.get(id);
+        if (hit && now() - hit.at < ttl) return hit.promise;
+        const entry = { at: now(), promise: load(id).catch(error => { cache.delete(id); throw error; }) };
+        cache.set(id, entry);
+        return entry.promise;
+      },
+      invalidate(id) { cache.delete(id); },
+    };
+  }
+  if (typeof module !== 'undefined' && module.exports) { module.exports = { performerID, personOCount, createOCounter, parseCues, exactScene, createSiloFileReader, stashOrigin, sceneID, subtitleEligible, confirmSubtitleOverwrite, fullReleaseDate, metadataFilterHref, collectionHref, createCollectionIndex, createCardStateLoader }; return; }
   let settings = { ...DEFAULTS, ...GM_getValue('settings', {}) };
   let current = null;
   const overviewStyle = document.createElement('style');
@@ -929,6 +978,95 @@
     if (typeof ResizeObserver === 'function') new ResizeObserver(update).observe(viewport);
     requestAnimationFrame(update);
   }
+  // Collection grids: show Silo's watched eye permanently (Silo only reveals
+  // it on hover) and the exact Stash scene's O count beside it. Both use the
+  // native card-action chip styling and step aside while Silo's hover
+  // controls occupy the same corner.
+  const cardStyle = document.createElement('style');
+  cardStyle.textContent = '[data-stash-card-badges]{transition:opacity var(--duration-fast,150ms) var(--ease-default,ease)}'
+    + ':where(:root[data-fine-pointer=true]) .group\\/card:hover [data-stash-card-badges],.group\\/card:focus-within [data-stash-card-badges]{opacity:0}';
+  document.head.append(cardStyle);
+  const cardLoader = createCardStateLoader({
+    fetchItem: id => siloJSON('/api/v2/catalog/items/' + encodeURIComponent(id)),
+    resolveScene: id => settings.stashURL ? resolveSceneID(id) : Promise.resolve(null),
+    readOCounts: async ids => {
+      if (!ids.length) return {};
+      const query = '{' + ids.map((id, i) => `s${i}:findScene(id:${JSON.stringify(id)}){o_counter}`).join(' ') + '}';
+      const data = await gql(query, {});
+      return Object.fromEntries(ids.map((id, i) => [id, data?.['s' + i] ? data['s' + i].o_counter : undefined]));
+    },
+  });
+  const cardObserver = 'IntersectionObserver' in window ? new IntersectionObserver(entries => {
+    for (const entry of entries) if (entry.isIntersecting) { cardObserver.unobserve(entry.target); loadCard(entry.target); }
+  }, { rootMargin: '400px 0px' }) : null;
+  function collectionGrid() {
+    if (location.pathname !== '/catalog') return false;
+    const source = new URLSearchParams(location.search).get('source');
+    return source === 'library_collection' || source === 'user_collection';
+  }
+  function cardItemID(card) {
+    const href = card.querySelector('a[href*="/item/"]')?.getAttribute('href') || '';
+    const m = /\/item\/([^/?#]+)/.exec(href);
+    return m ? decodeURIComponent(m[1]) : '';
+  }
+  function cardChip(extra) {
+    const chip = document.createElement('span');
+    chip.className = 'inline-flex items-center justify-center rounded-md border border-border/20 bg-background/80 shadow-sm h-6 sm:h-8 ' + extra;
+    return chip;
+  }
+  function renderCard(card, id, state) {
+    const media = card.querySelector('.group\\/media');
+    if (!media || cardItemID(card) !== id) return;
+    media.querySelector('[data-stash-card-badges]')?.remove();
+    if (!state.played && !(state.oCount > 0)) return;
+    const box = document.createElement('div');
+    box.dataset.stashCardBadges = id;
+    box.className = 'pointer-events-none absolute z-10 flex items-center bottom-1.5 left-1.5 gap-0.5 sm:bottom-2.5 sm:left-2.5 sm:gap-1.5';
+    if (state.played) {
+      const chip = cardChip('size-6 sm:size-8 text-emerald-400');
+      chip.setAttribute('role', 'img'); chip.setAttribute('aria-label', 'Watched'); chip.title = 'Watched';
+      const eye = watchlistIcon(false); eye.replaceChildren();
+      eye.setAttribute('class', 'size-3 sm:size-4');
+      for (const [tag, attrs] of [['path', { d: 'M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0' }], ['circle', { cx: '12', cy: '12', r: '3' }]]) {
+        const node = document.createElementNS('http://www.w3.org/2000/svg', tag);
+        for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+        eye.append(node);
+      }
+      chip.append(eye); box.append(chip);
+    }
+    if (state.oCount > 0) {
+      const chip = cardChip('gap-1 px-1.5 sm:px-2 text-foreground text-[0.6875rem] sm:text-xs font-semibold tabular-nums leading-none');
+      chip.setAttribute('role', 'img'); chip.setAttribute('aria-label', `O count ${state.oCount}`); chip.title = `O count: ${state.oCount}`;
+      const icon = oIcon(); icon.setAttribute('class', 'size-3 sm:size-4 text-rose-400');
+      chip.append(icon, document.createTextNode(String(state.oCount)));
+      box.append(chip);
+    }
+    media.append(box);
+  }
+  function loadCard(card) {
+    const id = cardItemID(card);
+    if (!id) return;
+    card.dataset.stashCardState = id;
+    cardLoader.get(id).then(state => { if (card.isConnected && collectionGrid()) renderCard(card, id, state); }).catch(() => {});
+  }
+  function reconcileCardBadges() {
+    if (!collectionGrid()) { document.querySelectorAll('[data-stash-card-badges]').forEach(el => el.remove()); return; }
+    for (const card of document.querySelectorAll('.media-card.group\\/card')) {
+      const id = cardItemID(card);
+      if (!id || card.dataset.stashCardState === id) continue;
+      card.querySelector('[data-stash-card-badges]')?.remove();
+      card.dataset.stashCardState = id;
+      if (cardObserver) cardObserver.observe(card); else loadCard(card);
+    }
+  }
+  // Silo's own watched/favorite shortcuts change the state; re-read after them.
+  document.addEventListener('click', event => {
+    const card = event.target.closest?.('.media-card.group\\/card');
+    if (!card || !event.target.closest('button') || !collectionGrid()) return;
+    const id = cardItemID(card);
+    if (!id) return;
+    setTimeout(() => { cardLoader.invalidate(id); loadCard(card); }, 1200);
+  }, true);
   function moreLikeThisSection() {
     return [...document.querySelectorAll('section.section-row h2')].find(h => h.textContent.trim() === 'More Like This')?.closest('section') || null;
   }
@@ -957,6 +1095,7 @@
     anchor.after(row);
   }
   function reconcile() {
+    reconcileCardBadges();
     reconcilePersonO();
     reconcileReleaseDate();
     reconcileCollections();
