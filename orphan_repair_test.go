@@ -26,6 +26,7 @@ type orphanFixture struct {
 	scanStatus   int
 	matchCalls   int
 	matchFailure bool
+	retries      int
 }
 
 type orphanMemoryStore struct {
@@ -110,12 +111,18 @@ func newOrphanFixture(t *testing.T) *orphanFixture {
 				w.WriteHeader(http.StatusAccepted)
 			}
 			body = map[string]any{"status": "accepted", "mode": "file", "library_id": "7"}
+		case "/api/v2/libraries/7/metadata-match-queue/retry":
+			if r.Method != "POST" {
+				t.Error("queue retry must use POST")
+			}
+			f.retries++
+			body = map[string]any{"status": "queued", "library_id": "7"}
 		default:
 			t.Errorf("unexpected endpoint %s %s", r.Method, r.URL.Path)
 			http.Error(w, "unexpected", 500)
 			return
 		}
-		if r.URL.Path != "/graphql" && r.URL.Path != "/api/v2/scan" && r.Method != "GET" {
+		if r.URL.Path != "/graphql" && r.URL.Path != "/api/v2/scan" && !strings.HasSuffix(r.URL.Path, "/metadata-match-queue/retry") && r.Method != "GET" {
 			t.Errorf("unexpected write %s", r.URL.Path)
 		}
 		if f.alter != nil {
@@ -493,6 +500,8 @@ func expireOrphanMarkers(t *testing.T, f *orphanFixture) {
 	}
 	for k, m := range markers {
 		m.Next = time.Now().Add(-time.Hour)
+		m.AdmittedAt = m.AdmittedAt.Add(-time.Hour)
+		m.QueueRetryAt = time.Now().Add(-time.Hour)
 		markers[k] = m
 	}
 	raw, err := json.Marshal(markers)
@@ -518,6 +527,9 @@ func TestOrphanRepairAdmissionIsPendingAndNeverRepeated(t *testing.T) {
 	}
 	if f.scans != 1 || summary["admitted"] != 0 || summary["pending"] != 1 {
 		t.Fatalf("repeated or falsely completed: scans=%d summary=%v", f.scans, summary)
+	}
+	if f.retries != 1 || summary["queue_retried"] != 1 {
+		t.Fatalf("still-orphaned admission must force one match-queue retry: retries=%d summary=%v", f.retries, summary)
 	}
 	after, err := os.Stat(strings.TrimSuffix(f.video, ".mp4") + ".nfo")
 	if err != nil {
@@ -853,5 +865,56 @@ func TestOrphanRepairAdmitsOnlyExactFileAndPreservesVideo(t *testing.T) {
 	}
 	if len(f.store.data) == 0 {
 		t.Fatal("no durable ownership/retry marker")
+	}
+}
+
+// Silo backs a rejected file off for an hour, so a file-mode scan alone does
+// not re-read the new sidecar. A still-orphaned admission must force a bounded
+// match-queue retry, never immediately and never more than three times.
+func TestOrphanRepairForcesBoundedQueueRetryUntilLinked(t *testing.T) {
+	f := newOrphanFixture(t)
+	if _, err := f.task.repairUnassociatedFiles(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.task.repairUnassociatedFiles(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if f.retries != 0 {
+		t.Fatal("queue retried before the scan had time to sync")
+	}
+	for i := 0; i < 5; i++ {
+		expireOrphanMarkers(t, f)
+		if _, err := f.task.repairUnassociatedFiles(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if f.retries != 3 || f.scans != 1 {
+		t.Fatalf("retries=%d scans=%d, want 3 bounded retries and one scan", f.retries, f.scans)
+	}
+}
+
+// Markers written by earlier versions have no admission time; those stuck
+// files must be retried too.
+func TestOrphanRepairRetriesLegacyAdmittedMarkers(t *testing.T) {
+	f := newOrphanFixture(t)
+	if _, err := f.task.repairUnassociatedFiles(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	markers := map[string]map[string]any{}
+	if err := json.Unmarshal(f.store.data, &markers); err != nil {
+		t.Fatal(err)
+	}
+	for k, m := range markers {
+		delete(m, "admitted_at")
+		delete(m, "queue_retry_after")
+		markers[k] = m
+	}
+	f.store.data, _ = json.Marshal(markers)
+	summary, err := f.task.repairUnassociatedFiles(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.retries != 1 || summary["queue_retried"] != 1 {
+		t.Fatalf("legacy admitted marker not retried: retries=%d summary=%v", f.retries, summary)
 	}
 }

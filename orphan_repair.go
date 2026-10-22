@@ -59,7 +59,19 @@ type orphanMarker struct {
 	Video    string    `json:"video_identity"`
 	NFO      string    `json:"nfo_identity"`
 	Attempts int       `json:"attempts"`
+	// Silo backs rejected files off, so a scan alone may never re-read the
+	// sidecar. These bound the forced match-queue retries after admission.
+	AdmittedAt   time.Time `json:"admitted_at"`
+	QueueRetries int       `json:"queue_retries"`
+	QueueRetryAt time.Time `json:"queue_retry_after"`
 }
+
+const (
+	orphanQueueRetryDelay = time.Minute
+	orphanQueueRetryEvery = 10 * time.Minute
+	orphanQueueRetryMax   = 3
+)
+
 type orphanNFO struct {
 	XMLName   xml.Name    `xml:"movie"`
 	Title     string      `xml:"title"`
@@ -476,7 +488,8 @@ func (s *scheduledTaskServer) repairUnassociatedFiles(ctx context.Context) (map[
 		}
 		queues[lib.ID] = rows
 	}
-	admitted, pending, scanFailed, attempted := 0, 0, 0, 0
+	admitted, pending, scanFailed, attempted, queueRetried := 0, 0, 0, 0, 0
+	retriedLibrary := map[string]bool{}
 	for _, lib := range libs {
 		queue := queues[lib.ID]
 		for _, file := range inventory {
@@ -488,7 +501,29 @@ func (s *scheduledTaskServer) repairUnassociatedFiles(ctx context.Context) (map[
 			marker, existing := markers[markerKey]
 			if existing {
 				pending++
-				if marker.Admitted || marker.Next.After(time.Now()) || marker.Attempts >= 3 {
+				// The file is still unassociated, so admission did not complete.
+				// Force Silo to re-read the sidecar instead of waiting out its
+				// match backoff, at most once per library per cycle.
+				if marker.Admitted {
+					now := time.Now()
+					if !retriedLibrary[lib.ID] && marker.QueueRetries < orphanQueueRetryMax && now.Sub(marker.AdmittedAt) >= orphanQueueRetryDelay && !marker.QueueRetryAt.After(now) {
+						var response struct {
+							Status string `json:"status"`
+						}
+						if e := siloRequest(ctx, base, key, http.MethodPost, "/api/v2/libraries/"+url.PathEscape(lib.ID)+"/metadata-match-queue/retry", map[string]any{}, &response); e == nil && response.Status == "queued" {
+							retriedLibrary[lib.ID] = true
+							queueRetried++
+						}
+						marker.QueueRetries++
+						marker.QueueRetryAt = now.Add(orphanQueueRetryEvery)
+						markers[markerKey] = marker
+						if err = save(); err != nil {
+							return nil, err
+						}
+					}
+					continue
+				}
+				if marker.Next.After(time.Now()) || marker.Attempts >= 3 {
 					continue
 				}
 			}
@@ -591,6 +626,7 @@ func (s *scheduledTaskServer) repairUnassociatedFiles(ctx context.Context) (map[
 				continue // Uncertain admission is retried only after the durable cooldown.
 			}
 			marker.Admitted = true
+			marker.AdmittedAt = time.Now()
 			markers[markerKey] = marker
 			if err = save(); err != nil {
 				return nil, err
@@ -598,5 +634,5 @@ func (s *scheduledTaskServer) repairUnassociatedFiles(ctx context.Context) (map[
 			admitted++
 		}
 	}
-	return map[string]any{"status": "pending", "admitted": admitted, "pending": pending, "scan_failed": scanFailed}, nil
+	return map[string]any{"status": "pending", "admitted": admitted, "pending": pending, "scan_failed": scanFailed, "queue_retried": queueRetried}, nil
 }
