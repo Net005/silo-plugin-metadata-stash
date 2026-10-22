@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Browser userscript v1.3.3 gives **Listed in Collections** the same carousel controls as **More Like This**: hover-revealed left/right arrow buttons with edge gradients, a left fade once scrolled, arrow-key scrolling, and no visible scrollbar.
+
 - Browser userscript v1.3.2 clears the hero while a backdrop preview plays: the context line, title, date/quality badges, overview, director/genre/studio lines and the cover fade out, leaving only the action toolbar. Layout is preserved so the toolbar does not move, and everything returns when the preview stops.
 
 - Browser userscript v1.3.1 sizes **Listed in Collections** covers exactly like **More Like This** by mirroring the native poster-size wrapper inside each carousel slide.

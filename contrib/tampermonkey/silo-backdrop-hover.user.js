@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Silo Stash Backdrop Hover
 // @namespace    https://github.com/Net005/silo-plugin-metadata-stash
-// @version      1.3.2
+// @version      1.3.3
 // @downloadURL  https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @updateURL    https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @description  Stash backdrop previews, native Watchlist and O-count toolbar actions, library-scoped subtitle creation, and a Listed in Collections row on item pages.
@@ -868,10 +868,66 @@
     const viewport = row.querySelector('.embla__viewport');
     const container = row.querySelector('.embla__container');
     const template = mlt?.querySelector('.embla__container')?.firstElementChild;
-    if (viewport) { viewport.style.overflowX = 'auto'; viewport.style.scrollbarWidth = 'thin'; viewport.style.cursor = 'auto'; viewport.setAttribute('aria-label', 'Collections'); }
+    if (viewport) { viewport.style.overflowX = 'auto'; viewport.style.scrollbarWidth = 'none'; viewport.style.cursor = 'auto'; viewport.setAttribute('aria-label', 'Collections'); }
     if (container) { container.style.transform = 'none'; container.style.cursor = 'auto'; container.replaceChildren(...collections.map(c => collectionCard(c, template))); }
+    if (viewport) attachCarouselControls(row, viewport, mlt);
     row.addEventListener('click', spaNavigate);
     return row;
+  }
+  // Mirror Silo's carousel controls (More Like This): hover-revealed gradient
+  // arrow buttons at both edges plus a left fade once scrolled, and arrow keys.
+  const chevronPath = { left: 'm15 18-6-6 6-6', right: 'm9 18 6-6-6-6' };
+  function carouselButton(side, mlt) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.setAttribute('aria-label', side === 'left' ? 'Scroll left' : 'Scroll right');
+    button.className = 'from-background/80 absolute top-0 bottom-0 z-10 flex h-11 w-11 items-center justify-center self-center to-transparent opacity-0 transition-opacity duration-(--duration-fast) group-hover/carousel:opacity-100 focus-visible:opacity-100 ' +
+      (side === 'left' ? 'left-0 bg-gradient-to-r' : 'right-0 bg-gradient-to-l');
+    const native = mlt?.querySelector('button[aria-label="Scroll right"] svg, button[aria-label="Scroll left"] svg');
+    let icon;
+    if (native) {
+      icon = native.cloneNode(true);
+      const path = icon.querySelector('path');
+      if (path && icon.querySelectorAll('path').length === 1) path.setAttribute('d', chevronPath[side]);
+    } else {
+      icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      icon.setAttribute('viewBox', '0 0 24 24'); icon.setAttribute('fill', 'none'); icon.setAttribute('stroke', 'currentColor');
+      icon.setAttribute('stroke-width', '2'); icon.setAttribute('stroke-linecap', 'round'); icon.setAttribute('stroke-linejoin', 'round');
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path'); path.setAttribute('d', chevronPath[side]); icon.append(path);
+    }
+    icon.setAttribute('class', 'text-foreground h-6 w-6');
+    button.append(icon);
+    return button;
+  }
+  function attachCarouselControls(row, viewport, mlt) {
+    row.classList.add('group/carousel');
+    const holder = viewport.parentElement;
+    holder.classList.add('relative');
+    const fade = document.createElement('div');
+    fade.className = 'from-background/80 pointer-events-none absolute top-0 bottom-0 left-0 z-[5] w-10 bg-gradient-to-r to-transparent';
+    const prev = carouselButton('left', mlt), next = carouselButton('right', mlt);
+    holder.prepend(fade, prev);
+    holder.append(next);
+    const style = document.createElement('style');
+    style.textContent = '[data-stash-collections] .embla__viewport::-webkit-scrollbar{display:none}';
+    row.prepend(style);
+    const step = () => Math.max(200, viewport.clientWidth * 0.8);
+    const update = () => {
+      const canPrev = viewport.scrollLeft > 2;
+      const canNext = viewport.scrollLeft + viewport.clientWidth < viewport.scrollWidth - 2;
+      fade.style.display = prev.style.display = canPrev ? '' : 'none';
+      next.style.display = canNext ? '' : 'none';
+    };
+    prev.addEventListener('click', event => { event.preventDefault(); event.stopPropagation(); viewport.scrollBy({ left: -step(), behavior: 'smooth' }); });
+    next.addEventListener('click', event => { event.preventDefault(); event.stopPropagation(); viewport.scrollBy({ left: step(), behavior: 'smooth' }); });
+    viewport.tabIndex = 0;
+    viewport.addEventListener('keydown', event => {
+      if (event.key === 'ArrowLeft') { event.preventDefault(); viewport.scrollBy({ left: -step(), behavior: 'smooth' }); }
+      if (event.key === 'ArrowRight') { event.preventDefault(); viewport.scrollBy({ left: step(), behavior: 'smooth' }); }
+    });
+    viewport.addEventListener('scroll', update, { passive: true });
+    if (typeof ResizeObserver === 'function') new ResizeObserver(update).observe(viewport);
+    requestAnimationFrame(update);
   }
   function moreLikeThisSection() {
     return [...document.querySelectorAll('section.section-row h2')].find(h => h.textContent.trim() === 'More Like This')?.closest('section') || null;
