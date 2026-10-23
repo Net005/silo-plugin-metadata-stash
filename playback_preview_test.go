@@ -250,3 +250,52 @@ func TestPlaybackPreviewTaskReadsOnlyAndDeduplicatesSessions(t *testing.T) {
 		t.Fatalf("a new preview must fetch fresh history, got %d total reads", historyReads)
 	}
 }
+
+func TestPlaybackPreviewReportsMeasuredWatchTime(t *testing.T) {
+	silo := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Error("unexpected write")
+		}
+		if strings.HasSuffix(r.URL.Path, "/files") {
+			_, _ = w.Write([]byte(`{"items":[{"file_path":"/media/example.mp4"}],"page":{"has_more":false}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"items":[` +
+			`{"session_id":"a","media_item_id":"movie:one","media_type":"movie","completed":true,"ended_at":"2026-01-03T12:00:00Z","played_seconds":600},` +
+			`{"session_id":"a","media_item_id":"movie:one","media_type":"movie","completed":true,"ended_at":"2026-01-03T12:00:00Z","played_seconds":1800.5},` +
+			`{"session_id":"b","media_item_id":"movie:one","media_type":"movie","completed":true,"ended_at":"2026-01-02T12:00:00Z","played_seconds":null},` +
+			`{"session_id":"c","media_item_id":"movie:one","media_type":"movie","completed":true,"ended_at":"2026-01-01T12:00:00Z","played_seconds":90}` +
+			`],"page":{"has_more":false}}`))
+	}))
+	defer silo.Close()
+	stash := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var b struct {
+			Query string `json:"query"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&b)
+		if strings.Contains(b.Query, "mutation") {
+			t.Error("unexpected write")
+		}
+		if strings.Contains(b.Query, "findScenes") {
+			_, _ = w.Write([]byte(`{"data":{"findScenes":{"count":1,"scenes":[{"id":"42","files":[{"path":"/media/example.mp4"}]}]}}}`))
+		} else {
+			_, _ = w.Write([]byte(`{"data":{"findScene":{"id":"42","play_count":1,"play_history":["2026-01-01T12:00:00Z"]}}}`))
+		}
+	}))
+	defer stash.Close()
+	task := &scheduledTaskServer{runtime: &runtimeServer{client: &stashClient{base: stash.URL, key: "test"}, siloBase: silo.URL, siloKey: "test", playtimeProfile: "owner"}}
+	out, err := task.previewCompletedPlays(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out["missing"] != 2 || out["already_present"] != 1 || out["duplicates"] != 1 || out["missing_watch_seconds"] != 1800.5 || out["missing_unmeasured"] != 1 {
+		t.Fatalf("summary: %#v", out)
+	}
+	rows := out["results"].([]any)
+	if rows[0].(map[string]any)["played_seconds"] != 1800.5 {
+		t.Fatalf("largest duplicate measurement should win: %#v", rows[0])
+	}
+	if _, ok := rows[1].(map[string]any)["played_seconds"]; ok {
+		t.Fatalf("unmeasured session must not report a watch time: %#v", rows[1])
+	}
+}

@@ -17,6 +17,9 @@ type CompletedPlayback struct {
 	MediaType   string    `json:"media_type"`
 	EndedAt     time.Time `json:"ended_at"`
 	Completed   bool      `json:"completed"`
+	// PlayedSeconds is Silo's measured watch time (pauses and seeks excluded).
+	// Nil for sessions recorded before Silo measured it.
+	PlayedSeconds *float64 `json:"played_seconds"`
 }
 
 // CompletedPlaybackHistory consumes the complete cursor sequence before any

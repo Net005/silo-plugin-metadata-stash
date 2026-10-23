@@ -42,6 +42,16 @@ func (s *scheduledTaskServer) previewCompletedPlays(ctx context.Context) (map[st
 			if old.MediaItemID != row.MediaItemID || !old.EndedAt.Equal(row.EndedAt) {
 				return nil, fmt.Errorf("playback preview: conflicting session identities")
 			}
+			if row.PlayedSeconds != nil && (old.PlayedSeconds == nil || *row.PlayedSeconds > *old.PlayedSeconds) {
+				// Copies finalized on several replicas: keep the largest measurement.
+				old.PlayedSeconds = row.PlayedSeconds
+				unique[row.SessionID] = old
+				for i := range rows {
+					if rows[i].SessionID == row.SessionID {
+						rows[i] = old
+					}
+				}
+			}
 			duplicates++
 			continue
 		}
@@ -59,7 +69,8 @@ func (s *scheduledTaskServer) previewCompletedPlays(ctx context.Context) (map[st
 	if len(rows) > limit {
 		rows = rows[:limit]
 	}
-	missing, present, unresolved, excluded, incomplete := 0, 0, 0, 0, 0
+	missing, present, unresolved, excluded, incomplete, unmeasured := 0, 0, 0, 0, 0, 0
+	missingWatch := 0.0
 	results := make([]any, 0, len(rows))
 	// Cache only inside this invocation: repeated sessions compare against one
 	// fresh history read, and the next preview must observe any new Stash plays.
@@ -68,6 +79,10 @@ func (s *scheduledTaskServer) previewCompletedPlays(ctx context.Context) (map[st
 		result := map[string]any{
 			"session_id": row.SessionID, "media_item_id": row.MediaItemID,
 			"ended_at": row.EndedAt.UTC().Format(time.RFC3339Nano), "outcome": "unresolved",
+		}
+		measured := row.PlayedSeconds != nil && *row.PlayedSeconds >= 0
+		if measured {
+			result["played_seconds"] = *row.PlayedSeconds
 		}
 		results = append(results, result)
 		paths, err := silo.ItemFilePaths(ctx, row.MediaItemID)
@@ -109,6 +124,11 @@ func (s *scheduledTaskServer) previewCompletedPlays(ctx context.Context) (map[st
 		} else {
 			result["outcome"] = "missing"
 			missing++
+			if measured {
+				missingWatch += *row.PlayedSeconds
+			} else {
+				unmeasured++
+			}
 		}
 	}
 	status := "complete"
@@ -118,7 +138,8 @@ func (s *scheduledTaskServer) previewCompletedPlays(ctx context.Context) (map[st
 	return map[string]any{
 		"status": status, "read_only": true, "eligible": total, "checked": len(rows), "remaining": total - len(rows),
 		"missing": missing, "already_present": present, "unresolved": unresolved, "excluded": excluded, "incomplete_history": incomplete, "duplicates": duplicates, "skipped": skipped,
+		"missing_watch_seconds": missingWatch, "missing_unmeasured": unmeasured,
 		"results": results,
-		"detail":  "Newest 100 unique completed movie sessions at most; exact file identity and fresh Stash history, with a 30-second timestamp tolerance. Missing plays are candidates only. No plays, duration, resume positions or O counts are written.",
+		"detail":  "Newest 100 unique completed movie sessions at most; exact file identity and fresh Stash history, with a 30-second timestamp tolerance. Missing plays are candidates only; missing_watch_seconds sums Silo's measured watch time for them, and missing_unmeasured counts those recorded before Silo measured watch time. No plays, duration, resume positions or O counts are written.",
 	}, nil
 }

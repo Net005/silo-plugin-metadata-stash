@@ -12,6 +12,10 @@
 
 - Browser userscript v1.3.0 adds a **Listed in Collections** row below **More Like This** on item pages. It lists every collection in the viewed library (plus personal collections) that contains the release, in Silo's collection order, with posters and links to each collection, and hides itself when there are none. Membership comes from the complete per-library collection lists (Silo's server-wide listing is a capped preview) and is cached for 10 minutes; an unreadable collection is retried instead of being cached as empty.
 
+## [0.3.72] - 2026-10-23
+
+- The read-only completed-play backfill preview now reports Silo's measured watch time. Silo now records `played_seconds` per finalized session (pauses, seeks and buffering excluded). Each checked session shows it when measured, duplicate copies keep the largest measurement, and the summary adds `missing_watch_seconds` (measured watch time of candidate missing plays) and `missing_unmeasured` (candidates recorded before Silo measured watch time). Nothing is written to Stash.
+
 ## [0.3.71] - 2026-10-22
 
 - Orphan file recovery now finishes the job: when a file is still unassociated a minute after its sidecar was written and its scan admitted, the worker asks Silo to retry that library's match queue so the new sidecar is read instead of waiting out Silo's match backoff. Retries are bounded (three, ten minutes apart, one per library per cycle) and also apply to files admitted by earlier versions, which previously stayed stuck as "pending" with the release showing no file.
