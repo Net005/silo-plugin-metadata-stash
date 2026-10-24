@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         Silo Stash Backdrop Hover
 // @namespace    https://github.com/Net005/silo-plugin-metadata-stash
-// @version      1.6.0
+// @version      1.6.1
 // @downloadURL  https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @updateURL    https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
-// @description  Stash backdrop previews, native Watchlist and O-count toolbar actions, library-scoped subtitle creation, a Listed in Collections row on item pages, watched / O-count indicators on collection posters, and Stash preview hover on collection and filmography posters.
+// @description  Stash backdrop previews, native Watchlist and O-count toolbar actions, library-scoped subtitle creation, a Listed in Collections row on item pages, watched / O-count indicators on collection and filmography posters, and Stash preview hover on collection and filmography posters.
 // @match        https://silo.example.invalid/*
 // @connect      *
 // @grant        GM_getValue
@@ -1006,11 +1006,6 @@
   const cardObserver = 'IntersectionObserver' in window ? new IntersectionObserver(entries => {
     for (const entry of entries) if (entry.isIntersecting) { cardObserver.unobserve(entry.target); loadCard(entry.target); }
   }, { rootMargin: '400px 0px' }) : null;
-  function collectionGrid() {
-    if (location.pathname !== '/catalog') return false;
-    const source = new URLSearchParams(location.search).get('source');
-    return source === 'library_collection' || source === 'user_collection';
-  }
   function cardItemID(card) {
     const href = card.querySelector('a[href*="/item/"]')?.getAttribute('href') || '';
     const m = /\/item\/([^/?#]+)/.exec(href);
@@ -1054,10 +1049,10 @@
     const id = cardItemID(card);
     if (!id) return;
     card.dataset.stashCardState = id;
-    cardLoader.get(id).then(state => { if (card.isConnected && collectionGrid()) renderCard(card, id, state); }).catch(() => {});
+    cardLoader.get(id).then(state => { if (card.isConnected && previewGridPage(location.pathname, location.search)) renderCard(card, id, state); }).catch(() => {});
   }
   function reconcileCardBadges() {
-    if (!collectionGrid()) { document.querySelectorAll('[data-stash-card-badges]').forEach(el => el.remove()); return; }
+    if (!previewGridPage(location.pathname, location.search)) { document.querySelectorAll('[data-stash-card-badges]').forEach(el => el.remove()); return; }
     for (const card of document.querySelectorAll('.media-card.group\\/card')) {
       const id = cardItemID(card);
       if (!id || card.dataset.stashCardState === id) continue;
@@ -1069,7 +1064,7 @@
   // Silo's own watched/favorite shortcuts change the state; re-read after them.
   document.addEventListener('click', event => {
     const card = event.target.closest?.('.media-card.group\\/card');
-    if (!card || !event.target.closest('button') || !collectionGrid()) return;
+    if (!card || !event.target.closest('button') || !previewGridPage(location.pathname, location.search)) return;
     const id = cardItemID(card);
     if (!id) return;
     setTimeout(() => { cardLoader.invalidate(id); loadCard(card); }, 1200);

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Browser userscript v1.6.1 shows the watched and O-count poster indicators on person filmography pages too, matching collection pages.
+
 - Browser userscript v1.6.0 turns poster preview hover into a large centred preview window. After the hover delay the poster expands from its place to the centre of the screen over a dimmed, blurred backdrop and plays the exact Stash scene preview in 16:9 with a loop progress bar and the release title. The window ignores the pointer, so moving off the poster, scrolling or pressing Escape closes it; loading and failures are shown inside the window.
 
 - Browser userscript v1.5.2 fixes poster preview hover in Firefox, which aborted playback (`AbortError`) because the preview video was started before it was attached to the page. The video is now attached invisibly first and revealed once playing, matching the release-page hover.
