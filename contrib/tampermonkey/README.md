@@ -18,7 +18,7 @@ A Tampermonkey userscript that adds Stash previews and compact controls to Silo,
 | **Metadata** | Full release dates as `YYYY-MM-DD`; clickable genres and studios open exact library filters in a new tab. |
 | **Listed in Collections** | Row below **More Like This** showing every library or personal collection containing the release, styled like the native row. Each card opens that collection. Membership is read once from Silo's collection lists and refreshed every 10 minutes; the row is hidden when the release is in no collection. |
 | **Collection poster indicators** | On collection pages, watched releases keep Silo's green eye chip in the poster's bottom-left corner (Silo normally shows it only on hover), and releases with Stash O counts show the count in a matching chip. Requires the Stash connection for O counts; the chips hide while Silo's own hover buttons are shown. |
-| **Poster preview hover** | On collection pages and person filmographies, hovering a poster plays its exact Stash scene preview in place of the cover, like the release page backdrop hover. Uses the same hover delay setting; needs the Stash connection and generated Stash previews. |
+| **Poster preview hover** | On collection pages and person filmographies, hovering a poster expands it into a large centred preview window that plays its exact Stash scene preview with the release title and a progress bar. Moving off the poster, scrolling or Escape closes it. Uses the hover delay setting; needs the Stash connection and generated Stash previews. |
 
 ## Install or update
 

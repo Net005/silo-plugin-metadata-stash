@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Silo Stash Backdrop Hover
 // @namespace    https://github.com/Net005/silo-plugin-metadata-stash
-// @version      1.5.2
+// @version      1.6.0
 // @downloadURL  https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @updateURL    https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @description  Stash backdrop previews, native Watchlist and O-count toolbar actions, library-scoped subtitle creation, a Listed in Collections row on item pages, watched / O-count indicators on collection posters, and Stash preview hover on collection and filmography posters.
@@ -1074,12 +1074,32 @@
     if (!id) return;
     setTimeout(() => { cardLoader.invalidate(id); loadCard(card); }, 1200);
   }, true);
-  // Poster hover previews: like the release page's backdrop hover, a grid
-  // poster plays the exact Stash scene's preview in place of its cover. The
-  // play button and hover dim step aside so the preview stays clear; Silo's
-  // corner action buttons remain usable.
-  cardStyle.textContent += '[data-stash-card-preview] .media-card-hover-dim,[data-stash-card-preview] .media-card-play-trigger{opacity:0!important;pointer-events:none!important}'
-    + '[data-stash-card-preview-video]{position:absolute;inset:0;z-index:2;width:100%;height:100%;object-fit:contain;background:#101114;pointer-events:none}';
+  // Poster hover previews: hovering a grid poster expands it into a large,
+  // centred preview window playing the exact Stash scene's preview. The
+  // window is display-only (pointer events pass through), so the hover stays
+  // on the poster and moving away closes it.
+  cardStyle.textContent += [
+    '[data-stash-preview-modal]{position:fixed;inset:0;z-index:2147483000;pointer-events:none;transition:opacity .18s ease}',
+    '[data-stash-preview-modal].spm-closing{opacity:0}',
+    '.spm-backdrop{position:absolute;inset:0;background:rgb(0 0 0/.62);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);opacity:0;transition:opacity .24s ease}',
+    '.spm-open .spm-backdrop{opacity:1}',
+    '.spm-panel{position:fixed;display:flex;flex-direction:column;overflow:hidden;border-radius:var(--radius-xl,16px);border:1px solid color-mix(in srgb,var(--border,#3a3a40) 65%,transparent);background:var(--card,#1c1c20);box-shadow:0 48px 96px -32px rgb(0 0 0/.9),inset 0 1px #ffffff0d;transition:left .28s cubic-bezier(.2,.8,.2,1),top .28s cubic-bezier(.2,.8,.2,1),width .28s cubic-bezier(.2,.8,.2,1),height .28s cubic-bezier(.2,.8,.2,1)}',
+    '.spm-media{position:relative;flex:1 1 auto;min-height:0;overflow:hidden;background:#0b0b0d}',
+    '.spm-poster{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:filter .35s ease,transform .35s ease}',
+    '.spm-open .spm-poster{filter:blur(22px) brightness(.45) saturate(1.2);transform:scale(1.12)}',
+    '.spm-video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:0;transition:opacity .3s ease}',
+    '.spm-playing .spm-video{opacity:1}',
+    '.spm-status{position:absolute;inset:0;display:grid;place-items:center;padding:24px;text-align:center;color:rgb(255 255 255/.85);font-size:.875rem;transition:opacity .2s ease}',
+    '.spm-playing .spm-status{opacity:0}',
+    '.spm-spinner{width:30px;height:30px;border:2px solid rgb(255 255 255/.22);border-top-color:#fff;border-radius:50%;animation:spm-spin .8s linear infinite}',
+    '@keyframes spm-spin{to{transform:rotate(360deg)}}',
+    '.spm-progress{position:absolute;left:0;bottom:0;height:3px;width:0;background:var(--primary,#e5484d);opacity:.9}',
+    '.spm-caption{flex:none;display:flex;align-items:center;justify-content:space-between;gap:16px;height:60px;padding:0 20px;border-top:1px solid color-mix(in srgb,var(--border,#3a3a40) 45%,transparent);opacity:0;transition:opacity .2s ease .12s}',
+    '.spm-open .spm-caption{opacity:1}',
+    '.spm-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;font-size:1.0625rem;color:var(--foreground,#e8e8ec)}',
+    '.spm-meta{flex:none;font-size:.6875rem;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--muted-foreground,#9a9aa3)}',
+    '@media (prefers-reduced-motion:reduce){.spm-panel,.spm-poster{transition:none}}',
+  ].join('');
   const previewSources = new Map();
   let cardPreview = null;
   function previewSource(id) {
@@ -1105,38 +1125,78 @@
     const p = cardPreview; cardPreview = null;
     if (!p) return;
     clearTimeout(p.timer);
-    p.card.removeAttribute('data-stash-card-preview');
-    if (p.video) { p.video.pause(); p.video.removeAttribute('src'); p.video.load(); p.video.remove(); }
+    const modal = p.modal;
+    if (!modal) return;
+    modal.classList.add('spm-closing');
+    setTimeout(() => {
+      const video = modal.querySelector('video');
+      if (video) { video.pause(); video.removeAttribute('src'); video.load(); }
+      modal.remove();
+    }, 200);
+  }
+  function previewRect() {
+    const vw = window.innerWidth, vh = window.innerHeight, caption = 60;
+    const width = Math.round(Math.max(320, Math.min(vw * 0.76, (vh * 0.84 - caption) * 16 / 9, 1400)));
+    const height = Math.round(width * 9 / 16 + caption);
+    return { left: Math.round((vw - width) / 2), top: Math.round((vh - height) / 2), width, height };
+  }
+  function place(el, r) { Object.assign(el.style, { left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', height: r.height + 'px' }); }
+  function cardTitle(card) {
+    return card.querySelector('a[aria-label]')?.getAttribute('aria-label') || card.querySelector('.media-card-image img')?.alt || card.textContent.trim().split('\n')[0] || '';
+  }
+  function openPreviewModal(p, image) {
+    const modal = document.createElement('div');
+    modal.dataset.stashPreviewModal = p.id;
+    modal.setAttribute('aria-hidden', 'true');
+    const backdrop = document.createElement('div'); backdrop.className = 'spm-backdrop';
+    const panel = document.createElement('div'); panel.className = 'spm-panel';
+    const mediaBox = document.createElement('div'); mediaBox.className = 'spm-media';
+    const posterSrc = image.querySelector('img')?.currentSrc || image.querySelector('img')?.src;
+    if (posterSrc) { const poster = document.createElement('img'); poster.className = 'spm-poster'; poster.src = posterSrc; poster.alt = ''; mediaBox.append(poster); }
+    const status = document.createElement('div'); status.className = 'spm-status';
+    const spinner = document.createElement('div'); spinner.className = 'spm-spinner'; status.append(spinner);
+    const progress = document.createElement('div'); progress.className = 'spm-progress';
+    mediaBox.append(status, progress);
+    const caption = document.createElement('div'); caption.className = 'spm-caption';
+    const title = document.createElement('div'); title.className = 'spm-title'; title.textContent = cardTitle(p.card);
+    const meta = document.createElement('div'); meta.className = 'spm-meta'; meta.textContent = 'Stash preview';
+    caption.append(title, meta);
+    panel.append(mediaBox, caption);
+    modal.append(backdrop, panel);
+    // Start exactly over the poster, then expand to the centre.
+    const from = image.getBoundingClientRect();
+    place(panel, { left: from.left, top: from.top, width: from.width, height: from.height });
+    document.body.append(modal);
+    p.modal = modal;
+    panel.getBoundingClientRect();
+    requestAnimationFrame(() => { if (cardPreview !== p) return; modal.classList.add('spm-open'); place(panel, previewRect()); });
+    return { modal, mediaBox, status, progress };
   }
   function startCardPreview(card, media) {
     const id = cardItemID(card), image = media.querySelector('.media-card-image');
     if (!id || !image) return;
-    const p = cardPreview = { id, card, media, video: null, timer: null };
+    const p = cardPreview = { id, card, media, modal: null, timer: null };
     p.timer = setTimeout(async () => {
+      if (cardPreview !== p || !card.isConnected) return;
+      const view = openPreviewModal(p, image);
       try {
         const src = await previewSource(id);
-        if (cardPreview !== p || !card.isConnected) return;
-        const video = document.createElement('video');
-        video.dataset.stashCardPreviewVideo = id;
-        video.muted = true; video.defaultMuted = true; video.loop = true; video.playsInline = true;
-        // Attach before playing: Firefox aborts playback of detached media.
-        // Keep it invisible until frames are actually playing.
-        video.style.opacity = '0';
-        p.video = video; image.append(video);
-        video.src = src;
-        try { await video.play(); } catch (error) {
-          if (cardPreview !== p) return;
-          throw new Error('The browser could not play this Stash preview (' + (error?.name || 'error') + ').');
-        }
         if (cardPreview !== p) return;
-        video.style.opacity = '';
-        card.setAttribute('data-stash-card-preview', '');
+        const video = document.createElement('video');
+        video.className = 'spm-video';
+        video.muted = true; video.defaultMuted = true; video.loop = true; video.playsInline = true;
+        video.addEventListener('timeupdate', () => { if (video.duration) view.progress.style.width = (video.currentTime / video.duration * 100) + '%'; });
+        // Attach before playing: Firefox aborts playback of detached media.
+        view.mediaBox.insertBefore(video, view.status);
+        video.src = src;
+        await video.play();
+        if (cardPreview !== p) return;
+        view.modal.classList.add('spm-playing');
       } catch (error) {
+        if (cardPreview !== p) return;
         console.warn('[Silo Stash hover] poster preview failed', id, error);
-        if (cardPreview === p) {
-          if (p.video) { p.video.removeAttribute('src'); p.video.load(); p.video.remove(); p.video = null; }
-          notice(error?.message || String(error));
-        }
+        const name = error?.name && error.name !== 'Error' ? ' (' + error.name + ')' : '';
+        view.status.textContent = (error?.message || 'The Stash preview could not be played.') + name;
       }
     }, delay());
   }
@@ -1152,6 +1212,8 @@
   }, true);
   document.addEventListener('visibilitychange', stopCardPreview);
   window.addEventListener('pagehide', stopCardPreview);
+  window.addEventListener('scroll', stopCardPreview, { capture: true, passive: true });
+  window.addEventListener('keydown', event => { if (event.key === 'Escape') stopCardPreview(); });
   function moreLikeThisSection() {
     return [...document.querySelectorAll('section.section-row h2')].find(h => h.textContent.trim() === 'More Like This')?.closest('section') || null;
   }
