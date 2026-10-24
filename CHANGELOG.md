@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Browser userscript v1.5.1 makes poster preview hover more robust: it listens for mouse hover in the capture phase so page handlers cannot swallow it, and it reports failures (no Stash preview, unresolved Stash scene, playback refused) with the same notice the release-page hover uses instead of failing silently.
+
 - Browser userscript v1.5.0 adds Stash preview hover to collection and person filmography posters: after the hover delay the poster's cover is replaced by the exact Stash scene's preview, played in place like the release page's backdrop hover. Silo's play button and hover dim step aside while it plays; the corner action buttons stay usable. Previews stop when the pointer leaves, the tab is hidden or the page changes, and recent previews are cached.
 
 - Browser userscript v1.4.0 adds always-visible **watched** and **O count** indicators to collection posters. Silo only shows its watched eye while hovering; the userscript keeps that same green eye chip in the poster's bottom-left corner for watched releases, with the exact Stash scene's O count in a matching chip beside it (shown when above zero). Both step aside while Silo's own hover buttons use that corner, refresh after you toggle watched, load only for posters near the viewport, and batch the Stash O-count reads.

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Silo Stash Backdrop Hover
 // @namespace    https://github.com/Net005/silo-plugin-metadata-stash
-// @version      1.5.0
+// @version      1.5.1
 // @downloadURL  https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @updateURL    https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @description  Stash backdrop previews, native Watchlist and O-count toolbar actions, library-scoped subtitle creation, a Listed in Collections row on item pages, watched / O-count indicators on collection posters, and Stash preview hover on collection and filmography posters.
@@ -1086,15 +1086,17 @@
     if (!previewSources.has(id)) {
       const entry = (async () => {
         const paths = await sceneFor(id);
-        if (!paths?.preview) return null;
+        if (!paths?.preview) throw new Error('This Stash scene has no generated preview video. Generate previews in Stash first.');
         return URL.createObjectURL(await stashRequest(paths.preview, 'blob'));
       })();
-      previewSources.set(id, entry.catch(() => { previewSources.delete(id); return null; }));
+      // Failures are reported, never cached, so the next hover retries.
+      entry.catch(() => previewSources.delete(id));
+      previewSources.set(id, entry);
       while (previewSources.size > 12) {
         const [oldID, oldSrc] = previewSources.entries().next().value;
         if (oldID === cardPreview?.id) break;
         previewSources.delete(oldID);
-        oldSrc.then(src => src && URL.revokeObjectURL(src));
+        oldSrc.then(src => URL.revokeObjectURL(src), () => {});
       }
     }
     return previewSources.get(id);
@@ -1111,29 +1113,33 @@
     if (!id || !image) return;
     const p = cardPreview = { id, card, media, video: null, timer: null };
     p.timer = setTimeout(async () => {
-      const src = await previewSource(id);
-      if (cardPreview !== p || !src || !card.isConnected) return;
-      const video = document.createElement('video');
-      video.dataset.stashCardPreviewVideo = id;
-      video.muted = true; video.defaultMuted = true; video.loop = true; video.playsInline = true;
-      video.src = src;
-      try { await video.play(); } catch { return; }
-      if (cardPreview !== p) { video.pause(); return; }
-      p.video = video; image.append(video);
-      card.setAttribute('data-stash-card-preview', '');
+      try {
+        const src = await previewSource(id);
+        if (cardPreview !== p || !card.isConnected) return;
+        const video = document.createElement('video');
+        video.dataset.stashCardPreviewVideo = id;
+        video.muted = true; video.defaultMuted = true; video.loop = true; video.playsInline = true;
+        video.src = src;
+        try { await video.play(); } catch (error) { throw new Error('The browser could not play this Stash preview (' + (error?.name || 'error') + ').'); }
+        if (cardPreview !== p) { video.pause(); return; }
+        p.video = video; image.append(video);
+        card.setAttribute('data-stash-card-preview', '');
+      } catch (error) {
+        console.warn('[Silo Stash hover] poster preview failed', id, error);
+        if (cardPreview === p) notice(error?.message || String(error));
+      }
     }, delay());
   }
-  document.addEventListener('pointerover', event => {
-    if (event.pointerType && event.pointerType !== 'mouse') return;
-    const media = event.target.closest?.('.media-card.group\\/card .group\\/media');
+  window.addEventListener('mouseover', event => {
+    const media = event.target?.closest?.('.media-card.group\\/card .group\\/media');
     if (!media || cardPreview?.media === media) return;
     stopCardPreview();
     if (!settings.enabled || !settings.stashURL || document.hidden || !previewGridPage(location.pathname, location.search)) return;
     startCardPreview(media.closest('.media-card'), media);
-  });
-  document.addEventListener('pointerout', event => {
+  }, true);
+  window.addEventListener('mouseout', event => {
     if (cardPreview && !cardPreview.media.contains(event.relatedTarget)) stopCardPreview();
-  });
+  }, true);
   document.addEventListener('visibilitychange', stopCardPreview);
   window.addEventListener('pagehide', stopCardPreview);
   function moreLikeThisSection() {
