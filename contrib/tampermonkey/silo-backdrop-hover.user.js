@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Silo Stash Backdrop Hover
 // @namespace    https://github.com/Net005/silo-plugin-metadata-stash
-// @version      1.7.1
+// @version      1.7.2
 // @downloadURL  https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @updateURL    https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @description  Stash backdrop previews, native Watchlist and O-count toolbar actions, library-scoped subtitle creation, a Listed in Collections row on item pages, and watched / O-count indicators plus Stash preview hover on catalog and filmography posters.
@@ -434,7 +434,7 @@
         const data = await gql('query($path:StringCriterionInput!){findScenes(scene_filter:{path:$path},filter:{per_page:200}){count scenes{id files{path}}}}', { path: { value: path, modifier: 'EQUALS' } });
         const match = exactScene(data.findScenes, path); if (match) matches.add(match);
       }
-      if (matches.size !== 1) throw new Error('No unique exact Stash file match. Assign this item its Stash scene ID in the Tampermonkey menu.');
+      if (matches.size !== 1) throw Object.assign(new Error('No unique exact Stash file match. Assign this item its Stash scene ID in the Tampermonkey menu.'), { noStashMatch: true });
       scene = [...matches][0];
     }
     return scene;
@@ -479,7 +479,12 @@
       };
       await step();
     }
-    function fail(error) { if (alive && hovering) { stop(); notice(error.message); } }
+    function fail(error) {
+      if (!alive || !hovering) return;
+      stop();
+      // A release without a unique Stash match simply has no preview.
+      if (!error?.noStashMatch) notice(error.message);
+    }
     async function start(n) {
       if (!valid(n)) return;
       if (!pathsPromise) pathsPromise = sceneFor(id).catch(error => { pathsPromise = null; throw error; });
