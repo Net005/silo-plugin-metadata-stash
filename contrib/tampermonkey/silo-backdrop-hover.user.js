@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Silo Stash Backdrop Hover
 // @namespace    https://github.com/Net005/silo-plugin-metadata-stash
-// @version      1.5.1
+// @version      1.5.2
 // @downloadURL  https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @updateURL    https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @description  Stash backdrop previews, native Watchlist and O-count toolbar actions, library-scoped subtitle creation, a Listed in Collections row on item pages, watched / O-count indicators on collection posters, and Stash preview hover on collection and filmography posters.
@@ -1119,14 +1119,24 @@
         const video = document.createElement('video');
         video.dataset.stashCardPreviewVideo = id;
         video.muted = true; video.defaultMuted = true; video.loop = true; video.playsInline = true;
-        video.src = src;
-        try { await video.play(); } catch (error) { throw new Error('The browser could not play this Stash preview (' + (error?.name || 'error') + ').'); }
-        if (cardPreview !== p) { video.pause(); return; }
+        // Attach before playing: Firefox aborts playback of detached media.
+        // Keep it invisible until frames are actually playing.
+        video.style.opacity = '0';
         p.video = video; image.append(video);
+        video.src = src;
+        try { await video.play(); } catch (error) {
+          if (cardPreview !== p) return;
+          throw new Error('The browser could not play this Stash preview (' + (error?.name || 'error') + ').');
+        }
+        if (cardPreview !== p) return;
+        video.style.opacity = '';
         card.setAttribute('data-stash-card-preview', '');
       } catch (error) {
         console.warn('[Silo Stash hover] poster preview failed', id, error);
-        if (cardPreview === p) notice(error?.message || String(error));
+        if (cardPreview === p) {
+          if (p.video) { p.video.removeAttribute('src'); p.video.load(); p.video.remove(); p.video = null; }
+          notice(error?.message || String(error));
+        }
       }
     }, delay());
   }
