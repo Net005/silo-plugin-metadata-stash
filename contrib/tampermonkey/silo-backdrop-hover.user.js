@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Silo Stash Backdrop Hover
 // @namespace    https://github.com/Net005/silo-plugin-metadata-stash
-// @version      1.7.0
+// @version      1.7.1
 // @downloadURL  https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @updateURL    https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @description  Stash backdrop previews, native Watchlist and O-count toolbar actions, library-scoped subtitle creation, a Listed in Collections row on item pages, and watched / O-count indicators plus Stash preview hover on catalog and filmography posters.
@@ -1095,14 +1095,22 @@
   ].join('');
   const previewSources = new Map();
   let cardPreview = null;
-  function previewSource(id) {
+  // Exact Stash preview URL for a poster, or null when the release has no
+  // unique Stash match or no generated preview. Misses are remembered for a
+  // while so hovering such posters stays silent and cheap.
+  const previewURLs = new Map();
+  function previewURL(id) {
+    if (!previewURLs.has(id)) {
+      const entry = sceneFor(id).then(paths => paths?.preview || null, () => null);
+      previewURLs.set(id, entry);
+      entry.then(url => { if (!url) setTimeout(() => { if (previewURLs.get(id) === entry) previewURLs.delete(id); }, 10 * 60 * 1000); });
+    }
+    return previewURLs.get(id);
+  }
+  function previewSource(id, url) {
     if (!previewSources.has(id)) {
-      const entry = (async () => {
-        const paths = await sceneFor(id);
-        if (!paths?.preview) throw new Error('This Stash scene has no generated preview video. Generate previews in Stash first.');
-        return URL.createObjectURL(await stashRequest(paths.preview, 'blob'));
-      })();
-      // Failures are reported, never cached, so the next hover retries.
+      const entry = stashRequest(url, 'blob').then(blob => URL.createObjectURL(blob));
+      // Download failures are reported, never cached, so the next hover retries.
       entry.catch(() => previewSources.delete(id));
       previewSources.set(id, entry);
       while (previewSources.size > 12) {
@@ -1171,9 +1179,12 @@
     const p = cardPreview = { id, card, media, modal: null, timer: null };
     p.timer = setTimeout(async () => {
       if (cardPreview !== p || !card.isConnected) return;
+      // No unique Stash match or no generated preview: no hover preview at all.
+      const url = await previewURL(id);
+      if (!url || cardPreview !== p || !card.isConnected) return;
       const view = openPreviewModal(p, image);
       try {
-        const src = await previewSource(id);
+        const src = await previewSource(id, url);
         if (cardPreview !== p) return;
         const video = document.createElement('video');
         video.className = 'spm-video';

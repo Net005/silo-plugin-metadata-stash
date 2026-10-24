@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Browser userscript v1.7.1 opens the poster preview window only for releases with a unique Stash match and a generated preview; other posters have no hover preview instead of showing an error window. Misses are remembered for ten minutes.
+
 - Browser userscript v1.7.0 extends the poster preview window and the watched / O-count indicators to every catalog grid, including section views such as Recently Added, filtered browsing and watchlists, in addition to collections and person filmographies.
 
 - Browser userscript v1.6.1 shows the watched and O-count poster indicators on person filmography pages too, matching collection pages.
