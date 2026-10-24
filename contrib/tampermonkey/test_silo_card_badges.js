@@ -62,11 +62,10 @@ test('bounds concurrent Silo item reads', async () => {
   assert.equal(f.calls.items.length, 12);
 });
 
-test('hover previews apply to collection grids and person filmographies only', () => {
-  assert.equal(previewGridPage('/person/123', ''), true);
-  assert.equal(previewGridPage('/catalog', '?source=library_collection&collection_id=1'), true);
-  assert.equal(previewGridPage('/catalog', '?source=user_collection&collection_id=1'), true);
-  assert.equal(previewGridPage('/catalog', '?source=section'), false);
-  assert.equal(previewGridPage('/item/local-1', ''), false);
-  assert.equal(previewGridPage('/person/123/extra', ''), false);
+test('hover previews apply to every catalog grid and person filmographies only', () => {
+  assert.equal(previewGridPage('/person/123'), true);
+  assert.equal(previewGridPage('/catalog'), true);
+  assert.equal(previewGridPage('/item/local-1'), false);
+  assert.equal(previewGridPage('/person/123/extra'), false);
+  assert.equal(previewGridPage('/'), false);
 });
