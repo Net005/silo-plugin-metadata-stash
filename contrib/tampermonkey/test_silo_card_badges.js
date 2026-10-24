@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createCardStateLoader } = require('./silo-backdrop-hover.user.js');
+const { createCardStateLoader, previewGridPage } = require('./silo-backdrop-hover.user.js');
 
 function fixture({ played = {}, scenes = {}, counts = {}, failScene = new Set(), limit = 3 } = {}) {
   const calls = { items: [], scenes: [], counts: [] };
@@ -60,4 +60,13 @@ test('bounds concurrent Silo item reads', async () => {
   await Promise.all(ids.map(id => f.loader.get(id)));
   assert.ok(f.peak() <= 3, 'peak ' + f.peak());
   assert.equal(f.calls.items.length, 12);
+});
+
+test('hover previews apply to collection grids and person filmographies only', () => {
+  assert.equal(previewGridPage('/person/123', ''), true);
+  assert.equal(previewGridPage('/catalog', '?source=library_collection&collection_id=1'), true);
+  assert.equal(previewGridPage('/catalog', '?source=user_collection&collection_id=1'), true);
+  assert.equal(previewGridPage('/catalog', '?source=section'), false);
+  assert.equal(previewGridPage('/item/local-1', ''), false);
+  assert.equal(previewGridPage('/person/123/extra', ''), false);
 });

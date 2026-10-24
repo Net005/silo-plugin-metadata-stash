@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         Silo Stash Backdrop Hover
 // @namespace    https://github.com/Net005/silo-plugin-metadata-stash
-// @version      1.4.0
+// @version      1.5.0
 // @downloadURL  https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @updateURL    https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
-// @description  Stash backdrop previews, native Watchlist and O-count toolbar actions, library-scoped subtitle creation, a Listed in Collections row on item pages, and watched / O-count indicators on collection posters.
+// @description  Stash backdrop previews, native Watchlist and O-count toolbar actions, library-scoped subtitle creation, a Listed in Collections row on item pages, watched / O-count indicators on collection posters, and Stash preview hover on collection and filmography posters.
 // @match        https://silo.example.invalid/*
 // @connect      *
 // @grant        GM_getValue
@@ -338,7 +338,14 @@
       invalidate(id) { cache.delete(id); },
     };
   }
-  if (typeof module !== 'undefined' && module.exports) { module.exports = { performerID, personOCount, createOCounter, parseCues, exactScene, createSiloFileReader, stashOrigin, sceneID, subtitleEligible, confirmSubtitleOverwrite, fullReleaseDate, metadataFilterHref, collectionHref, createCollectionIndex, createCardStateLoader }; return; }
+  // Poster grids that get hover previews: collection pages and person filmographies.
+  function previewGridPage(pathname, search) {
+    if (/^\/person\/[^/]+\/?$/.test(pathname)) return true;
+    if (pathname !== '/catalog') return false;
+    const source = new URLSearchParams(search).get('source');
+    return source === 'library_collection' || source === 'user_collection';
+  }
+  if (typeof module !== 'undefined' && module.exports) { module.exports = { previewGridPage, performerID, personOCount, createOCounter, parseCues, exactScene, createSiloFileReader, stashOrigin, sceneID, subtitleEligible, confirmSubtitleOverwrite, fullReleaseDate, metadataFilterHref, collectionHref, createCollectionIndex, createCardStateLoader }; return; }
   let settings = { ...DEFAULTS, ...GM_getValue('settings', {}) };
   let current = null;
   const overviewStyle = document.createElement('style');
@@ -1067,6 +1074,68 @@
     if (!id) return;
     setTimeout(() => { cardLoader.invalidate(id); loadCard(card); }, 1200);
   }, true);
+  // Poster hover previews: like the release page's backdrop hover, a grid
+  // poster plays the exact Stash scene's preview in place of its cover. The
+  // play button and hover dim step aside so the preview stays clear; Silo's
+  // corner action buttons remain usable.
+  cardStyle.textContent += '[data-stash-card-preview] .media-card-hover-dim,[data-stash-card-preview] .media-card-play-trigger{opacity:0!important;pointer-events:none!important}'
+    + '[data-stash-card-preview-video]{position:absolute;inset:0;z-index:2;width:100%;height:100%;object-fit:contain;background:#101114;pointer-events:none}';
+  const previewSources = new Map();
+  let cardPreview = null;
+  function previewSource(id) {
+    if (!previewSources.has(id)) {
+      const entry = (async () => {
+        const paths = await sceneFor(id);
+        if (!paths?.preview) return null;
+        return URL.createObjectURL(await stashRequest(paths.preview, 'blob'));
+      })();
+      previewSources.set(id, entry.catch(() => { previewSources.delete(id); return null; }));
+      while (previewSources.size > 12) {
+        const [oldID, oldSrc] = previewSources.entries().next().value;
+        if (oldID === cardPreview?.id) break;
+        previewSources.delete(oldID);
+        oldSrc.then(src => src && URL.revokeObjectURL(src));
+      }
+    }
+    return previewSources.get(id);
+  }
+  function stopCardPreview() {
+    const p = cardPreview; cardPreview = null;
+    if (!p) return;
+    clearTimeout(p.timer);
+    p.card.removeAttribute('data-stash-card-preview');
+    if (p.video) { p.video.pause(); p.video.removeAttribute('src'); p.video.load(); p.video.remove(); }
+  }
+  function startCardPreview(card, media) {
+    const id = cardItemID(card), image = media.querySelector('.media-card-image');
+    if (!id || !image) return;
+    const p = cardPreview = { id, card, media, video: null, timer: null };
+    p.timer = setTimeout(async () => {
+      const src = await previewSource(id);
+      if (cardPreview !== p || !src || !card.isConnected) return;
+      const video = document.createElement('video');
+      video.dataset.stashCardPreviewVideo = id;
+      video.muted = true; video.defaultMuted = true; video.loop = true; video.playsInline = true;
+      video.src = src;
+      try { await video.play(); } catch { return; }
+      if (cardPreview !== p) { video.pause(); return; }
+      p.video = video; image.append(video);
+      card.setAttribute('data-stash-card-preview', '');
+    }, delay());
+  }
+  document.addEventListener('pointerover', event => {
+    if (event.pointerType && event.pointerType !== 'mouse') return;
+    const media = event.target.closest?.('.media-card.group\\/card .group\\/media');
+    if (!media || cardPreview?.media === media) return;
+    stopCardPreview();
+    if (!settings.enabled || !settings.stashURL || document.hidden || !previewGridPage(location.pathname, location.search)) return;
+    startCardPreview(media.closest('.media-card'), media);
+  });
+  document.addEventListener('pointerout', event => {
+    if (cardPreview && !cardPreview.media.contains(event.relatedTarget)) stopCardPreview();
+  });
+  document.addEventListener('visibilitychange', stopCardPreview);
+  window.addEventListener('pagehide', stopCardPreview);
   function moreLikeThisSection() {
     return [...document.querySelectorAll('section.section-row h2')].find(h => h.textContent.trim() === 'More Like This')?.closest('section') || null;
   }
@@ -1095,6 +1164,7 @@
     anchor.after(row);
   }
   function reconcile() {
+    if (cardPreview && !cardPreview.card.isConnected) stopCardPreview();
     reconcileCardBadges();
     reconcilePersonO();
     reconcileReleaseDate();
