@@ -68,4 +68,6 @@ test('hover previews apply to every catalog grid and person filmographies only',
   assert.equal(previewGridPage('/item/local-1'), false);
   assert.equal(previewGridPage('/person/123/extra'), false);
   assert.equal(previewGridPage('/'), false);
+  assert.equal(previewGridPage('/library/16'), true);
+  assert.equal(previewGridPage('/library/16/settings'), false);
 });

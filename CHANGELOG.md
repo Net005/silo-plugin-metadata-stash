@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Browser userscript v1.7.3 adds the poster preview window and watched / O-count indicators to library browse pages (including filtered views such as a studio filter). Posters without a unique Stash match stay silent there too.
+
 - Browser userscript v1.7.2 also keeps the release-page backdrop hover silent when the release has no unique Stash match, instead of showing the "No unique exact Stash file match" notice. Other preview failures are still reported.
 
 - Browser userscript v1.7.1 opens the poster preview window only for releases with a unique Stash match and a generated preview; other posters have no hover preview instead of showing an error window. Misses are remembered for ten minutes.

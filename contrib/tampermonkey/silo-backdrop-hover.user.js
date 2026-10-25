@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Silo Stash Backdrop Hover
 // @namespace    https://github.com/Net005/silo-plugin-metadata-stash
-// @version      1.7.2
+// @version      1.7.3
 // @downloadURL  https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @updateURL    https://raw.githubusercontent.com/Net005/silo-plugin-metadata-stash/main/contrib/tampermonkey/silo-backdrop-hover.user.js
 // @description  Stash backdrop previews, native Watchlist and O-count toolbar actions, library-scoped subtitle creation, a Listed in Collections row on item pages, and watched / O-count indicators plus Stash preview hover on catalog and filmography posters.
@@ -339,9 +339,10 @@
     };
   }
   // Poster grids that get hover previews and indicators: every catalog grid
-  // (sections, collections, filters, watchlist) and person filmographies.
+  // (sections, collections, filters, watchlist), library browse pages and
+  // person filmographies.
   function previewGridPage(pathname) {
-    return pathname === '/catalog' || /^\/person\/[^/]+\/?$/.test(pathname);
+    return pathname === '/catalog' || /^\/(person|library)\/[^/]+\/?$/.test(pathname);
   }
   if (typeof module !== 'undefined' && module.exports) { module.exports = { previewGridPage, performerID, personOCount, createOCounter, parseCues, exactScene, createSiloFileReader, stashOrigin, sceneID, subtitleEligible, confirmSubtitleOverwrite, fullReleaseDate, metadataFilterHref, collectionHref, createCollectionIndex, createCardStateLoader }; return; }
   let settings = { ...DEFAULTS, ...GM_getValue('settings', {}) };
