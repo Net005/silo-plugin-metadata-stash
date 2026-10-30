@@ -20,6 +20,9 @@ type CompletedPlayback struct {
 	// PlayedSeconds is Silo's measured watch time (pauses and seeks excluded).
 	// Nil for sessions recorded before Silo measured it.
 	PlayedSeconds *float64 `json:"played_seconds"`
+	// EndReason is why Silo ended the attempt (stopped, terminated, expired,
+	// aborted); nil when unknown or recorded by an older server.
+	EndReason *string `json:"end_reason"`
 }
 
 // CompletedPlaybackHistory consumes the complete cursor sequence before any

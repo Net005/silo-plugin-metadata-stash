@@ -299,3 +299,39 @@ func TestPlaybackPreviewReportsMeasuredWatchTime(t *testing.T) {
 		t.Fatalf("unmeasured session must not report a watch time: %#v", rows[1])
 	}
 }
+
+func TestPlaybackPreviewCountsMissingByEndReason(t *testing.T) {
+	silo := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/files") {
+			_, _ = w.Write([]byte(`{"items":[{"file_path":"/media/example.mp4"}],"page":{"has_more":false}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"items":[` +
+			`{"session_id":"a","media_item_id":"movie:one","media_type":"movie","completed":true,"ended_at":"2026-01-03T12:00:00Z","end_reason":"stopped"},` +
+			`{"session_id":"b","media_item_id":"movie:one","media_type":"movie","completed":true,"ended_at":"2026-01-02T12:00:00Z","end_reason":"expired"},` +
+			`{"session_id":"c","media_item_id":"movie:one","media_type":"movie","completed":true,"ended_at":"2026-01-01T12:00:00Z","end_reason":null}` +
+			`],"page":{"has_more":false}}`))
+	}))
+	defer silo.Close()
+	stash := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var b struct {
+			Query string `json:"query"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&b)
+		if strings.Contains(b.Query, "findScenes") {
+			_, _ = w.Write([]byte(`{"data":{"findScenes":{"count":1,"scenes":[{"id":"42","files":[{"path":"/media/example.mp4"}]}]}}}`))
+		} else {
+			_, _ = w.Write([]byte(`{"data":{"findScene":{"id":"42","play_count":0,"play_history":[]}}}`))
+		}
+	}))
+	defer stash.Close()
+	task := &scheduledTaskServer{runtime: &runtimeServer{client: &stashClient{base: stash.URL, key: "test"}, siloBase: silo.URL, siloKey: "test", playtimeProfile: "owner"}}
+	out, err := task.previewCompletedPlays(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := out["missing_by_end_reason"].(map[string]any)
+	if out["missing"] != 3 || got["stopped"] != 1 || got["expired"] != 1 || got["unknown"] != 1 {
+		t.Fatalf("summary: %#v", out)
+	}
+}

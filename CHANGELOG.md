@@ -30,6 +30,10 @@
 
 - Browser userscript v1.3.0 adds a **Listed in Collections** row below **More Like This** on item pages. It lists every collection in the viewed library (plus personal collections) that contains the release, in Silo's collection order, with posters and links to each collection, and hides itself when there are none. Membership comes from the complete per-library collection lists (Silo's server-wide listing is a capped preview) and is cached for 10 minutes; an unreadable collection is retried instead of being cached as empty.
 
+## [0.3.73] - 2026-10-30
+
+- The read-only completed-play backfill preview now also summarizes candidate missing plays by how Silo ended them (`missing_by_end_reason`: stopped, terminated, expired, aborted or unknown), using the end reason newer Silo servers record in playback history. Plays that expired or were aborted are easy to spot before any future restore. Nothing is written to Stash.
+
 ## [0.3.72] - 2026-10-23
 
 - The read-only completed-play backfill preview now reports Silo's measured watch time. Silo now records `played_seconds` per finalized session (pauses, seeks and buffering excluded). Each checked session shows it when measured, duplicate copies keep the largest measurement, and the summary adds `missing_watch_seconds` (measured watch time of candidate missing plays) and `missing_unmeasured` (candidates recorded before Silo measured watch time). Nothing is written to Stash.

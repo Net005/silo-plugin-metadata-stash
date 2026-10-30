@@ -71,6 +71,7 @@ func (s *scheduledTaskServer) previewCompletedPlays(ctx context.Context) (map[st
 	}
 	missing, present, unresolved, excluded, incomplete, unmeasured := 0, 0, 0, 0, 0, 0
 	missingWatch := 0.0
+	byReason := map[string]any{}
 	results := make([]any, 0, len(rows))
 	// Cache only inside this invocation: repeated sessions compare against one
 	// fresh history read, and the next preview must observe any new Stash plays.
@@ -124,6 +125,11 @@ func (s *scheduledTaskServer) previewCompletedPlays(ctx context.Context) (map[st
 		} else {
 			result["outcome"] = "missing"
 			missing++
+			reason := "unknown"
+			if row.EndReason != nil && *row.EndReason != "" {
+				reason = *row.EndReason
+			}
+			byReason[reason] = intOr(byReason[reason]) + 1
 			if measured {
 				missingWatch += *row.PlayedSeconds
 			} else {
@@ -139,7 +145,13 @@ func (s *scheduledTaskServer) previewCompletedPlays(ctx context.Context) (map[st
 		"status": status, "read_only": true, "eligible": total, "checked": len(rows), "remaining": total - len(rows),
 		"missing": missing, "already_present": present, "unresolved": unresolved, "excluded": excluded, "incomplete_history": incomplete, "duplicates": duplicates, "skipped": skipped,
 		"missing_watch_seconds": missingWatch, "missing_unmeasured": unmeasured,
-		"results": results,
-		"detail":  "Newest 100 unique completed movie sessions at most; exact file identity and fresh Stash history, with a 30-second timestamp tolerance. Missing plays are candidates only; missing_watch_seconds sums Silo's measured watch time for them, and missing_unmeasured counts those recorded before Silo measured watch time. No plays, duration, resume positions or O counts are written.",
+		"missing_by_end_reason": byReason,
+		"results":               results,
+		"detail":                "Newest 100 unique completed movie sessions at most; exact file identity and fresh Stash history, with a 30-second timestamp tolerance. Missing plays are candidates only; missing_watch_seconds sums Silo's measured watch time for them, and missing_unmeasured counts those recorded before Silo measured watch time. No plays, duration, resume positions or O counts are written.",
 	}, nil
+}
+
+func intOr(v any) int {
+	n, _ := v.(int)
+	return n
 }
