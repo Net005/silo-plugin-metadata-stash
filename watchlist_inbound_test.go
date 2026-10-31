@@ -140,3 +140,63 @@ func TestInboundWatchlistReaddMovesFirstAndRetriesWithoutExport(t *testing.T) {
 		t.Fatalf("recovered older event displaced newer add: order=%v incoming=%v", ids, journal.Incoming)
 	}
 }
+
+// Silo changes a collection's ETag whenever its membership or order changes.
+// Saving the journal with the ETag read before a reorder is refused, so the
+// event stays queued and blocks every later Watchlist export.
+func TestInboundWatchlistSavesJournalAfterReorderChangedETag(t *testing.T) {
+	ids := []string{"other", "target"}
+	version := 1
+	journal := watchlistJournal{Version: 1, Baseline: map[string]bool{"other": true, "target": true}, Pending: map[string]watchlistIntent{}, Incoming: map[string]watchlistIntent{"target": {Desired: true, Changed: time.Now().UTC()}}}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		etag := `"v` + string(rune('0'+version)) + `"`
+		w.Header().Set("ETag", etag)
+		switch r.URL.Path {
+		case "/api/v2/admin/collections/wl":
+			if r.Method == "PATCH" {
+				if r.Header.Get("If-Match") != etag {
+					w.WriteHeader(http.StatusPreconditionFailed)
+					return
+				}
+				var row watchlistCollection
+				json.NewDecoder(r.Body).Decode(&row)
+				journal = watchlistJournal{}
+				json.Unmarshal(row.SourceConfig[watchlistJournalKey], &journal)
+				version++
+				w.WriteHeader(204)
+				return
+			}
+			raw, _ := json.Marshal(journal)
+			json.NewEncoder(w).Encode(watchlistCollection{ID: "wl", SourceConfig: map[string]json.RawMessage{watchlistJournalKey: raw}})
+		case "/api/v2/admin/collections/wl/items":
+			items := []map[string]string{}
+			for _, id := range ids {
+				items = append(items, map[string]string{"media_item_id": id})
+			}
+			json.NewEncoder(w).Encode(map[string]any{"items": items, "page": map[string]bool{"has_more": false}})
+		case "/api/v2/admin/collections/wl/items/order":
+			if r.Method == "GET" {
+				json.NewEncoder(w).Encode(map[string]any{"ordered_ids": ids})
+				return
+			}
+			var input struct {
+				IDs []string `json:"ordered_ids"`
+			}
+			json.NewDecoder(r.Body).Decode(&input)
+			ids = input.IDs
+			version++
+			w.WriteHeader(204)
+		default:
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(404)
+		}
+	}))
+	defer server.Close()
+	s := &runtimeServer{siloBase: server.URL, siloKey: "key"}
+	if err := s.drainInboundWatchlist(context.Background(), "wl"); err != nil {
+		t.Fatalf("drain failed after reorder: %v", err)
+	}
+	if !reflect.DeepEqual(ids, []string{"target", "other"}) || len(journal.Incoming) != 0 || !journal.Baseline["target"] {
+		t.Fatalf("event not acknowledged: order=%v journal=%+v", ids, journal)
+	}
+}

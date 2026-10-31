@@ -165,5 +165,13 @@ func (s *runtimeServer) drainInboundWatchlist(ctx context.Context, id string) er
 		j.LastActions[media] = watchlistActionVersion{Changed: intent.Changed, Desired: intent.Desired}
 		delete(j.Incoming, media)
 	}
+	// Reordering or adding members changes the collection's ETag. Re-read the
+	// validator so acknowledging the events cannot be refused as stale; a stale
+	// save left every event queued and blocked all later Watchlist exports.
+	if fresh, _, freshTag, readErr := s.watchlistState(ctx, id); readErr != nil {
+		return readErr
+	} else {
+		r, tag = fresh, freshTag
+	}
 	return s.saveWatchlistState(ctx, r, j, tag)
 }

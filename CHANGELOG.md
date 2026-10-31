@@ -30,6 +30,10 @@
 
 - Browser userscript v1.3.0 adds a **Listed in Collections** row below **More Like This** on item pages. It lists every collection in the viewed library (plus personal collections) that contains the release, in Silo's collection order, with posters and links to each collection, and hides itself when there are none. Membership comes from the complete per-library collection lists (Silo's server-wide listing is a capped preview) and is cached for 10 minutes; an unreadable collection is retried instead of being cached as empty.
 
+## [0.3.74] - 2026-10-31
+
+- Fix native Silo Watchlist changes no longer reaching the Stash Watchlist collection and tag. When Stash re-added several releases at once, the incoming-event worker reordered the Silo collection (which changes its ETag) and then saved its journal with the older ETag. Silo refused the save, the events stayed queued, and the per-library export loop stopped at that error every five seconds, so later native adds and removals were never exported. The worker now re-reads the ETag before saving. A newer native add after a removal is then recovered by the existing logic.
+
 ## [0.3.73] - 2026-10-30
 
 - The read-only completed-play backfill preview now also summarizes candidate missing plays by how Silo ended them (`missing_by_end_reason`: stopped, terminated, expired, aborted or unknown), using the end reason newer Silo servers record in playback history. Plays that expired or were aborted are easy to spot before any future restore. Nothing is written to Stash.
