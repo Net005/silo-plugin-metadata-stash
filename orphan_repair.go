@@ -45,20 +45,22 @@ type orphanQueueRow struct {
 	Detail   struct {
 		Decision struct {
 			Outcome    string            `json:"outcome"`
-			Count      int               `json:"candidate_count"`
+			Count      *int              `json:"candidate_count"`
 			Threshold  float64           `json:"threshold"`
 			Candidates []orphanCandidate `json:"top_candidates"`
 		} `json:"decision"`
 	} `json:"failure_detail"`
 }
 type orphanMarker struct {
-	Hash     string    `json:"nfo_sha256"`
-	Scene    string    `json:"scene"`
-	Next     time.Time `json:"retry_after"`
-	Admitted bool      `json:"admitted"`
-	Video    string    `json:"video_identity"`
-	NFO      string    `json:"nfo_identity"`
-	Attempts int       `json:"attempts"`
+	// No-candidate recovery must not unpark unrelated library queue rows.
+	NativeBackoff bool      `json:"native_backoff,omitempty"`
+	Hash          string    `json:"nfo_sha256"`
+	Scene         string    `json:"scene"`
+	Next          time.Time `json:"retry_after"`
+	Admitted      bool      `json:"admitted"`
+	Video         string    `json:"video_identity"`
+	NFO           string    `json:"nfo_identity"`
+	Attempts      int       `json:"attempts"`
 	// Silo backs rejected files off, so a scan alone may never re-read the
 	// sidecar. These bound the forced match-queue retries after admission.
 	AdmittedAt   time.Time `json:"admitted_at"`
@@ -400,7 +402,7 @@ func orphanPublishNFO(file orphanFile, roots []string, data []byte, owned *orpha
 // Unknown diagnostics or other sources are not repair authorization.
 func orphanYearlessFailure(row *orphanQueueRow) bool {
 	d := row.Detail.Decision
-	if row.State != "pending" || row.ParkedAt != nil || row.Kind != "candidate_rejected" || d.Outcome != "candidate_rejected" || d.Count != 1 || len(d.Candidates) != 1 {
+	if row.State != "pending" || row.ParkedAt != nil || row.Kind != "candidate_rejected" || d.Outcome != "candidate_rejected" || d.Count == nil || *d.Count != 1 || len(d.Candidates) != 1 {
 		return false
 	}
 	c := d.Candidates[0]
@@ -505,6 +507,9 @@ func (s *scheduledTaskServer) repairUnassociatedFiles(ctx context.Context) (map[
 				// Force Silo to re-read the sidecar instead of waiting out its
 				// match backoff, at most once per library per cycle.
 				if marker.Admitted {
+					if marker.NativeBackoff {
+						continue
+					}
 					now := time.Now()
 					if !retriedLibrary[lib.ID] && marker.QueueRetries < orphanQueueRetryMax && now.Sub(marker.AdmittedAt) >= orphanQueueRetryDelay && !marker.QueueRetryAt.After(now) {
 						var response struct {
@@ -536,7 +541,12 @@ func (s *scheduledTaskServer) repairUnassociatedFiles(ctx context.Context) (map[
 					diagnostic = &queue[i]
 				}
 			}
-			if diagnostic == nil || diagnostic.Library != lib.ID || !orphanYearlessFailure(diagnostic) {
+			if diagnostic == nil || diagnostic.Library != lib.ID {
+				continue
+			}
+			d := diagnostic.Detail.Decision
+			noCandidates := diagnostic.State == "pending" && diagnostic.ParkedAt == nil && diagnostic.Kind == "no_candidates" && d.Outcome == "no_candidates" && d.Count != nil && *d.Count == 0 && len(d.Candidates) == 0 && d.Threshold == 55
+			if !noCandidates && !orphanYearlessFailure(diagnostic) {
 				continue
 			}
 			var lookup struct {
@@ -567,11 +577,16 @@ func (s *scheduledTaskServer) repairUnassociatedFiles(ctx context.Context) (map[
 			if err != nil || date.Year() < 1900 || date.Year() > time.Now().Year()+1 {
 				continue
 			}
-			candidate := diagnostic.Detail.Decision.Candidates[0]
-			if (candidate.Year != 0 && candidate.Year != date.Year()) || (candidate.IDs["stash"] != row.ID && candidate.IDs["stash"] != "stash:"+row.ID) {
-				continue
+			if !noCandidates {
+				candidate := diagnostic.Detail.Decision.Candidates[0]
+				if (candidate.Year != 0 && candidate.Year != date.Year()) || (candidate.IDs["stash"] != row.ID && candidate.IDs["stash"] != "stash:"+row.ID) {
+					continue
+				}
 			}
 			title := row.Code
+			if noCandidates && strings.TrimSpace(title) == "" {
+				continue
+			}
 			if title == "" {
 				title = row.Title
 			}
@@ -588,7 +603,7 @@ func (s *scheduledTaskServer) repairUnassociatedFiles(ctx context.Context) (map[
 			}
 			digest := sha256.Sum256(nfo)
 			reserve := func(videoID, nfoID string) error {
-				marker = orphanMarker{Hash: fmt.Sprintf("%x", digest), Scene: row.ID, Video: videoID, NFO: nfoID, Attempts: marker.Attempts + 1, Next: time.Now().Add(6 * time.Hour)}
+				marker = orphanMarker{NativeBackoff: noCandidates || marker.NativeBackoff, Hash: fmt.Sprintf("%x", digest), Scene: row.ID, Video: videoID, NFO: nfoID, Attempts: marker.Attempts + 1, Next: time.Now().Add(6 * time.Hour)}
 				markers[markerKey] = marker
 				return save()
 			}

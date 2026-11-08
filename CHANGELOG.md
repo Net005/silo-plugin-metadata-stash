@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.75] - 2026-11-08
+
+- Recover unmatched files whose exact Stash records appeared after Silo's initial no-candidate search. Require a fresh unique exact-path identity, verified date and code, and the existing no-overwrite filesystem safeguards before publishing a per-file sidecar and submitting its targeted scan.
+- Preserve native matcher backoff for this recovery mode, including after plugin restart, rather than un-parking unrelated library matches. Accept Silo's compact zero-candidate diagnostic where the empty candidate list is omitted.
+
 ## [Unreleased]
 
 - Browser userscript v1.7.3 adds the poster preview window and watched / O-count indicators to library browse pages (including filtered views such as a studio filter). Posters without a unique Stash match stay silent there too.
