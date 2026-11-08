@@ -249,7 +249,11 @@ func searchResult(s scene) *pluginv1.ProviderSearchResult {
 	if s.Paths.Screenshot != "" {
 		imagePath = coverPath(s.ID)
 	}
-	return &pluginv1.ProviderSearchResult{ProviderId: "stash:" + s.ID, ItemType: "movie", Title: displayTitle(s), Year: sceneYear(s), Overview: s.Details, ProviderIds: providerIDs(s.ID), ImageUrl: imagePath}
+	var aliases []*pluginv1.TitleAlias
+	if code := strings.TrimSpace(s.Code); code != "" {
+		aliases = []*pluginv1.TitleAlias{{Title: code, Kind: "alternative"}}
+	}
+	return &pluginv1.ProviderSearchResult{ProviderId: "stash:" + s.ID, ItemType: "movie", Title: displayTitle(s), TitleAliases: aliases, Year: sceneYear(s), Overview: s.Details, ProviderIds: providerIDs(s.ID), ImageUrl: imagePath}
 }
 func sceneYear(s scene) int32 {
 	if len(s.Date) >= 4 {

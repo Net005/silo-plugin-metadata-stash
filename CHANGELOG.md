@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.3.76] - 2026-11-08
+
+- Publish each scene's verified Stash release code as a search-title alias while preserving its descriptive display title. This lets Silo score code-only filenames against the exact code rather than rejecting the longer scene title as unrelated.
+
 ## [0.3.75] - 2026-11-08
 
 - Recover unmatched files whose exact Stash records appeared after Silo's initial no-candidate search. Require a fresh unique exact-path identity, verified date and code, and the existing no-overwrite filesystem safeguards before publishing a per-file sidecar and submitting its targeted scan.
