@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.3.77] - 2026-11-13
+
+- The manifest now sets `stay_running: true`. Newer Silo servers stop plugin processes after 30 idle minutes, which would also end this plugin's background workers (Watchlist export every few seconds, playtime tracking, poster and match polling) until the next host call. Servers that don't know the field ignore it.
+
 ## [0.3.76] - 2026-11-08
 
 - Publish each scene's verified Stash release code as a search-title alias while preserving its descriptive display title. This lets Silo score code-only filenames against the exact code rather than rejecting the longer scene title as unrelated.

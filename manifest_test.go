@@ -64,3 +64,14 @@ func TestManifest(t *testing.T) {
 		}
 	}
 }
+
+// Silo stops idle plugin processes; this plugin runs timers and workers
+// between host calls, so it must opt out.
+func TestManifestStaysRunning(t *testing.T) {
+	var raw struct {
+		StayRunning bool `json:"stay_running"`
+	}
+	if err := json.Unmarshal(manifestJSON, &raw); err != nil || !raw.StayRunning {
+		t.Fatalf("stay_running must be true: %v", err)
+	}
+}
