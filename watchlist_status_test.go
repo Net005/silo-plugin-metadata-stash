@@ -59,18 +59,29 @@ func TestWatchlistStatusIsReadOnlyAndCountsQueues(t *testing.T) {
 	if lib["pending"] != 1 || lib["incoming_from_stash"] != 1 || lib["parked_unavailable"] != 1 || lib["library_id"] != "16" {
 		t.Fatalf("queue counts: %#v", lib)
 	}
-	if out["status"] != "attention" {
-		t.Fatalf("an old queued change must need attention: %#v", out)
+	if out["status"] != "attention" || lib["oldest_pending_age_seconds"] == nil || lib["oldest_incoming_age_seconds"] == nil {
+		t.Fatalf("an old pending change must need attention: %#v", out)
 	}
 }
 
-func newWatchlistStatusFixture(t *testing.T) *runtimeServer {
+func TestWatchlistStatusIgnoresOldIncomingOnly(t *testing.T) {
+	s := newWatchlistStatusFixture(t, func(j *watchlistJournal) { j.Pending = map[string]watchlistIntent{} })
+	out := s.watchlistStatus(t.Context())
+	if out["status"] != "ok" {
+		t.Fatalf("a stale incoming event alone must not raise attention: %#v", out)
+	}
+}
+
+func newWatchlistStatusFixture(t *testing.T, mutate ...func(*watchlistJournal)) *runtimeServer {
 	t.Helper()
 	old := time.Now().Add(-time.Hour).UTC()
 	journal := watchlistJournal{Version: 1, Baseline: map[string]bool{"a": true, "b": true},
 		Pending:  map[string]watchlistIntent{"a": {Desired: true, Changed: old}},
 		Incoming: map[string]watchlistIntent{"b": {Desired: false, Changed: old}},
 		Inactive: map[string]watchlistIntent{"c": {Desired: true, Changed: old}}}
+	for _, m := range mutate {
+		m(&journal)
+	}
 	silo := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			t.Errorf("status route wrote to Silo: %s %s", r.Method, r.URL.Path)

@@ -96,20 +96,27 @@ func (s *runtimeServer) watchlistStatus(ctx context.Context) map[string]any {
 		entry["pending"] = len(j.Pending)
 		entry["incoming_from_stash"] = len(j.Incoming)
 		entry["parked_unavailable"] = len(j.Inactive)
-		oldest := time.Time{}
-		for _, m := range []map[string]watchlistIntent{j.Pending, j.Incoming} {
+		// Pending exports should drain within seconds, so an old one needs
+		// attention. An old incoming Stash event is expected when its item no
+		// longer exists in Silo (it is kept for recovery), so it is shown for
+		// information only.
+		oldestOf := func(m map[string]watchlistIntent) (int, bool) {
+			oldest := time.Time{}
 			for _, intent := range m {
 				if oldest.IsZero() || intent.Changed.Before(oldest) {
 					oldest = intent.Changed
 				}
 			}
+			return int(now.Sub(oldest).Seconds()), !oldest.IsZero()
 		}
-		if !oldest.IsZero() {
-			age := int(now.Sub(oldest).Seconds())
-			entry["oldest_queued_age_seconds"] = age
+		if age, ok := oldestOf(j.Pending); ok {
+			entry["oldest_pending_age_seconds"] = age
 			if age > 600 {
 				problems++
 			}
+		}
+		if age, ok := oldestOf(j.Incoming); ok {
+			entry["oldest_incoming_age_seconds"] = age
 		}
 		libraries = append(libraries, entry)
 	}

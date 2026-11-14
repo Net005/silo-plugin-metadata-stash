@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.3.79] - 2026-11-14
+
+- The Watchlist status route raises `attention` only for a stuck export or an old pending change. An old incoming Stash event (kept for recovery when its item no longer exists in Silo) is shown as `oldest_incoming_age_seconds` for information instead of flagging every check.
+
 ## [0.3.78] - 2026-11-14
 
 - New read-only admin route `/recommendations/watchlist/status` reports Watchlist export health: per-library queue sizes and the age of the oldest queued change, the export's last success, failure streak and last error. A failure streak of twelve cycles marks the export stuck and logs a single error (repeating rarely) instead of a warning every five seconds, so an outage like a refused journal save is visible within a minute.

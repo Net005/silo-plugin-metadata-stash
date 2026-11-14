@@ -1,6 +1,6 @@
 {
   "plugin_id": "stash.metadata",
-  "version": "0.3.78",
+  "version": "0.3.79",
   "stay_running": true,
   "checksum": "__CHECKSUM__",
   "silo_api_version": "v1",
