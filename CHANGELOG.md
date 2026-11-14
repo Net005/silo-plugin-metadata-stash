@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.78] - 2026-11-14
+
+- New read-only admin route `/recommendations/watchlist/status` reports Watchlist export health: per-library queue sizes and the age of the oldest queued change, the export's last success, failure streak and last error. A failure streak of twelve cycles marks the export stuck and logs a single error (repeating rarely) instead of a warning every five seconds, so an outage like a refused journal save is visible within a minute.
+- Stash companion v0.2.17 adds the read-only task **Check Silo and JAVBeacon setup**: it verifies the Watchlist tag exists in Stash, the Silo and JAVBeacon connections and keys, and the managed Watchlist collections, and never prints a configured secret.
+
 ## [0.3.77] - 2026-11-13
 
 - The manifest now sets `stay_running: true`. Newer Silo servers stop plugin processes after 30 idle minutes, which would also end this plugin's background workers (Watchlist export every few seconds, playtime tracking, poster and match polling) until the next host call. Servers that don't know the field ignore it.

@@ -857,8 +857,13 @@ func (s *runtimeServer) pollWatchlistExports() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		_, e := s.backfillWatchlist(ctx)
 		cancel()
+		escalate := s.wlHealth.record(e, time.Now())
 		if e != nil && s.task != nil {
-			s.task.log.Warn("Watchlist export retry pending", "error", e)
+			if escalate {
+				s.task.log.Error("Watchlist export is stuck; native Watchlist changes are not reaching Stash", "error", e)
+			} else {
+				s.task.log.Warn("Watchlist export retry pending", "error", e)
+			}
 		}
 		<-ticker.C
 	}

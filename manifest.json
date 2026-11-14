@@ -1,6 +1,6 @@
 {
   "plugin_id": "stash.metadata",
-  "version": "0.3.77",
+  "version": "0.3.78",
   "stay_running": true,
   "checksum": "__CHECKSUM__",
   "silo_api_version": "v1",
@@ -501,6 +501,13 @@
     },
     {
       "path": "/recommendations/playtime/status",
+      "methods": [
+        "GET"
+      ],
+      "access": "admin"
+    },
+    {
+      "path": "/recommendations/watchlist/status",
       "methods": [
         "GET"
       ],

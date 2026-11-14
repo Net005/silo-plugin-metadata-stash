@@ -1,6 +1,6 @@
 name: Stash.Silo Companion
 description: Enrich linked metadata, keep selected Silo Watchlist collections current and notify weekly recommendations of Stash changes.
-version: 0.2.16
+version: 0.2.17
 ui:
   javascript:
     - stash_silo_subtitles.js
@@ -131,6 +131,10 @@ exec:
 interface: raw
 errLog: info
 tasks:
+  - name: Check Silo and JAVBeacon setup
+    description: Read-only check of the Watchlist tag, Silo and JAVBeacon connections and the managed Watchlist collections. Reports what is misconfigured without changing anything.
+    defaultArgs:
+      mode: self_check
   - name: Test metadata backend connection
     description: Verify the realtime webhook and record a trace in Stash and JAVBeacon logs.
     defaultArgs:

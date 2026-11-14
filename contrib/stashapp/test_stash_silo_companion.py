@@ -1,3 +1,4 @@
+import json
 import unittest
 from unittest.mock import patch
 
@@ -91,3 +92,48 @@ class HookAndScanTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SelfCheckTests(unittest.TestCase):
+    SETTINGS = {"silo_url": "https://silo.example.com", "silo_api_key": "secret-silo", "javbeacon_url": "https://jav.example.com",
+                "javbeacon_api_key": "secret-jav", "webhook_secret": "secret-hook", "watchlist_tag_id": "1355"}
+
+    def run_check(self, settings=None, tag=None, silo=None, jav=None):
+        tag = {"findTag": {"id": "1355", "name": "Watchlist"}} if tag is None else tag
+        silo = silo if silo is not None else {"/api/v2/system/info": {"server_version": "abc"}, "/api/v2/admin/collections": {"items": [
+            {"title": "Watchlist", "description": "Managed by JAVBeacon metadata plugin.", "library_id": "16"}]}}
+        jav = jav if jav is not None else {"/api/health": {"status": "ok"}, "/api/v1/integrations/silo/stash-saved-filters?selection=Watchlist": {"items": [{"name": "Watchlist"}]}}
+
+        def fake_silo(_settings, path, profile_id=None):
+            if isinstance(silo.get(path), Exception):
+                raise silo[path]
+            return silo[path]
+
+        def fake_backend(_settings, path, binary=False):
+            if isinstance(jav.get(path), Exception):
+                raise jav[path]
+            return jav.get(path)
+
+        with patch.object(plugin, "_stash_graphql", return_value=tag), patch.object(plugin, "_silo_get", side_effect=fake_silo), patch.object(plugin, "_backend", side_effect=fake_backend):
+            return plugin._self_check({}, dict(self.SETTINGS if settings is None else settings))
+
+    def test_all_good(self):
+        result = self.run_check()
+        self.assertEqual(result["status"], "ok")
+        self.assertTrue(all(c["ok"] for c in result["checks"]))
+
+    def test_reports_each_problem_without_secrets(self):
+        settings = dict(self.SETTINGS, watchlist_tag_id="")
+        result = self.run_check(settings=settings, silo={"/api/v2/system/info": RuntimeError("could not reach Silo"), "/api/v2/admin/collections": RuntimeError("Silo returned HTTP 401")},
+                                jav={"/api/health": None, "/api/v1/integrations/silo/stash-saved-filters?selection=Watchlist": RuntimeError("JAVBeacon returned HTTP 403")})
+        self.assertEqual(result["status"], "attention")
+        failed = {c["name"] for c in result["checks"] if not c["ok"]}
+        self.assertEqual(failed, {"watchlist_tag_id", "silo_reachable", "silo_admin_access", "javbeacon_reachable", "javbeacon_access"})
+        text = json.dumps(result)
+        for secret in ("secret-silo", "secret-jav", "secret-hook"):
+            self.assertNotIn(secret, text)
+
+    def test_missing_tag_in_stash_and_no_watchlist_collection(self):
+        result = self.run_check(tag={"findTag": None}, silo={"/api/v2/system/info": {}, "/api/v2/admin/collections": {"items": []}})
+        failed = {c["name"] for c in result["checks"] if not c["ok"]}
+        self.assertEqual(failed, {"watchlist_tag_exists", "silo_watchlist_collections"})

@@ -665,6 +665,50 @@ def _refresh_silo_scene(payload, settings, scene_id):
     return {"state": "ambiguous" if ambiguous else "unmatched", "ambiguous_libraries": ambiguous}
 
 
+def _self_check(payload, settings):
+    """Read-only configuration and connectivity check. Reports what is wrong in
+    plain words and never echoes a configured secret."""
+    checks = []
+
+    def add(name, ok, detail):
+        checks.append({"name": name, "ok": bool(ok), "detail": detail})
+
+    def attempt(name, action, good):
+        try:
+            value = action()
+        except RuntimeError as error:
+            add(name, False, str(error))
+            return None
+        add(name, value is not None, good if value is not None else "no response")
+        return value
+
+    tag_id = str(settings.get("watchlist_tag_id") or "").strip()
+    if not tag_id.isdigit():
+        add("watchlist_tag_id", False, "set the Watchlist tag ID (a Stash tag number) in Settings > Plugins")
+    else:
+        add("watchlist_tag_id", True, "configured")
+        try:
+            tag = (_stash_graphql(payload, "query($id:ID!){findTag(id:$id){id name}}", {"id": tag_id}) or {}).get("findTag")
+            add("watchlist_tag_exists", bool(tag), "tag found: " + str(tag.get("name")) if tag else "no Stash tag has that ID")
+        except RuntimeError as error:
+            add("watchlist_tag_exists", False, str(error))
+    if not (settings.get("silo_url") and settings.get("silo_api_key")):
+        add("silo_reachable", False, "set the Silo URL and API key")
+    else:
+        attempt("silo_reachable", lambda: _silo_get(settings, "/api/v2/system/info"), "Silo answered")
+        collections = attempt("silo_admin_access", lambda: _silo_get(settings, "/api/v2/admin/collections"), "admin API key accepted")
+        if collections is not None:
+            managed = [c for c in collections.get("items") or [] if str(c.get("title") or "").strip().lower().endswith("watchlist") and str(c.get("description") or "").startswith("Managed by JAVBeacon metadata plugin.")]
+            add("silo_watchlist_collections", bool(managed), f"{len(managed)} managed Watchlist collection(s)" if managed else "no managed Watchlist collection found; select the Watchlist saved filter in the Silo plugin")
+    if not settings.get("javbeacon_url") or not settings.get("javbeacon_api_key"):
+        add("javbeacon_reachable", False, "set the JAVBeacon URL and API key")
+    else:
+        attempt("javbeacon_reachable", lambda: _backend(settings, "/api/health"), "JAVBeacon answered")
+        attempt("javbeacon_access", lambda: _backend(settings, "/api/v1/integrations/silo/stash-saved-filters?selection=Watchlist"), "API key accepted")
+    add("webhook_secret", bool(str(settings.get("webhook_secret") or "").strip()), "configured" if settings.get("webhook_secret") else "set the JAVBeacon webhook secret for realtime scene sync")
+    return {"status": "ok" if all(c["ok"] for c in checks) else "attention", "read_only": True, "checks": checks}
+
+
 def main():
     payload = json.load(sys.stdin)
     args = payload.get("args") or {}
@@ -676,6 +720,8 @@ def main():
         result = _sync_silo_watchlist_collection(payload, _settings(payload), {"id": scene_id, "type": "Scene.Update.Post", "inputFields": ["tag_ids"], **{key: args[key] for key in ("desired", "changed_at") if key in args}})
     elif mode == "scan":
         result = _scan(payload, _settings(payload), dry_run=_bool(args.get("dry_run"), True), start_page=args.get("start_page") or 1, start_index=args.get("start_index") or 0)
+    elif mode == "self_check":
+        result = _self_check(payload, _settings(payload))
     elif mode == "subtitles":
         result = features.request_subtitles(payload, args)
     elif mode == "subtitle_status":

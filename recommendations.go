@@ -889,6 +889,9 @@ func (s *recommendationServer) Handle(ctx context.Context, req *pluginv1.HandleH
 		}
 		return respond(200, summary)
 	}
+	if req.Method == "GET" && path == "/recommendations/watchlist/status" {
+		return respond(200, s.runtime.watchlistStatus(ctx))
+	}
 	if req.Method == "GET" && path == "/recommendations/playtime/status" {
 		return respond(200, s.runtime.playtimeStatus())
 	}

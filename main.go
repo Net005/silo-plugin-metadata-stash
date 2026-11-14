@@ -45,6 +45,7 @@ type runtimeServer struct {
 	pollOnce                                                 sync.Once
 	watchlistMu                                              sync.Mutex
 	watchlistPollOnce                                        sync.Once
+	wlHealth                                                 watchlistHealth
 	playtimePollOnce                                         sync.Once
 	playtimeDisabled                                         bool
 	playtimeProfile                                          string
